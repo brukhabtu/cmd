@@ -18,6 +18,13 @@ pub struct Launcher {
     pub text: String,
     pub hits: Vec<Hit>,
     pub selected: usize,
+    /// The first row on screen. The window shows `rows` hits from here, so the selection
+    /// is kept in view without a scroll container, and Cmd-number counts from here
+    /// (decision 4: once the list scrolls, Cmd-number counts the visible rows).
+    pub first_visible: usize,
+    /// How many rows fit on screen, as the view said. Zero means the view has not said
+    /// and every row is on screen, so a default launcher behaves as it did before.
+    pub rows: usize,
     /// A line from a plugin or the host, shown under the input until the text changes.
     pub message: Option<String>,
     /// Bumped on every change to the text and on every reset, so answers and effects
@@ -96,6 +103,14 @@ pub enum Step {
 }
 
 impl Launcher {
+    /// A launcher whose window shows `rows` hits at once.
+    pub fn new(rows: usize) -> Self {
+        Launcher {
+            rows,
+            ..Launcher::default()
+        }
+    }
+
     /// Apply one event and say what to do about it.
     pub fn apply(&mut self, event: Event) -> Step {
         match event {
@@ -113,16 +128,18 @@ impl Launcher {
             }
             Event::Up => {
                 self.selected = self.selected.saturating_sub(1);
+                self.keep_selected_on_screen();
                 Step::Nothing
             }
             Event::Down => {
                 if self.selected + 1 < self.hits.len() {
                     self.selected += 1;
                 }
+                self.keep_selected_on_screen();
                 Step::Nothing
             }
             Event::Submit => self.run_at(self.selected),
-            Event::Pick(index) => self.run_at(index),
+            Event::Pick(position) => self.pick(position),
             Event::Escape => {
                 self.reset();
                 Step::Hide
@@ -146,14 +163,7 @@ impl Launcher {
                 items,
             } => {
                 if generation == self.generation {
-                    self.pending.retain(|asked| *asked != plugin);
-                    self.answers.insert(plugin, items);
-                    self.hits = query::merge(
-                        self.answers
-                            .iter()
-                            .map(|(plugin, items)| (*plugin, items.clone())),
-                    );
-                    self.selected = self.selected.min(self.hits.len().saturating_sub(1));
+                    self.merge_answer(plugin, items);
                 }
                 Step::Nothing
             }
@@ -189,6 +199,54 @@ impl Launcher {
                 self.message = Some(message);
                 Step::Nothing
             }
+        }
+    }
+
+    /// Cmd-number: the item at `position`, counted from the first row on screen, so the
+    /// number beside a row is the number that runs it (decision 4).
+    fn pick(&mut self, position: usize) -> Step {
+        if self.rows > 0 && position >= self.rows {
+            return Step::Nothing;
+        }
+        self.run_at(self.first_visible + position)
+    }
+
+    /// One plugin's answer to the current query joins the others in `hits`.
+    fn merge_answer(&mut self, plugin: usize, items: Vec<Item>) {
+        self.pending.retain(|asked| *asked != plugin);
+        self.answers.insert(plugin, items);
+        self.hits = query::merge(
+            self.answers
+                .iter()
+                .map(|(plugin, items)| (*plugin, items.clone())),
+        );
+        self.selected = self.selected.min(self.hits.len().saturating_sub(1));
+        self.keep_selected_on_screen();
+    }
+
+    /// The hits on screen: `rows` of them from `first_visible`, or every hit when the
+    /// view has not said how many fit.
+    pub fn visible(&self) -> &[Hit] {
+        if self.rows == 0 {
+            return &self.hits;
+        }
+        let start = self.first_visible.min(self.hits.len());
+        let end = (start + self.rows).min(self.hits.len());
+        &self.hits[start..end]
+    }
+
+    /// Slide the window onto the list by the least that keeps the selection on screen.
+    /// Nothing moves while the view has not said how many rows fit.
+    fn keep_selected_on_screen(&mut self) {
+        if self.rows == 0 {
+            return;
+        }
+        let last_start = self.hits.len().saturating_sub(self.rows);
+        self.first_visible = self.first_visible.min(last_start);
+        if self.selected < self.first_visible {
+            self.first_visible = self.selected;
+        } else if self.selected + 1 > self.first_visible + self.rows {
+            self.first_visible = self.selected + 1 - self.rows;
         }
     }
 
@@ -240,6 +298,7 @@ impl Launcher {
     fn requery(&mut self) -> Step {
         self.generation += 1;
         self.selected = 0;
+        self.first_visible = 0;
         self.message = None;
         self.busy = false;
         self.pending.clear();
@@ -254,10 +313,12 @@ impl Launcher {
         }
     }
 
-    /// Back to an empty launcher. The generation keeps climbing so late answers stay dropped.
+    /// Back to an empty launcher. The generation keeps climbing so late answers stay
+    /// dropped, and the row count stays because the window has not changed size.
     fn reset(&mut self) {
         *self = Launcher {
             generation: self.generation + 1,
+            rows: self.rows,
             ..Launcher::default()
         };
     }
@@ -646,5 +707,144 @@ mod tests {
         assert_eq!(launcher.message.as_deref(), Some("plugin timed out"));
         typed(&mut launcher, "y");
         assert_eq!(launcher.message, None);
+    }
+
+    /// Hits from plugin 0 with these ids and no actions.
+    fn hits(ids: &[&str]) -> Vec<Hit> {
+        ids.iter().map(|id| hit(0, id, vec![])).collect()
+    }
+
+    /// Five hits in a window three rows high.
+    fn five_in_three_rows() -> Launcher {
+        let mut launcher = Launcher::new(3);
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &hits(&["a", "b", "c", "d", "e"]));
+        launcher
+    }
+
+    fn visible_ids(launcher: &Launcher) -> Vec<&str> {
+        launcher
+            .visible()
+            .iter()
+            .map(|hit| hit.item.id.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn down_past_the_last_visible_row_scrolls_by_one() {
+        let mut launcher = five_in_three_rows();
+        assert_eq!(visible_ids(&launcher), vec!["a", "b", "c"]);
+        for _ in 0..3 {
+            launcher.apply(Event::Down);
+        }
+        assert_eq!(launcher.selected, 3);
+        assert_eq!(launcher.first_visible, 1);
+        assert_eq!(visible_ids(&launcher), vec!["b", "c", "d"]);
+    }
+
+    #[test]
+    fn up_above_the_first_visible_row_scrolls_back() {
+        let mut launcher = five_in_three_rows();
+        for _ in 0..3 {
+            launcher.apply(Event::Down);
+        }
+        launcher.apply(Event::Up);
+        launcher.apply(Event::Up);
+        assert_eq!(launcher.first_visible, 1, "still on screen, nothing moves");
+        launcher.apply(Event::Up);
+        assert_eq!(launcher.selected, 0);
+        assert_eq!(launcher.first_visible, 0);
+    }
+
+    #[test]
+    fn a_shorter_answer_pulls_the_window_back() {
+        let mut launcher = five_in_three_rows();
+        for _ in 0..4 {
+            launcher.apply(Event::Down);
+        }
+        assert_eq!(launcher.first_visible, 2);
+        answered(
+            &mut launcher,
+            1,
+            &[
+                hit(0, "x", vec![]),
+                hit(0, "y", vec![]),
+                hit(0, "z", vec![]),
+            ],
+        );
+        assert_eq!(launcher.selected, 2);
+        assert_eq!(launcher.first_visible, 0);
+        assert_eq!(visible_ids(&launcher), vec!["x", "y", "z"]);
+    }
+
+    #[test]
+    fn pick_counts_from_the_first_visible_row() {
+        let mut launcher = five_in_three_rows();
+        for _ in 0..3 {
+            launcher.apply(Event::Down);
+        }
+        assert_eq!(launcher.first_visible, 1);
+        assert_eq!(
+            launcher.apply(Event::Pick(0)),
+            run(1, 0, "b", DEFAULT_ACTION)
+        );
+        launcher.apply(Event::Failed {
+            generation: 1,
+            message: "no".into(),
+        });
+        assert_eq!(
+            launcher.apply(Event::Pick(3)),
+            Step::Nothing,
+            "the fourth row is off screen"
+        );
+    }
+
+    #[test]
+    fn without_a_row_count_every_row_is_visible_and_pick_counts_the_whole_list() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &hits(&["a", "b", "c", "d", "e"]));
+        for _ in 0..4 {
+            launcher.apply(Event::Down);
+        }
+        assert_eq!(launcher.first_visible, 0);
+        assert_eq!(launcher.visible().len(), 5);
+        assert_eq!(
+            launcher.apply(Event::Pick(4)),
+            run(1, 0, "e", DEFAULT_ACTION)
+        );
+    }
+
+    #[test]
+    fn typing_and_escape_scroll_back_to_the_top() {
+        let mut launcher = five_in_three_rows();
+        for _ in 0..3 {
+            launcher.apply(Event::Down);
+        }
+        typed(&mut launcher, "b");
+        assert_eq!(launcher.first_visible, 0);
+        answered(&mut launcher, 2, &hits(&["a", "b", "c", "d", "e"]));
+        for _ in 0..4 {
+            launcher.apply(Event::Down);
+        }
+        assert_eq!(launcher.apply(Event::Escape), Step::Hide);
+        assert_eq!(launcher.first_visible, 0);
+        assert_eq!(launcher.rows, 3, "the window has not changed size");
+    }
+
+    #[test]
+    fn visible_is_the_whole_list_when_it_is_shorter_than_the_window() {
+        let mut launcher = Launcher::new(3);
+        typed(&mut launcher, "a");
+        answered(
+            &mut launcher,
+            1,
+            &[hit(0, "x", vec![]), hit(0, "y", vec![])],
+        );
+        assert_eq!(visible_ids(&launcher), vec!["x", "y"]);
+        launcher.apply(Event::Down);
+        launcher.apply(Event::Down);
+        assert_eq!(launcher.selected, 1);
+        assert_eq!(launcher.first_visible, 0);
     }
 }

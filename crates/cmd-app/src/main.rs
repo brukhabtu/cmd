@@ -7,24 +7,67 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use cmd_core::query::Hit;
 use cmd_core::state::{Event, Launcher, Step};
 use cmd_host::{Host, HostEvent, Timeouts, manifest};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
 use gpui::{
-    App, Application, AsyncApp, Bounds, ClipboardItem, Context, FocusHandle, KeyDownEvent, Pixels,
-    Render, SharedString, Window, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
-    point, px, rgb, size,
+    App, Application, AsyncApp, Bounds, ClipboardItem, Context, Div, FocusHandle, KeyDownEvent,
+    Pixels, Render, Rgba, SharedString, Window, WindowAppearance, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions, div, point, px, rgb, rgba, size,
 };
 
 const WIDTH: f32 = 680.0;
 const HEIGHT: f32 = 420.0;
+const INPUT_HEIGHT: f32 = 56.0;
+/// The status line keeps its height whether or not it has anything to say, so the number
+/// of rows under it never changes.
+const STATUS_HEIGHT: f32 = 24.0;
+const ROW_HEIGHT: f32 = 48.0;
+/// How many result rows fit under the input and the status line. The state machine keeps
+/// the selection inside this window onto the list, so no scroll container is needed.
+const VISIBLE_ROWS: usize = 7;
+// The window is a fixed size, so the compiler, not the eye, checks that the rows fit.
+// The cast is of a one-digit constant; nothing is lost.
+#[allow(clippy::cast_precision_loss)]
+const _: () = assert!(INPUT_HEIGHT + STATUS_HEIGHT + VISIBLE_ROWS as f32 * ROW_HEIGHT <= HEIGHT);
 const PLACEHOLDER: &str = "Search, or type a keyword";
 /// Option-Space. Spotlight holds Cmd-Space; `CMD_HOTKEY=super+Space` takes it once Spotlight lets go.
 const DEFAULT_HOTKEY: &str = "alt+Space";
 /// How long a plugin may keep the person waiting before the window says so.
 const PATIENCE: Duration = Duration::from_millis(300);
+
+/// The colours for one appearance. The tints are translucent so the blur behind the
+/// window shows through them.
+struct Palette {
+    tint: Rgba,
+    text: Rgba,
+    muted: Rgba,
+    selected: Rgba,
+    warning: Rgba,
+}
+
+/// The palette that suits the system appearance; the vibrant variants read the same way.
+fn palette(appearance: WindowAppearance) -> Palette {
+    match appearance {
+        WindowAppearance::Dark | WindowAppearance::VibrantDark => Palette {
+            tint: rgba(0x1c_1c_1e_d9),
+            text: rgb(0xf2_f2_f7),
+            muted: rgb(0x8e_8e_93),
+            selected: rgba(0xff_ff_ff_1f),
+            warning: rgb(0xff_9f_0a),
+        },
+        WindowAppearance::Light | WindowAppearance::VibrantLight => Palette {
+            tint: rgba(0xf5_f5_f7_d9),
+            text: rgb(0x1d_1d_1f),
+            muted: rgb(0x6e_6e_73),
+            selected: rgba(0x00_00_00_14),
+            warning: rgb(0xc9_3c_00),
+        },
+    }
+}
 
 struct LauncherView {
     state: Launcher,
@@ -51,8 +94,12 @@ impl LauncherView {
             }
         })
         .detach();
+        // The palette is read on every draw, so a switch between light and dark only
+        // needs a redraw.
+        cx.observe_window_appearance(window, |_, _, cx| cx.notify())
+            .detach();
         let start_trouble = (!trouble.is_empty()).then(|| trouble.join("; "));
-        let mut state = Launcher::default();
+        let mut state = Launcher::new(VISIBLE_ROWS);
         if let Some(message) = &start_trouble {
             state.apply(Event::Noted(message.clone()));
         }
@@ -245,15 +292,82 @@ impl LauncherView {
     }
 }
 
+/// The text typed so far, or the placeholder in the muted colour while there is none.
+fn input_row(text: &str, palette: &Palette) -> Div {
+    let empty = text.is_empty();
+    let shown: SharedString = if empty {
+        PLACEHOLDER.into()
+    } else {
+        text.to_string().into()
+    };
+    div()
+        .h(px(INPUT_HEIGHT))
+        .px(px(18.0))
+        .flex()
+        .items_center()
+        .text_xl()
+        .when(empty, |input| input.text_color(palette.muted))
+        .child(shown)
+}
+
+/// A message from a plugin or the host wins over the waiting line; both are under the
+/// input, and the strip stays the same height when there is nothing to say.
+fn status_line(message: Option<String>, waiting: Option<String>, palette: &Palette) -> Div {
+    let line = match (message, waiting) {
+        (Some(message), _) => Some((message, palette.warning)),
+        (None, Some(waiting)) => Some((waiting, palette.muted)),
+        (None, None) => None,
+    };
+    div()
+        .h(px(STATUS_HEIGHT))
+        .px(px(18.0))
+        .flex()
+        .items_center()
+        .text_sm()
+        .children(line.map(|(text, colour)| div().truncate().text_color(colour).child(text)))
+}
+
+/// One result: title over subtitle, highlighted when selected, with the Cmd-number that
+/// runs it at the right. `position` counts from the first row on screen, which is what
+/// Cmd-number counts (decision 4).
+fn result_row(hit: &Hit, selected: bool, position: usize, palette: &Palette) -> Div {
+    let text = div()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .child(div().text_base().truncate().child(hit.item.title.clone()))
+        .children(hit.item.subtitle.clone().map(|subtitle| {
+            div()
+                .text_sm()
+                .truncate()
+                .text_color(palette.muted)
+                .child(subtitle)
+        }));
+    let shortcut = (position < 9).then(|| {
+        div()
+            .pl(px(12.0))
+            .text_sm()
+            .text_color(palette.muted)
+            .child(format!("\u{2318}{}", position + 1))
+    });
+    div()
+        .h(px(ROW_HEIGHT))
+        .mx(px(8.0))
+        .px(px(10.0))
+        .flex()
+        .items_center()
+        .rounded_lg()
+        .when(selected, |row| row.bg(palette.selected))
+        .child(text)
+        .children(shortcut)
+}
+
 impl Render for LauncherView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let empty = self.state.text.is_empty();
-        let input: SharedString = if empty {
-            PLACEHOLDER.into()
-        } else {
-            self.state.text.clone().into()
-        };
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = palette(window.appearance());
         let selected = self.state.selected;
+        let first_visible = self.state.first_visible;
         div()
             .id("launcher")
             .track_focus(&self.focus)
@@ -261,48 +375,30 @@ impl Render for LauncherView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0x1c_1c_1e))
-            .text_color(rgb(0xf2_f2_f7))
-            .rounded_xl()
+            .bg(palette.tint)
+            .text_color(palette.text)
+            .rounded_2xl()
             .overflow_hidden()
-            .child(
-                div()
-                    .h(px(56.0))
-                    .px(px(18.0))
-                    .flex()
-                    .items_center()
-                    .text_xl()
-                    .when(empty, |input| input.text_color(rgb(0x8e_8e_93)))
-                    .child(input),
+            .child(input_row(&self.state.text, &palette))
+            .child(status_line(
+                self.state.message.clone(),
+                self.waiting_on(),
+                &palette,
+            ))
+            .children(
+                self.state
+                    .visible()
+                    .iter()
+                    .enumerate()
+                    .map(|(position, hit)| {
+                        result_row(
+                            hit,
+                            first_visible + position == selected,
+                            position,
+                            &palette,
+                        )
+                    }),
             )
-            .children(self.state.message.clone().map(|message| {
-                div()
-                    .px(px(18.0))
-                    .pb(px(8.0))
-                    .text_sm()
-                    .text_color(rgb(0xff_9f_0a))
-                    .child(message)
-            }))
-            .children(self.waiting_on().map(|waiting| {
-                div()
-                    .px(px(18.0))
-                    .pb(px(8.0))
-                    .text_sm()
-                    .text_color(rgb(0x8e_8e_93))
-                    .child(waiting)
-            }))
-            .children(self.state.hits.iter().enumerate().map(|(index, hit)| {
-                div()
-                    .px(px(18.0))
-                    .py(px(10.0))
-                    .flex()
-                    .flex_col()
-                    .when(index == selected, |row| row.bg(rgb(0x2c_2c_2e)))
-                    .child(div().text_base().child(hit.item.title.clone()))
-                    .children(hit.item.subtitle.clone().map(|subtitle| {
-                        div().text_sm().text_color(rgb(0x8e_8e_93)).child(subtitle)
-                    }))
-            }))
     }
 }
 
@@ -419,6 +515,8 @@ fn main() {
     let _hotkey = register_hotkey(notify);
     Application::new().run(move |cx: &mut App| {
         let bounds = launcher_bounds(cx);
+        // Blurred makes the NSWindow transparent with a vibrancy view beneath the content,
+        // so the rounded, tinted root is the window's whole shape.
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: None,
@@ -426,6 +524,7 @@ fn main() {
             is_movable: false,
             is_resizable: false,
             is_minimizable: false,
+            window_background: WindowBackgroundAppearance::Blurred,
             ..Default::default()
         };
         let window = cx
