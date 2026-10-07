@@ -29,7 +29,9 @@ uv sync --all-packages --all-groups     # Python 3.15 and the plugins' environme
 cargo run -p cmd-app                    # macOS: opens the launcher, loads ./plugins
 ```
 
-Type `2 + 2 * 3`, press Enter, and `8` is on the clipboard.
+Press Option-Space anywhere to bring it up, type `2 + 2 * 3`, press Enter, and `8` is on the
+clipboard. Escape or a click elsewhere hides it. To use Cmd-Space instead, switch off
+Spotlight's shortcut in System Settings and run with `CMD_HOTKEY=super+Space`.
 
 On Linux the app crate does not compile (an `xattr`/`libc` clash below GPUI, not ours), so
 run the rest: `cargo test --workspace --exclude cmd-app`.

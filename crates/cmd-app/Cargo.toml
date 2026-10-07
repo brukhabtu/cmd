@@ -15,6 +15,10 @@ path = "src/main.rs"
 cmd-core.workspace = true
 cmd-host.workspace = true
 gpui = "0.2"
+# The global chord (decision 5): Carbon RegisterEventHotKey on macOS, no permissions.
+global-hotkey = "0.8"
+# Carries the chord's Send + Sync callback into GPUI's foreground executor.
+async-channel = "2"
 
 [lints]
 workspace = true

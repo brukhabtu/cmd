@@ -1,9 +1,10 @@
 ---
 id: TASK-1.8
 title: 'Design: the keyboard model'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
+updated_date: '2026-10-07 03:37'
 labels:
   - size-1
 milestone: m-1
@@ -17,3 +18,15 @@ ordinal: 9000
 <!-- AC:BEGIN -->
 - [ ] #1 A decision records which keys the app owns (Escape, arrows, Enter, Cmd-number, Cmd-K) and which reach plugins as text, including modifiers and IME input
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+### Order of work
+1. List the keys the launcher must own and the ones that must reach plugins as text.
+2. Write the decision, including modifiers and IME, and point the state machine's Event enum at it.
+### Risks
+IME behaviour can only be checked on a Mac.
+### Proof
+A decision record; the key mapping in cmd-app matches it.
+<!-- SECTION:PLAN:END -->

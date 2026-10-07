@@ -1,46 +1,85 @@
 //! The launcher window.
 //!
 //! Every key becomes a [`cmd_core::state::Event`]; the state machine answers with a
-//! [`cmd_core::state::Step`]; this file performs it. That is the whole shell.
+//! [`cmd_core::state::Step`]; this file performs it. The global chord shows the window,
+//! Escape and losing focus hide it. That is the whole shell.
 
 use std::path::PathBuf;
 
 use cmd_core::state::{Event, Launcher, Step};
 use cmd_host::{Host, Timeouts, manifest};
+use global_hotkey::hotkey::HotKey;
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
 use gpui::{
-    App, Application, Bounds, ClipboardItem, Context, FocusHandle, KeyDownEvent, Render,
-    SharedString, Window, WindowBounds, WindowKind, WindowOptions, div, px, rgb, size,
+    App, Application, AsyncApp, Bounds, ClipboardItem, Context, FocusHandle, KeyDownEvent, Render,
+    SharedString, Window, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, px, rgb,
+    size,
 };
 
 const WIDTH: f32 = 680.0;
 const HEIGHT: f32 = 420.0;
 const PLACEHOLDER: &str = "Search, or type a keyword";
+/// Option-Space. Spotlight holds Cmd-Space; `CMD_HOTKEY=super+Space` takes it once Spotlight lets go.
+const DEFAULT_HOTKEY: &str = "alt+Space";
 
 struct LauncherView {
     state: Launcher,
     host: Host,
     focus: FocusHandle,
+    /// Whether the window is meant to be on screen. Losing focus while shown hides it.
+    shown: bool,
 }
 
 impl LauncherView {
-    fn new(host: Host, cx: &mut Context<Self>) -> Self {
+    fn new(host: Host, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        cx.observe_window_activation(window, |view, window, cx| {
+            if view.shown && !window.is_window_active() {
+                view.hide(cx);
+            }
+        })
+        .detach();
         Self {
             state: Launcher::default(),
             host,
             focus: cx.focus_handle(),
+            shown: true,
         }
     }
 
+    /// Bring the window up with an empty, focused input.
+    fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.shown = true;
+        cx.activate(true);
+        window.activate_window();
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    /// Put the window away. The state resets, so the next show starts empty.
+    fn hide(&mut self, cx: &mut Context<Self>) {
+        self.shown = false;
+        let step = self.state.apply(Event::Escape);
+        debug_assert_eq!(step, Step::Hide);
+        cx.hide();
+        cx.notify();
+    }
+
+    /// The keyboard model (decision 4): a few keys are the launcher's, the rest is text.
     fn on_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
+        let command = keystroke.modifiers.platform;
         let event = match keystroke.key.as_str() {
+            "backspace" if command => Some(Event::Clear),
             "backspace" => Some(Event::Backspace),
             "up" => Some(Event::Up),
             "down" => Some(Event::Down),
             "enter" => Some(Event::Submit),
             "escape" => Some(Event::Escape),
-            _ if keystroke.modifiers.platform || keystroke.modifiers.control => None,
+            digit @ ("1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9") if command => {
+                digit.parse::<usize>().ok().map(|n| Event::Pick(n - 1))
+            }
+            _ if command || keystroke.modifiers.control => None,
             _ => keystroke.key_char.clone().map(Event::Typed),
         };
         if let Some(event) = event {
@@ -75,17 +114,23 @@ impl LauncherView {
                 let step = self.state.apply(event);
                 self.perform(step, cx);
             }
-            Step::Hide => cx.hide(),
+            Step::Hide => self.put_away(cx),
             Step::CopyAndHide(text) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
-                cx.hide();
+                self.put_away(cx);
             }
             Step::OpenAndHide(target) => {
                 cx.open_url(&target);
-                cx.hide();
+                self.put_away(cx);
             }
             Step::Nothing => {}
         }
+    }
+
+    /// The state machine already reset itself; only the window is left to hide.
+    fn put_away(&mut self, cx: &mut Context<Self>) {
+        self.shown = false;
+        cx.hide();
     }
 }
 
@@ -167,8 +212,55 @@ fn start_host() -> Host {
     host
 }
 
+/// Register the chord and hand each press to `presses`. Returns the manager, which must
+/// outlive the app: dropping it unregisters the chord.
+fn register_hotkey(presses: async_channel::Sender<()>) -> Option<GlobalHotKeyManager> {
+    let chord = std::env::var("CMD_HOTKEY").unwrap_or_else(|_| DEFAULT_HOTKEY.to_string());
+    let hotkey: HotKey = match chord.parse() {
+        Ok(hotkey) => hotkey,
+        Err(error) => {
+            eprintln!(
+                "cmd: CMD_HOTKEY {chord:?} is not a chord ({error}); running without a hotkey"
+            );
+            return None;
+        }
+    };
+    let manager = match GlobalHotKeyManager::new()
+        .and_then(|manager| manager.register(hotkey).map(|()| manager))
+    {
+        Ok(manager) => manager,
+        Err(error) => {
+            eprintln!("cmd: could not register {chord}: {error}; running without a hotkey");
+            return None;
+        }
+    };
+    GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
+        if matches!(event.state(), HotKeyState::Pressed) {
+            // A full channel means a press is already waiting; one show is enough.
+            let _ = presses.try_send(());
+        }
+    }));
+    Some(manager)
+}
+
+/// Show the window on every press until the channel or the window goes away.
+async fn show_on_press(
+    presses: async_channel::Receiver<()>,
+    window: WindowHandle<LauncherView>,
+    cx: &mut AsyncApp,
+) {
+    while presses.recv().await.is_ok() {
+        let shown = window.update(cx, LauncherView::show);
+        if shown.is_err() {
+            break;
+        }
+    }
+}
+
 fn main() {
     let host = start_host();
+    let (notify, presses) = async_channel::bounded(1);
+    let _hotkey = register_hotkey(notify);
     Application::new().run(move |cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(WIDTH), px(HEIGHT)), cx);
         let options = WindowOptions {
@@ -180,13 +272,16 @@ fn main() {
             is_minimizable: false,
             ..Default::default()
         };
-        cx.open_window(options, |window, cx| {
-            let view = cx.new(|cx| LauncherView::new(host, cx));
-            let focus = view.read(cx).focus.clone();
-            window.focus(&focus);
-            view
-        })
-        .expect("the launcher window opens");
+        let window = cx
+            .open_window(options, |window, cx| {
+                let view = cx.new(|cx| LauncherView::new(host, window, cx));
+                let focus = view.read(cx).focus.clone();
+                window.focus(&focus);
+                view
+            })
+            .expect("the launcher window opens");
+        cx.spawn(async move |cx| show_on_press(pressed, window, cx).await)
+            .detach();
         cx.activate(true);
     });
 }

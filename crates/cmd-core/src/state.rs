@@ -27,9 +27,13 @@ pub struct Launcher {
 pub enum Event {
     Typed(String),
     Backspace,
+    /// Cmd-Backspace: the whole text goes.
+    Clear,
     Up,
     Down,
     Submit,
+    /// Cmd-1 to Cmd-9: run the item at this position, counted from zero.
+    Pick(usize),
     Escape,
     /// The host finished a query started by [`Step::Query`] with this generation.
     Results {
@@ -72,6 +76,10 @@ impl Launcher {
                 self.text.pop();
                 self.requery()
             }
+            Event::Clear => {
+                self.text.clear();
+                self.requery()
+            }
             Event::Up => {
                 self.selected = self.selected.saturating_sub(1);
                 Step::Nothing
@@ -82,18 +90,8 @@ impl Launcher {
                 }
                 Step::Nothing
             }
-            Event::Submit => match self.hits.get(self.selected) {
-                Some(hit) => Step::Run {
-                    plugin: hit.plugin,
-                    item: hit.item.id.clone(),
-                    action: hit
-                        .item
-                        .actions
-                        .first()
-                        .map_or_else(|| DEFAULT_ACTION.to_string(), |action| action.id.clone()),
-                },
-                None => Step::Nothing,
-            },
+            Event::Submit => self.run_at(self.selected),
+            Event::Pick(index) => self.run_at(index),
             Event::Escape => {
                 self.reset();
                 Step::Hide
@@ -110,6 +108,22 @@ impl Launcher {
                 self.message = Some(message);
                 Step::Nothing
             }
+        }
+    }
+
+    /// Run the first action of the item at `index`, or nothing when there is no such item.
+    fn run_at(&self, index: usize) -> Step {
+        match self.hits.get(index) {
+            Some(hit) => Step::Run {
+                plugin: hit.plugin,
+                item: hit.item.id.clone(),
+                action: hit
+                    .item
+                    .actions
+                    .first()
+                    .map_or_else(|| DEFAULT_ACTION.to_string(), |action| action.id.clone()),
+            },
+            None => Step::Nothing,
         }
     }
 
@@ -273,6 +287,40 @@ mod tests {
                 action: "copy".into()
             }
         );
+    }
+
+    #[test]
+    fn clear_empties_the_text_and_the_list_in_one_step() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "abc");
+        launcher.apply(Event::Results {
+            generation: 1,
+            hits: vec![hit(0, "a", vec![])],
+        });
+        assert_eq!(launcher.apply(Event::Clear), Step::Nothing);
+        assert_eq!(launcher.text, "");
+        assert_eq!(launcher.hits, []);
+        assert_eq!(launcher.generation, 2);
+    }
+
+    #[test]
+    fn pick_runs_the_nth_item_without_moving_the_selection() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        launcher.apply(Event::Results {
+            generation: 1,
+            hits: vec![hit(0, "x", vec![]), hit(1, "y", vec![])],
+        });
+        assert_eq!(
+            launcher.apply(Event::Pick(1)),
+            Step::Run {
+                plugin: 1,
+                item: "y".into(),
+                action: DEFAULT_ACTION.into()
+            }
+        );
+        assert_eq!(launcher.selected, 0);
+        assert_eq!(launcher.apply(Event::Pick(7)), Step::Nothing);
     }
 
     #[test]
