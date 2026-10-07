@@ -2,10 +2,14 @@
 
 The Claude Code skills for working on this repository, and their evals.
 
-There are no skills yet, on purpose. A skill is added after the model has demonstrably got
-something wrong, never in anticipation. Candidates are proposed at milestone boundaries and
-sit on the board as drafts until the evidence exists. `docs/skills.md` has the process and
-the gate.
+A skill is added after the model has demonstrably got something wrong, never in
+anticipation. Candidates are proposed at milestone boundaries and sit on the board as
+drafts until the evidence exists; `docs/skills.md` has the process and the gate.
+
+One skill is written and not yet accepted: `gpui-for-cmd`, from milestone 1's two
+demonstrated misses in the GPUI window. Its eval cases are the next step; they run in CI
+on the first pull request that touches this plugin (`.github/workflows/skills.yml`), and
+its board draft is promoted only when the gate passes.
 
 ## Layout
 
