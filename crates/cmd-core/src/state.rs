@@ -5,7 +5,9 @@
 //! process, or the clipboard.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 
+use crate::input::{Input, Motion};
 use crate::protocol::{Effect, Item};
 use crate::query::{self, Hit};
 
@@ -15,7 +17,8 @@ pub const DEFAULT_ACTION: &str = "default";
 /// Everything the window shows.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Launcher {
-    pub text: String,
+    /// The query as typed: the text, the cursor, the selection and any composition.
+    pub input: Input,
     pub hits: Vec<Hit>,
     pub selected: usize,
     /// The first row on screen. The window shows `rows` hits from here, so the selection
@@ -41,10 +44,35 @@ pub struct Launcher {
 /// Something that happened: a key, or an answer arriving.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
+    /// Text at the cursor: a key, or an input method's commit. It goes over the
+    /// composition if one is open, else over the selection.
     Typed(String),
-    Backspace,
-    /// Cmd-Backspace: the whole text goes.
-    Clear,
+    /// Backspace and its chords: the selection goes, else the text from the cursor to
+    /// where the motion lands. Cmd-Backspace at the end of the text is the whole text.
+    Delete(Motion),
+    /// Left and Right and their chords. With `extend` (Shift) the selection grows.
+    Move {
+        motion: Motion,
+        extend: bool,
+    },
+    SelectAll,
+    /// Cmd-C: the selection to the pasteboard, if there is one.
+    Copy,
+    /// Cmd-V: the pasteboard's text at the cursor, as one line.
+    Paste(String),
+    /// The platform put `text` in place of `range` (bytes), whatever the cursor.
+    Replace {
+        range: Range<usize>,
+        text: String,
+    },
+    /// An input method's uncommitted text (see [`Input::compose`]).
+    Compose {
+        range: Option<Range<usize>>,
+        text: String,
+        selection: Option<Range<usize>>,
+    },
+    /// The input method ended its composition and the text stays as typed.
+    Unmark,
     Up,
     Down,
     Submit,
@@ -97,6 +125,8 @@ pub enum Step {
         action: String,
     },
     Hide,
+    /// Put this on the pasteboard and stay open: the person copied part of the query.
+    Copy(String),
     CopyAndHide(String),
     OpenAndHide(String),
     Nothing,
@@ -111,21 +141,23 @@ impl Launcher {
         }
     }
 
+    /// The query as typed, with any composition in it.
+    pub fn text(&self) -> &str {
+        self.input.text()
+    }
+
     /// Apply one event and say what to do about it.
     pub fn apply(&mut self, event: Event) -> Step {
         match event {
-            Event::Typed(text) => {
-                self.text.push_str(&text);
-                self.requery()
-            }
-            Event::Backspace => {
-                self.text.pop();
-                self.requery()
-            }
-            Event::Clear => {
-                self.text.clear();
-                self.requery()
-            }
+            Event::Typed(_)
+            | Event::Delete(_)
+            | Event::Move { .. }
+            | Event::SelectAll
+            | Event::Copy
+            | Event::Paste(_)
+            | Event::Replace { .. }
+            | Event::Compose { .. }
+            | Event::Unmark => self.edit(event),
             Event::Up => {
                 self.selected = self.selected.saturating_sub(1);
                 self.keep_selected_on_screen();
@@ -295,6 +327,68 @@ impl Launcher {
         }
     }
 
+    /// An event on the text: a key, the pasteboard or the input method. Only an edit that
+    /// changed the text asks the plugins again; moving and selecting never do.
+    fn edit(&mut self, event: Event) -> Step {
+        match event {
+            Event::Typed(text) => {
+                let changed = self.input.insert(&text);
+                self.requery_if(changed)
+            }
+            Event::Delete(motion) => {
+                let changed = self.input.delete(motion);
+                self.requery_if(changed)
+            }
+            Event::Move { motion, extend } => {
+                self.input.move_to(motion, extend);
+                Step::Nothing
+            }
+            Event::SelectAll => {
+                self.input.select_all();
+                Step::Nothing
+            }
+            Event::Copy => self
+                .input
+                .selected_text()
+                .map_or(Step::Nothing, |text| Step::Copy(text.to_string())),
+            Event::Paste(text) => {
+                let changed = self.input.paste(&text);
+                self.requery_if(changed)
+            }
+            Event::Replace { range, text } => {
+                let changed = self.input.replace(range, &text);
+                self.requery_if(changed)
+            }
+            Event::Compose {
+                range,
+                text,
+                selection,
+            } => {
+                let changed = self.input.compose(range, &text, selection);
+                self.requery_if(changed)
+            }
+            Event::Unmark => {
+                self.input.unmark();
+                Step::Nothing
+            }
+            // `apply` sends only the events above here.
+            _ => Step::Nothing,
+        }
+    }
+
+    /// An edit that left the text as it was changes nothing: the list, the message and
+    /// the generation all stay, so a Backspace on empty text is not a new query.
+    fn requery_if(&mut self, changed: bool) -> Step {
+        if changed {
+            self.requery()
+        } else {
+            Step::Nothing
+        }
+    }
+
+    /// The text changed: a new generation, the list scrolled to the top, and a query for
+    /// the plugins unless the text is blank. A composition in progress is queried as it
+    /// is, so the list follows the input method the way Spotlight's does.
     fn requery(&mut self) -> Step {
         self.generation += 1;
         self.selected = 0;
@@ -303,13 +397,13 @@ impl Launcher {
         self.busy = false;
         self.pending.clear();
         self.answers.clear();
-        if self.text.trim().is_empty() {
+        if self.text().trim().is_empty() {
             self.hits.clear();
             return Step::Nothing;
         }
         Step::Query {
             generation: self.generation,
-            text: self.text.clone(),
+            text: self.text().to_string(),
         }
     }
 
@@ -402,9 +496,184 @@ mod tests {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "a");
         answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
-        assert_eq!(launcher.apply(Event::Backspace), Step::Nothing);
+        assert_eq!(
+            launcher.apply(Event::Delete(Motion::PreviousGrapheme)),
+            Step::Nothing
+        );
         assert_eq!(launcher.hits, []);
         assert_eq!(launcher.generation, 2);
+    }
+
+    #[test]
+    fn an_edit_that_changes_nothing_keeps_the_generation_and_the_message() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Noted("hello".into()));
+        assert_eq!(
+            launcher.apply(Event::Delete(Motion::PreviousGrapheme)),
+            Step::Nothing
+        );
+        assert_eq!(launcher.generation, 0);
+        assert_eq!(launcher.message.as_deref(), Some("hello"));
+        assert_eq!(launcher.apply(Event::Paste(String::new())), Step::Nothing);
+        assert_eq!(launcher.generation, 0);
+    }
+
+    #[test]
+    fn moving_selecting_and_unmarking_never_ask_the_plugins() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "ab cd");
+        answered(&mut launcher, 1, &[hit(0, "x", vec![])]);
+        launcher.apply(Event::Noted("kept".into()));
+        assert_eq!(
+            launcher.apply(Event::Move {
+                motion: Motion::PreviousWord,
+                extend: true
+            }),
+            Step::Nothing
+        );
+        assert_eq!(launcher.input.selected_text(), Some("cd"));
+        assert_eq!(launcher.apply(Event::SelectAll), Step::Nothing);
+        assert_eq!(launcher.input.selected_text(), Some("ab cd"));
+        assert_eq!(launcher.apply(Event::Unmark), Step::Nothing);
+        assert_eq!(launcher.generation, 1);
+        assert_eq!(launcher.hits.len(), 1);
+        assert_eq!(launcher.message.as_deref(), Some("kept"));
+    }
+
+    #[test]
+    fn typing_over_a_selection_queries_the_merged_text_once() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "abcd");
+        launcher.apply(Event::Move {
+            motion: Motion::PreviousGrapheme,
+            extend: false,
+        });
+        launcher.apply(Event::Move {
+            motion: Motion::PreviousGrapheme,
+            extend: true,
+        });
+        launcher.apply(Event::Move {
+            motion: Motion::PreviousGrapheme,
+            extend: true,
+        });
+        assert_eq!(
+            typed(&mut launcher, "X"),
+            Step::Query {
+                generation: 2,
+                text: "aXd".into()
+            }
+        );
+        assert_eq!(launcher.input.cursor(), 2);
+    }
+
+    #[test]
+    fn deleting_by_word_and_to_the_start_queries_the_remainder() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "foo bar");
+        assert_eq!(
+            launcher.apply(Event::Delete(Motion::PreviousWord)),
+            Step::Query {
+                generation: 2,
+                text: "foo ".into()
+            }
+        );
+        typed(&mut launcher, "baz");
+        launcher.apply(Event::Move {
+            motion: Motion::PreviousWord,
+            extend: false,
+        });
+        assert_eq!(
+            launcher.apply(Event::Delete(Motion::LineStart)),
+            Step::Query {
+                generation: 4,
+                text: "baz".into()
+            }
+        );
+    }
+
+    #[test]
+    fn copy_returns_the_selection_and_nothing_without_one() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "abc");
+        assert_eq!(launcher.apply(Event::Copy), Step::Nothing);
+        launcher.apply(Event::SelectAll);
+        assert_eq!(launcher.apply(Event::Copy), Step::Copy("abc".into()));
+        assert_eq!(launcher.text(), "abc", "copying keeps the text");
+        assert_eq!(launcher.generation, 1);
+    }
+
+    #[test]
+    fn paste_queries_the_text_as_one_line() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        assert_eq!(
+            launcher.apply(Event::Paste("b\r\nc\nd".into())),
+            Step::Query {
+                generation: 2,
+                text: "ab c d".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_composition_is_queried_as_it_goes_and_again_when_it_commits() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "x");
+        assert_eq!(
+            launcher.apply(Event::Compose {
+                range: None,
+                text: "\u{3042}".into(),
+                selection: None
+            }),
+            Step::Query {
+                generation: 2,
+                text: "x\u{3042}".into()
+            }
+        );
+        assert_eq!(launcher.input.marked(), Some(1..4));
+        assert_eq!(
+            launcher.apply(Event::Compose {
+                range: None,
+                text: "\u{3042}\u{3044}".into(),
+                selection: Some(0..6)
+            }),
+            Step::Query {
+                generation: 3,
+                text: "x\u{3042}\u{3044}".into()
+            }
+        );
+        assert_eq!(launcher.input.selected_text(), Some("\u{3042}\u{3044}"));
+        assert_eq!(
+            typed(&mut launcher, "\u{611B}"),
+            Step::Query {
+                generation: 4,
+                text: "x\u{611B}".into()
+            }
+        );
+        assert_eq!(launcher.input.marked(), None);
+        launcher.apply(Event::Compose {
+            range: None,
+            text: "k".into(),
+            selection: None,
+        });
+        assert_eq!(launcher.apply(Event::Escape), Step::Hide);
+        assert_eq!(launcher.input, Input::default());
+    }
+
+    #[test]
+    fn the_platform_can_replace_an_explicit_range() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "abcd");
+        assert_eq!(
+            launcher.apply(Event::Replace {
+                range: 1..3,
+                text: "X".into()
+            }),
+            Step::Query {
+                generation: 2,
+                text: "aXd".into()
+            }
+        );
     }
 
     #[test]
@@ -610,12 +879,15 @@ mod tests {
     }
 
     #[test]
-    fn clear_empties_the_text_and_the_list_in_one_step() {
+    fn delete_to_the_start_empties_the_text_and_the_list_in_one_step() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "abc");
         answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
-        assert_eq!(launcher.apply(Event::Clear), Step::Nothing);
-        assert_eq!(launcher.text, "");
+        assert_eq!(
+            launcher.apply(Event::Delete(Motion::LineStart)),
+            Step::Nothing
+        );
+        assert_eq!(launcher.text(), "");
         assert_eq!(launcher.hits, []);
         assert_eq!(launcher.generation, 2);
     }
@@ -664,7 +936,7 @@ mod tests {
             launcher.apply(ran(Effect::Copy { text: "4".into() }, 1)),
             Step::CopyAndHide("4".into())
         );
-        assert_eq!(launcher.text, "");
+        assert_eq!(launcher.text(), "");
         typed(&mut launcher, "x");
         assert_eq!(
             launcher.apply(ran(
@@ -683,7 +955,7 @@ mod tests {
             Step::Nothing
         );
         assert_eq!(launcher.message.as_deref(), Some("hi"));
-        assert_eq!(launcher.text, "x");
+        assert_eq!(launcher.text(), "x");
     }
 
     #[test]

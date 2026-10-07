@@ -60,6 +60,5 @@ to a manifest rather than a quiet import.
 
 ## Not yet
 
-A global hotkey, hiding on focus loss, a real text input, plugin calls off the UI thread,
-plugin restarts, and an application bundle. Each is a task on the board under its
-milestone.
+A global hotkey, hiding on focus loss, plugin calls off the UI thread, plugin restarts,
+and an application bundle. Each is a task on the board under its milestone.
