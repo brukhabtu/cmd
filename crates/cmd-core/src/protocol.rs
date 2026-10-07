@@ -5,12 +5,19 @@
 //! `docs/plugin-protocol.md`; this module is the Rust side of it, and
 //! `cmd_sdk.protocol` is the Python side.
 
+use std::ops::RangeInclusive;
+
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// The protocol version this crate speaks. Sent in `describe`, echoed back by the plugin.
+/// The protocol version this crate speaks: what the host sends in `describe`.
 pub const VERSION: u32 = 0;
+
+/// The versions a plugin may answer `describe` with and still be loaded. Version 1 only
+/// adds optional fields to what version 0 carries (decision 6), so a host that speaks 0
+/// runs a plugin that speaks 1 and simply does not read them.
+pub const ACCEPTED: RangeInclusive<u32> = 0..=1;
 
 /// One call from the host to a plugin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -154,6 +161,11 @@ pub fn result<T: DeserializeOwned>(response: Response) -> Result<T, DecodeError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_version_this_crate_speaks_is_one_it_accepts() {
+        assert!(ACCEPTED.contains(&VERSION));
+    }
 
     #[test]
     fn requests_are_one_json_line_with_method_and_params() {

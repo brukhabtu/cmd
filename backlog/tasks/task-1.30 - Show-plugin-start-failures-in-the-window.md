@@ -4,7 +4,7 @@ title: Show plugin start failures in the window
 status: In Progress
 assignee: []
 created_date: '2026-10-07 04:44'
-updated_date: '2026-10-07 05:04'
+updated_date: '2026-10-07 05:07'
 labels:
   - size-1
 milestone: m-2
@@ -40,4 +40,6 @@ Clippy in the scratch workspace; the line appears on a Mac.
 Landed: start_host returns the host beside every message it printed (manifest load errors, 'no plugins found in ...', start errors); LauncherView::new applies them as one Noted line, so the first render shows them under the input. Clippy passes in the scratch workspace; not yet seen on a Mac. Awaiting review.
 
 From the review: the note lived in the per-show state, which every hide resets, so a focus loss at launch (an app started at login) wiped it before anyone looked. Now the view keeps the start trouble and applies it on every show until the first key pressed at the window; the first press of the chord shows it. Still owed: seeing it on a Mac. Awaiting review.
+
+Reviewer at 11bc9ae: met in code; stays open only for the Mac check. To close: a person launches the app with a broken plugin (a directory with a bad cmd-plugin.toml is enough), lets the window lose focus, presses the chord, and sees the line under the input. Record it here, then close.
 <!-- SECTION:NOTES:END -->

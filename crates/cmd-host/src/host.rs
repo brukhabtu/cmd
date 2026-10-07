@@ -12,7 +12,7 @@ use std::sync::{Arc, PoisonError, RwLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cmd_core::protocol::{Description, Effect, Item, Items, Method, Ran, VERSION};
+use cmd_core::protocol::{ACCEPTED, Description, Effect, Item, Items, Method, Ran, VERSION};
 use cmd_core::query::{self, Scope};
 use notify::{RecursiveMode, Watcher};
 use thiserror::Error;
@@ -58,11 +58,12 @@ pub enum StartError {
         #[source]
         source: crate::process::CallError,
     },
-    #[error("{name} speaks protocol {theirs}, this host speaks {ours}")]
+    #[error("{name} speaks protocol {theirs}, this host accepts {oldest} to {newest}")]
     Protocol {
         name: String,
         theirs: u32,
-        ours: u32,
+        oldest: u32,
+        newest: u32,
     },
 }
 
@@ -318,11 +319,12 @@ fn handshake(
             name: name.clone(),
             source,
         })?;
-    if description.protocol != VERSION {
+    if !ACCEPTED.contains(&description.protocol) {
         return Err(StartError::Protocol {
             name,
             theirs: description.protocol,
-            ours: VERSION,
+            oldest: *ACCEPTED.start(),
+            newest: *ACCEPTED.end(),
         });
     }
     Ok((located, description, process))

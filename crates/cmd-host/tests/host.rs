@@ -388,6 +388,22 @@ fn a_broken_manifest_is_reported_and_the_old_code_keeps_answering() {
 }
 
 #[test]
+fn a_plugin_speaking_the_next_protocol_loads_and_an_unknown_one_is_refused_by_name() {
+    let (host, errors) = Host::start(
+        vec![common::speaking("next", 1), common::speaking("future", 2)],
+        Timeouts::default(),
+    );
+    assert_eq!(host.descriptions().count(), 1);
+    assert_eq!(host.name(0).as_deref(), Some("next"));
+    let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        messages,
+        ["future speaks protocol 2, this host accepts 0 to 1"]
+    );
+    assert_eq!(ask(&host, 1, "hello"), "next:hello");
+}
+
+#[test]
 fn blank_input_asks_nobody_and_the_plugin_is_still_described() {
     let host = host(&[("a", false)]);
     assert_eq!(host.descriptions().count(), 1);

@@ -61,3 +61,15 @@ pub fn located(name: &str, slow: bool) -> Located {
         },
     }
 }
+
+/// A fake that claims to speak protocol `protocol`, for the host's version check.
+pub fn speaking(name: &str, protocol: u32) -> Located {
+    let mut located = located(name, false);
+    let script = &mut located.manifest.command[2];
+    assert!(
+        script.contains("\"protocol\": 0"),
+        "the fake answers describe with protocol 0"
+    );
+    *script = script.replace("\"protocol\": 0", &format!("\"protocol\": {protocol}"));
+    located
+}

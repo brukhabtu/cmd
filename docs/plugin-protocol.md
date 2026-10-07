@@ -69,8 +69,11 @@ up is dropped.
 {"name": "calculator", "version": "0.1.0", "protocol": 0, "keyword": "calc"}
 ```
 
-`protocol` is the version the plugin speaks. The host refuses a plugin whose version differs
-from its own and says so. `keyword` is optional; see Routing.
+`protocol` is the version the plugin speaks; the request carried the version the host
+speaks. This host loads a plugin that speaks 0 or 1 and refuses any other version with a
+message naming both. Version 1 adds only optional fields (decision 6), so a host that
+speaks 0 runs a version 1 plugin and does not read them. `keyword` is optional; see
+Routing.
 
 ### Item
 

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use cmd_core::protocol::{Description, Items, Method, Ran, VERSION};
+use cmd_core::protocol::{ACCEPTED, Description, Items, Method, Ran, VERSION};
 use cmd_core::state::DEFAULT_ACTION;
 use cmd_host::{PluginProcess, Timeouts, manifest};
 
@@ -63,10 +63,12 @@ fn examine(request: &Request, timeouts: Timeouts) -> Result<(), String> {
         .call(Method::Describe { protocol: VERSION }, timeouts.describe)
         .map_err(|error| format!("describe: {error}"))?;
     println!("description: {}", pretty(&description));
-    if description.protocol != VERSION {
+    if !ACCEPTED.contains(&description.protocol) {
         return Err(format!(
-            "the plugin speaks protocol {}, this host speaks {VERSION}",
-            description.protocol
+            "the plugin speaks protocol {}, this host accepts {} to {}",
+            description.protocol,
+            ACCEPTED.start(),
+            ACCEPTED.end()
         ));
     }
     if let Some(text) = &request.query {

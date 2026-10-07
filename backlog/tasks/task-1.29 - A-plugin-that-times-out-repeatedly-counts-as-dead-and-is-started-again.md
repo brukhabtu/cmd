@@ -1,10 +1,10 @@
 ---
 id: TASK-1.29
 title: A plugin that times out repeatedly counts as dead and is started again
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 04:44'
-updated_date: '2026-10-07 05:04'
+updated_date: '2026-10-07 05:07'
 labels:
   - size-2
 milestone: m-2
@@ -22,7 +22,7 @@ Today is_gone covers exit and broken pipes only, so a wedged plugin costs a time
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 After N consecutive timeouts (N configured in Timeouts) the worker kills and restarts the process, with the same back-off and notice as a crash
+- [x] #1 After N consecutive timeouts (N configured in Timeouts) the worker kills and restarts the process, with the same back-off and notice as a crash
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,4 +44,6 @@ cargo test -p cmd-host --test host.
 Landed: Timeouts.hung_after (default 3, zero disables). The worker counts timeouts in a row from the call's own outcome (CallError::Timeout, not the message text); at the limit the answer reads '<timeout>, N times in a row; starting it again', the process counts as gone, and the usual back-off, restart and Restarted notice follow; dropping the old process kills it. Test a_plugin_that_keeps_timing_out_counts_as_hung_and_is_started_again with a 100 ms query timeout and hung_after 2. Awaiting review.
 
 From the review: back-off was forgotten on every timeout below the limit, so a plugin that hangs every time restarted at once each time. Now only an answered call (Health::Fine) forgets it; test a_plugin_that_hangs_again_waits_longer_before_its_second_restart sees restart two carry attempt 2 and arrive after the 2 s step. Awaiting review.
+
+Closed on the reviewer's verdict against commit 11bc9ae. Noted, not blocking: health_of counts protocol and plugin errors as a healthy call, so a plugin that writes garbage and then dies resets its back-off on each garbage reply; accepted as an edge case.
 <!-- SECTION:NOTES:END -->
