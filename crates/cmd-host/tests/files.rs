@@ -6,7 +6,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use cmd_core::protocol::Effect;
+use cmd_core::protocol::{Effect, Icon};
 use cmd_core::state::DEFAULT_ACTION;
 use cmd_host::{Host, HostEvent, Timeouts, manifest};
 
@@ -99,6 +99,17 @@ fn files_lists_names_with_their_folders_and_enter_reveals_while_the_second_actio
         items[1].subtitle.as_deref(),
         Some(folder_as_shown(&found[0]).as_str())
     );
+    // Each row carries its own file's icon, named by the path the row opens.
+    for item in &items {
+        assert_eq!(
+            item.icon,
+            Some(Icon::Path {
+                path: item.id.clone()
+            }),
+            "{}",
+            item.title
+        );
+    }
     for item in &items {
         let actions: Vec<&str> = item
             .actions
