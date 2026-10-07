@@ -5,7 +5,7 @@ status: Draft
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 12:00'
+updated_date: '2026-10-07 12:04'
 labels:
   - size-3
 dependencies: []
@@ -42,4 +42,6 @@ Five eval cases written under .claude/plugins/cmd-dev/evals/gpui-for-cmd-{timer,
 Correction from the design review: gpui 0.2.2 re-exports smol::Timer unconditionally (src/gpui.rs:94) and 'use gpui::Timer' compiles in the scratch workspace, so the 'feature-gated Timer' miss recorded above does not hold; the evidence is the observe_window_activation miss, the Linux recipe, and the repeated lookups. The skill's Timer bullet is now the crate's convention, not a fact about gpui; the libc line names the version in the tree (0.2.190). Cases cut to three (focus-loss, linux-check, keys): the timer case rested on the false miss and the lints case would score the same without the skill; graders widened so a correct answer with the skill cannot fail on wording.
 
 Milestone 2 skill review, on branch skills-milestone-2: SKILL.md updated with the gpui 0.2.2 facts the builders verified and recorded in tasks 1.10, 1.12, 1.24 and 1.27 (the input handler's key routing and why key_char must not be inserted, displays at origin zero and display_id placement, Blurred and appearance, assets and RenderImage, two more pedantic lints); the Displays bullet, wrong against the source, is replaced. The keys case is rewritten to the input handler, since a correct answer no longer reads key_char. Promote only when the eval gate passes on a pull request.
+
+Merged into ccr-16512bde-x72oqp by pull request #1 (merge commit fa389ae) at the owner's request, before the eval gate could run: the repository has no CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret. Not accepted and not promoted: the gate is owed once the secret exists (re-run skills.yml by workflow_dispatch).
 <!-- SECTION:NOTES:END -->
