@@ -65,3 +65,61 @@ fn the_calculator_answers_through_the_real_process() {
         other => panic!("unexpected {other:?}"),
     }
 }
+
+#[test]
+fn a_keyword_plugin_sees_only_its_keyword_and_can_ask_the_host_to_open_something() {
+    let found = manifest::discover(&plugins_dir()).expect("plugins directory exists");
+    let located: Vec<_> = found
+        .into_iter()
+        .map(|entry| entry.expect("every manifest is valid"))
+        .collect();
+    let (host, errors) = Host::start(located, Timeouts::default());
+    assert!(errors.is_empty(), "{errors:?}");
+    let websearch = host
+        .descriptions()
+        .position(|description| description.name == "websearch")
+        .expect("websearch started");
+    let events = host.events();
+
+    // The keyword routes to websearch alone, with the keyword stripped.
+    assert_eq!(host.query(1, "web rust gpui"), vec![websearch]);
+    let items = match events.recv_blocking().unwrap() {
+        HostEvent::Answered {
+            generation: 1,
+            plugin,
+            result: Ok(items),
+        } if plugin == websearch => items,
+        other => panic!("unexpected {other:?}"),
+    };
+    assert_eq!(items[0].id, "https://duckduckgo.com/?q=rust+gpui");
+    assert_eq!(items[0].actions.len(), 2);
+
+    // The second action copies; the first (Enter) opens.
+    host.run(1, websearch, &items[0].id, &items[0].actions[1].id)
+        .unwrap();
+    assert_eq!(
+        events.recv_blocking().unwrap(),
+        HostEvent::Ran {
+            generation: 1,
+            plugin: websearch,
+            result: Ok(Effect::Copy {
+                text: items[0].id.clone()
+            })
+        }
+    );
+    host.run(1, websearch, &items[0].id, DEFAULT_ACTION)
+        .unwrap();
+    assert_eq!(
+        events.recv_blocking().unwrap(),
+        HostEvent::Ran {
+            generation: 1,
+            plugin: websearch,
+            result: Ok(Effect::Open {
+                target: items[0].id.clone()
+            })
+        }
+    );
+
+    // A query without the keyword never reaches a keyword plugin.
+    assert!(!host.query(2, "rust gpui").contains(&websearch));
+}
