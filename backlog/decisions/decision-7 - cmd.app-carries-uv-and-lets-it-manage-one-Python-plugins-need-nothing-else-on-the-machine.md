@@ -31,6 +31,7 @@ figures are owed before task 1.23 closes.
 | The uv binary | 66 MB |
 | The `cmd` binary itself, release build | 26 MB |
 | The bundle: `cmd` plus uv | 92 MB; with a Python inside as well, 204 MB |
+| The real bundle, built by CI on macOS arm64 (run 37613477907) | 44 MB, of which uv 34 MB; zipped 21 MB |
 
 The Python is the only expensive thing: a machine's first launch costs one download,
 once, and every plugin after that costs a tenth of a second or so on each launch.

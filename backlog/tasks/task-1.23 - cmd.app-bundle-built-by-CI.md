@@ -4,7 +4,7 @@ title: cmd.app bundle built by CI
 status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 11:18'
+updated_date: '2026-10-07 11:45'
 labels:
   - size-5
 milestone: m-3
@@ -39,4 +39,6 @@ Evidence on Linux: scripts/check.sh 'all checks passed'; scratch-workspace cargo
 Owed: the first macOS CI run of this branch is the proof of both criteria and of become_accessory compiling (clippy and the release build there); then gh run download the cmd.app artifact and check file(1) reports Mach-O arm64 for cmd and uv, mode 755 on both, and check_bundle.py exits 0 on it. The .sha256 sidecar format is unverified from here; if the first run fails there, pin the hash in bundle.sh. On a Mac, a person: no Dock icon and no menu bar, the panel still taking the keyboard on Option-Space, the icon in Finder and the Dock at 16 and 32 px, opening after xattr -dr com.apple.quarantine (unsigned until 1.25), and 12.0 as a true floor. uv 0.12.23 knows only 3.15.0rc3 for darwin aarch64: re-pin UV_VERSION when a uv release lists 3.15.0. The bundle carries no plugins (decision 8: cmd plugin install), so a fresh bundle reports no plugins found; and until TASK-1.41 (the runtime wiring from decision 7, filed here) lands, an installed plugin resolves uv from launchd's PATH, not the bundle's. arm64 uv binary 35.5 MB; the bundle total comes from du -sh in the CI log. Intel Macs are not covered: the artifact is arm64 only.
 
 Closed on the reviewer's verdict (CLOSE) against worktree commit 3f7150c, merged into the branch with the reviewer's should-fix taken (no pipe into head under pipefail in scripts/bundle.sh). The runtime wiring from decision 7 is TASK-1.41 (renumbered from 1.39 at the merge). Owed: the first macOS CI run of the bundle job, then gh run download of the artifact and check_bundle.py on it; on a Mac, no Dock icon or menu bar, the panel still taking the keyboard on Option-Space, the icon in Finder, and opening after xattr -dr com.apple.quarantine (unsigned until 1.25).
+
+Proof from CI run 37613477907 (commit ea337f6) on macos-latest arm64: cargo-bundle 0.12.0 built cmd.app from the release build (5 m 46 s); uv 0.12.23 checked against its published sha256 into Contents/MacOS; plutil says the Info.plist is OK, LSUIElement true; check_bundle.py: 'the bundle is well formed'; cmd.app is 44 MB with uv 34 MB, and the artifact cmd.app.zip (21 MB) is at https://github.com/brukhabtu/cmd/actions/runs/37613477907/artifacts/11479459139. uv 0.12.23 would fetch cpython-3.15.0rc3 for macOS aarch64. Still owed on a Mac: launching the downloaded bundle (after xattr -dr com.apple.quarantine).
 <!-- SECTION:NOTES:END -->

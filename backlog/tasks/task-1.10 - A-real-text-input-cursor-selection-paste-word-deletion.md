@@ -4,7 +4,7 @@ title: 'A real text input: cursor, selection, paste, word deletion'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 11:19'
+updated_date: '2026-10-07 11:45'
 labels:
   - size-5
 milestone: m-1
@@ -47,4 +47,6 @@ Follow-ups filed as TASK-1.40 (Cmd-X, forward Delete, Home and End, mouse, blink
 Closed for the Linux criteria on the reviewer's verdict (CLOSE) against worktree commit 126f3ee, merged as f4b3155 (with the one semantic conflict against 1.32 fixed: text is a method now). AC #2 stays unticked: it is a hand check on a Mac with the Japanese (Romaji) input source, and no person has run it. Owed with it: no character typed twice, key repeat, the cursor, selection and underline visible in both appearances, Cmd-C and Cmd-V against the real pasteboard, and Escape during a composition cancelling the composition, not the window. Follow-ups are TASK-1.40 (renumbered from 1.39 at the merge).
 
 Status kept In Progress rather than Done: criteria 1 and 3 are met and ticked; criterion 2 is the hand check on a Mac and closes when a person records it here.
+
+First macOS compile of the merged text input: CI run 37613477907 on macos-latest, cargo clippy -p cmd-app --all-targets clean and the release build linked. The hand check on a Mac is still owed.
 <!-- SECTION:NOTES:END -->
