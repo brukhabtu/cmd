@@ -280,7 +280,7 @@ fn main() {
                 view
             })
             .expect("the launcher window opens");
-        cx.spawn(async move |cx| show_on_press(pressed, window, cx).await)
+        cx.spawn(async move |cx| show_on_press(presses, window, cx).await)
             .detach();
         cx.activate(true);
     });
