@@ -4,6 +4,7 @@ title: Start trouble and the starting line share the status line
 status: To Do
 assignee: []
 created_date: '2026-10-07 11:13'
+updated_date: '2026-10-07 11:54'
 labels:
   - size-1
 milestone: m-2
@@ -22,3 +23,9 @@ From the review of 1.32: status_line shows state.message (start trouble, in the 
 <!-- AC:BEGIN -->
 - [ ] #1 With one plugin failing and another still starting, the window shows both the failure and the starting name
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+A build was started at 11:53 and stopped unreviewed at 11:56 when the run wound down; nothing from it was merged. Plan for the next session: scratchpad plan in the 1.39 notes above is the shape (a pure status_parts helper with tests, both lines shown).
+<!-- SECTION:NOTES:END -->

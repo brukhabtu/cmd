@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-07 11:00'
+updated_date: '2026-10-07 11:54'
 labels:
   - size-2
 milestone: m-2
@@ -27,3 +28,9 @@ Task 1.10 built the query line on cmd_core::input::Input with Backspace and its 
 - [ ] #1 Cmd-X, forward Delete, Option-Delete, Home and End do what a Cocoa text field does, each a row in decision 4
 - [ ] #2 A click places the cursor and a drag selects, through the state machine
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+A build was started at 11:53 and stopped unreviewed at 11:56 when the run wound down; nothing from it was merged. Next session: criterion 1 (Cmd-X, forward Delete, Option-Delete, Home, End, Ctrl-A, Ctrl-E) first, read gpui's key names from its source; criterion 2 (mouse) as its own slice.
+<!-- SECTION:NOTES:END -->
