@@ -4,7 +4,7 @@ title: Plugin calls off the UI thread
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 04:23'
+updated_date: '2026-10-07 04:31'
 labels:
   - size-3
 milestone: m-1
@@ -39,4 +39,6 @@ cargo test green here; clippy green in the scratch workspace and on macOS CI.
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented: cmd-core keeps per-plugin answers for the current generation (Asked, Answered, Unanswered events; pending is who still owes an answer); cmd-host runs one worker thread per plugin with commands over std mpsc and events over an async-channel, collapsing queued queries to the newest; cmd-app relays host events through a foreground task and shows 'waiting on <plugin>' after 300 ms. Host functional tests cover event delivery, a slow plugin delaying only itself, stale queries collapsing, run effects and error text; the adapter test runs on the new API. Clippy -D warnings green for cmd-app in the scratch workspace. Awaiting macOS CI and review.
+
+CI run 9 (cbe7b68) green on both jobs. Review fixes: runs carry the generation they were issued in and a run whose effect arrives after Escape or more typing is dropped (core test a_run_that_finishes_after_escape_or_more_typing_is_dropped); Enter while a run is in flight does nothing (busy flag, test enter_twice_runs_once_until_the_run_finishes); plugin names are added to error text once, in the app; the host suite has a deterministic case where an answer arrives after a newer query was sent; the misnamed test is renamed.
 <!-- SECTION:NOTES:END -->

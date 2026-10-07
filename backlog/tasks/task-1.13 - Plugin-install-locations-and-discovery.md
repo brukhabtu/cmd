@@ -4,7 +4,7 @@ title: Plugin install locations and discovery
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 04:24'
+updated_date: '2026-10-07 04:26'
 labels:
   - size-2
 milestone: m-2
@@ -32,3 +32,9 @@ The macOS path is built from HOME; no dirs crate.
 ### Proof
 cargo test -p cmd-host; scripts/check.sh.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented in 668dee8: manifest::plugin_dirs (CMD_PLUGINS list, else the per-user directory and ./plugins when present), manifest::discover_all (skips a missing root, reports a bad manifest with its path beside the plugins that loaded), the app uses both, README names the locations. Unit tests on a scratch directory. Awaiting review.
+<!-- SECTION:NOTES:END -->

@@ -76,16 +76,24 @@ pub enum HostEvent {
         plugin: usize,
         result: Result<Vec<Item>, String>,
     },
-    /// The effect of a run, or why it did not run.
+    /// The effect of the run issued in this generation, or why it did not run.
     Ran {
+        generation: u64,
         plugin: usize,
         result: Result<Effect, String>,
     },
 }
 
 enum Command {
-    Query { generation: u64, text: String },
-    Run { item: String, action: String },
+    Query {
+        generation: u64,
+        text: String,
+    },
+    Run {
+        generation: u64,
+        item: String,
+        action: String,
+    },
 }
 
 struct Plugin {
@@ -184,33 +192,36 @@ impl Host {
                 let _ = self.events.send_blocking(HostEvent::Answered {
                     generation,
                     plugin: route.plugin,
-                    result: Err(format!(
-                        "{}: its worker has stopped",
-                        self.plugins[route.plugin].description.name
-                    )),
+                    result: Err("its worker has stopped".to_string()),
                 });
             }
         }
         asked
     }
 
-    /// Ask a plugin to run an action. The effect arrives as a [`HostEvent::Ran`].
-    pub fn run(&self, plugin: usize, item: &str, action: &str) -> Result<(), RunError> {
+    /// Ask a plugin to run an action. The effect arrives as a [`HostEvent::Ran`] tagged
+    /// with `generation`, so the window can drop one that belongs to an earlier state.
+    pub fn run(
+        &self,
+        generation: u64,
+        plugin: usize,
+        item: &str,
+        action: &str,
+    ) -> Result<(), RunError> {
         let running = self
             .plugins
             .get(plugin)
             .ok_or(RunError::NoSuchPlugin(plugin))?;
         let command = Command::Run {
+            generation,
             item: item.to_string(),
             action: action.to_string(),
         };
         if running.commands.send(command).is_err() {
             let _ = self.events.send_blocking(HostEvent::Ran {
+                generation,
                 plugin,
-                result: Err(format!(
-                    "{}: its worker has stopped",
-                    running.description.name
-                )),
+                result: Err("its worker has stopped".to_string()),
             });
         }
         Ok(())
@@ -276,7 +287,12 @@ fn serve(
                         .map(|items| items.items)
                         .map_err(|error| error.to_string()),
                 },
-                Command::Run { item, action } => HostEvent::Ran {
+                Command::Run {
+                    generation,
+                    item,
+                    action,
+                } => HostEvent::Ran {
+                    generation,
                     plugin,
                     result: process
                         .call::<Ran>(Method::Run { item, action }, timeouts.run)

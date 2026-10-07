@@ -20,10 +20,13 @@ pub struct Launcher {
     pub selected: usize,
     /// A line from a plugin or the host, shown under the input until the text changes.
     pub message: Option<String>,
-    /// Bumped on every change to the text, so answers to an older query are dropped.
+    /// Bumped on every change to the text and on every reset, so answers and effects
+    /// that belong to an earlier state are dropped when they arrive.
     pub generation: u64,
     /// Plugins asked in this generation that have not answered yet.
     pub pending: Vec<usize>,
+    /// A run is in flight. Enter does nothing until it finishes or the text changes.
+    pub busy: bool,
     /// What each plugin answered in this generation, by plugin index. `hits` is their merge.
     answers: BTreeMap<usize, Vec<Item>>,
 }
@@ -58,10 +61,16 @@ pub enum Event {
         plugin: usize,
         error: String,
     },
-    /// The host finished a [`Step::Run`].
-    Ran(Effect),
-    /// The host could not complete a step.
-    Failed(String),
+    /// The host finished the [`Step::Run`] issued in this generation.
+    Ran {
+        generation: u64,
+        effect: Effect,
+    },
+    /// The host could not finish the [`Step::Run`] issued in this generation.
+    Failed {
+        generation: u64,
+        message: String,
+    },
 }
 
 /// What the shell must do next.
@@ -71,7 +80,9 @@ pub enum Step {
         generation: u64,
         text: String,
     },
+    /// Ask a plugin to run an action. The answer must come back tagged with `generation`.
     Run {
+        generation: u64,
         plugin: usize,
         item: String,
         action: String,
@@ -155,26 +166,46 @@ impl Launcher {
                 }
                 Step::Nothing
             }
-            Event::Ran(effect) => self.finish(effect),
-            Event::Failed(message) => {
-                self.message = Some(message);
+            Event::Ran { generation, effect } => {
+                if generation != self.generation {
+                    return Step::Nothing;
+                }
+                self.busy = false;
+                self.finish(effect)
+            }
+            Event::Failed {
+                generation,
+                message,
+            } => {
+                if generation == self.generation {
+                    self.busy = false;
+                    self.message = Some(message);
+                }
                 Step::Nothing
             }
         }
     }
 
-    /// Run the first action of the item at `index`, or nothing when there is no such item.
-    fn run_at(&self, index: usize) -> Step {
+    /// Run the first action of the item at `index`, or nothing when there is no such item
+    /// or a run is already in flight.
+    fn run_at(&mut self, index: usize) -> Step {
+        if self.busy {
+            return Step::Nothing;
+        }
         match self.hits.get(index) {
-            Some(hit) => Step::Run {
-                plugin: hit.plugin,
-                item: hit.item.id.clone(),
-                action: hit
-                    .item
-                    .actions
-                    .first()
-                    .map_or_else(|| DEFAULT_ACTION.to_string(), |action| action.id.clone()),
-            },
+            Some(hit) => {
+                self.busy = true;
+                Step::Run {
+                    generation: self.generation,
+                    plugin: hit.plugin,
+                    item: hit.item.id.clone(),
+                    action: hit
+                        .item
+                        .actions
+                        .first()
+                        .map_or_else(|| DEFAULT_ACTION.to_string(), |action| action.id.clone()),
+                }
+            }
             None => Step::Nothing,
         }
     }
@@ -204,6 +235,7 @@ impl Launcher {
         self.generation += 1;
         self.selected = 0;
         self.message = None;
+        self.busy = false;
         self.pending.clear();
         self.answers.clear();
         if self.text.trim().is_empty() {
@@ -266,6 +298,15 @@ mod tests {
                 plugin,
                 items,
             });
+        }
+    }
+
+    fn run(generation: u64, plugin: usize, item: &str, action: &str) -> Step {
+        Step::Run {
+            generation,
+            plugin,
+            item: item.into(),
+            action: action.into(),
         }
     }
 
@@ -412,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_runs_the_first_action_or_the_default() {
+    fn submit_runs_the_first_action_or_the_default_tagged_with_the_generation() {
         let mut launcher = Launcher::default();
         assert_eq!(launcher.apply(Event::Submit), Step::Nothing);
         typed(&mut launcher, "a");
@@ -427,21 +468,77 @@ mod tests {
         );
         assert_eq!(
             launcher.apply(Event::Submit),
-            Step::Run {
-                plugin: 3,
-                item: "plain".into(),
-                action: DEFAULT_ACTION.into()
-            }
+            run(1, 3, "plain", DEFAULT_ACTION)
         );
+        launcher.apply(Event::Failed {
+            generation: 1,
+            message: "no".into(),
+        });
         launcher.apply(Event::Down);
+        assert_eq!(launcher.apply(Event::Submit), run(1, 4, "rich", "copy"));
+    }
+
+    #[test]
+    fn enter_twice_runs_once_until_the_run_finishes() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "x", vec![])]);
         assert_eq!(
             launcher.apply(Event::Submit),
-            Step::Run {
-                plugin: 4,
-                item: "rich".into(),
-                action: "copy".into()
-            }
+            run(1, 0, "x", DEFAULT_ACTION)
         );
+        assert!(launcher.busy);
+        assert_eq!(launcher.apply(Event::Submit), Step::Nothing);
+        assert_eq!(launcher.apply(Event::Pick(0)), Step::Nothing);
+        launcher.apply(Event::Ran {
+            generation: 1,
+            effect: Effect::Show {
+                text: "done".into(),
+            },
+        });
+        assert!(!launcher.busy);
+        assert_eq!(
+            launcher.apply(Event::Submit),
+            run(1, 0, "x", DEFAULT_ACTION)
+        );
+    }
+
+    #[test]
+    fn a_run_that_finishes_after_escape_or_more_typing_is_dropped() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "x", vec![])]);
+        launcher.apply(Event::Submit);
+        assert_eq!(launcher.apply(Event::Escape), Step::Hide);
+        assert_eq!(
+            launcher.apply(Event::Ran {
+                generation: 1,
+                effect: Effect::Open {
+                    target: "https://a".into()
+                }
+            }),
+            Step::Nothing
+        );
+        typed(&mut launcher, "b");
+        answered(&mut launcher, 3, &[hit(0, "y", vec![])]);
+        launcher.apply(Event::Submit);
+        typed(&mut launcher, "c");
+        assert!(!launcher.busy, "typing on cancels the run");
+        assert_eq!(
+            launcher.apply(Event::Ran {
+                generation: 3,
+                effect: Effect::Copy { text: "y".into() }
+            }),
+            Step::Nothing
+        );
+        assert_eq!(
+            launcher.apply(Event::Failed {
+                generation: 3,
+                message: "late".into()
+            }),
+            Step::Nothing
+        );
+        assert_eq!(launcher.message, None);
     }
 
     #[test]
@@ -466,13 +563,13 @@ mod tests {
         );
         assert_eq!(
             launcher.apply(Event::Pick(1)),
-            Step::Run {
-                plugin: 1,
-                item: "y".into(),
-                action: DEFAULT_ACTION.into()
-            }
+            run(1, 1, "y", DEFAULT_ACTION)
         );
         assert_eq!(launcher.selected, 0);
+        launcher.apply(Event::Failed {
+            generation: 1,
+            message: "no".into(),
+        });
         assert_eq!(launcher.apply(Event::Pick(7)), Step::Nothing);
     }
 
@@ -494,22 +591,27 @@ mod tests {
     fn effects_become_shell_steps() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "x");
+        let ran = |effect: Effect, generation: u64| Event::Ran { generation, effect };
         assert_eq!(
-            launcher.apply(Event::Ran(Effect::Copy { text: "4".into() })),
+            launcher.apply(ran(Effect::Copy { text: "4".into() }, 1)),
             Step::CopyAndHide("4".into())
         );
         assert_eq!(launcher.text, "");
         typed(&mut launcher, "x");
         assert_eq!(
-            launcher.apply(Event::Ran(Effect::Open {
-                target: "https://a".into()
-            })),
+            launcher.apply(ran(
+                Effect::Open {
+                    target: "https://a".into()
+                },
+                3
+            )),
             Step::OpenAndHide("https://a".into())
         );
-        assert_eq!(launcher.apply(Event::Ran(Effect::Close)), Step::Hide);
+        typed(&mut launcher, "x");
+        assert_eq!(launcher.apply(ran(Effect::Close, 5)), Step::Hide);
         typed(&mut launcher, "x");
         assert_eq!(
-            launcher.apply(Event::Ran(Effect::Show { text: "hi".into() })),
+            launcher.apply(ran(Effect::Show { text: "hi".into() }, 7)),
             Step::Nothing
         );
         assert_eq!(launcher.message.as_deref(), Some("hi"));
@@ -520,7 +622,10 @@ mod tests {
     fn a_failure_is_shown_until_the_text_changes() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "x");
-        launcher.apply(Event::Failed("plugin timed out".into()));
+        launcher.apply(Event::Failed {
+            generation: 1,
+            message: "plugin timed out".into(),
+        });
         assert_eq!(launcher.message.as_deref(), Some("plugin timed out"));
         typed(&mut launcher, "y");
         assert_eq!(launcher.message, None);

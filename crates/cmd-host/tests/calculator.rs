@@ -44,10 +44,12 @@ fn the_calculator_answers_through_the_real_process() {
     };
     assert_eq!(items[0].title, "8");
 
-    host.run(calculator, &items[0].id, DEFAULT_ACTION).unwrap();
+    host.run(1, calculator, &items[0].id, DEFAULT_ACTION)
+        .unwrap();
     assert_eq!(
         events.recv_blocking().unwrap(),
         HostEvent::Ran {
+            generation: 1,
             plugin: calculator,
             result: Ok(Effect::Copy { text: "8".into() })
         }

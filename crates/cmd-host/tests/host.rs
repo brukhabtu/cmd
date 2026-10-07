@@ -22,6 +22,12 @@ fn next(host: &Host) -> HostEvent {
     host.events().recv_blocking().expect("the host is alive")
 }
 
+fn generation_of(event: &HostEvent) -> u64 {
+    match event {
+        HostEvent::Answered { generation, .. } | HostEvent::Ran { generation, .. } => *generation,
+    }
+}
+
 #[test]
 fn answers_arrive_as_events_with_their_generation_and_plugin() {
     let host = host(&[("a", false), ("b", false)]);
@@ -38,7 +44,9 @@ fn answers_arrive_as_events_with_their_generation_and_plugin() {
                 result: Ok(items),
                 ..
             } => items[0].title.clone(),
-            other => panic!("unexpected {other:?}"),
+            other @ (HostEvent::Answered { .. } | HostEvent::Ran { .. }) => {
+                panic!("unexpected {other:?}")
+            }
         })
         .collect();
     assert_eq!(titles, vec!["a:hello", "b:hello"]);
@@ -74,14 +82,10 @@ fn queries_that_piled_up_behind_a_slow_call_collapse_to_the_newest() {
     // Generation 1 is answered only if the worker had already picked it up; 2 never is.
     let mut generations = Vec::new();
     loop {
-        match next(&host) {
-            HostEvent::Answered { generation, .. } => {
-                generations.push(generation);
-                if generation == 3 {
-                    break;
-                }
-            }
-            HostEvent::Ran { .. } => panic!("a run was never asked for"),
+        let generation = generation_of(&next(&host));
+        generations.push(generation);
+        if generation == 3 {
+            break;
         }
     }
     assert!(
@@ -89,26 +93,39 @@ fn queries_that_piled_up_behind_a_slow_call_collapse_to_the_newest() {
         "{generations:?}"
     );
     host.query(4, "d");
-    assert!(matches!(
-        next(&host),
-        HostEvent::Answered { generation: 4, .. }
-    ));
+    assert_eq!(generation_of(&next(&host)), 4);
 }
 
 #[test]
-fn a_run_comes_back_as_an_effect() {
+fn an_answer_can_arrive_after_a_newer_query_was_sent_and_names_its_generation() {
+    let host = host(&[("slow", true)]);
+    host.query(1, "a");
+    // The worker is inside the 300 ms call for generation 1 when generation 2 is sent.
+    std::thread::sleep(Duration::from_millis(100));
+    host.query(2, "b");
+    assert_eq!(
+        generation_of(&next(&host)),
+        1,
+        "the stale answer still arrives, tagged"
+    );
+    assert_eq!(generation_of(&next(&host)), 2);
+}
+
+#[test]
+fn a_run_comes_back_as_an_effect_tagged_with_its_generation() {
     let host = host(&[("a", false)]);
-    host.run(0, "the item", "default").unwrap();
+    host.run(9, 0, "the item", "default").unwrap();
     assert_eq!(
         next(&host),
         HostEvent::Ran {
+            generation: 9,
             plugin: 0,
             result: Ok(Effect::Copy {
                 text: "the item".into()
             })
         }
     );
-    assert!(host.run(3, "x", "default").is_err());
+    assert!(host.run(9, 3, "x", "default").is_err());
 }
 
 #[test]
@@ -119,12 +136,14 @@ fn a_plugin_that_fails_to_answer_says_so_in_the_event() {
         HostEvent::Answered {
             result: Err(error), ..
         } => assert!(error.contains("boom: no"), "{error}"),
-        other => panic!("unexpected {other:?}"),
+        other @ (HostEvent::Answered { .. } | HostEvent::Ran { .. }) => {
+            panic!("unexpected {other:?}")
+        }
     }
 }
 
 #[test]
-fn a_keyword_plugin_is_asked_only_for_its_keyword() {
+fn blank_input_asks_nobody_and_the_plugin_is_still_described() {
     let host = host(&[("a", false)]);
     assert_eq!(host.descriptions().count(), 1);
     assert_eq!(host.name(0), Some("a"));

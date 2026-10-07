@@ -21,8 +21,13 @@ The launcher owns these keys and no others:
 | Enter | run the selected item's first action | Enter with nothing selected does nothing |
 | Up, Down | move the selection | Clamped to the list |
 | Backspace | delete backwards | Cmd-Backspace clears the whole text |
-| Cmd-1 to Cmd-9 | run the nth visible item | Milestone 1, with the window work |
+| Cmd-1 to Cmd-9 | run the nth item in the list | Counted over the whole list until the list scrolls |
+| Cmd-K | open the actions of the selected item | Reserved for the actions menu that protocol v1's multiple actions need (task 1.16); dropped until then |
 | Cmd-, | open settings | Reserved; nothing until there are settings |
+
+An owned key answers with or without a modifier held, except where the table says a
+modifier changes it (Cmd-Backspace). So Cmd-Enter runs and Cmd-Down moves the selection;
+nothing is lost, and the person is never surprised by a key that does nothing.
 
 Everything that produces a character reaches the text, taken from the keystroke's
 `key_char`, which carries the typed character after modifiers and layout are applied.
@@ -42,7 +47,7 @@ the id of the item and action the person chose.
 
 - `Event` in `crates/cmd-core/src/state.rs` is the whole vocabulary; a new launcher key is
   a new variant and a row in this table, never a special case in the view.
-- Cmd-number needs the view to know how many rows are visible, which arrives with the
-  window work in milestone 1.
+- Cmd-number counts over the whole list today. Once the list scrolls (task 1.12), it must
+  count visible rows, which the view then has to tell the state machine.
 - A plugin that wants a key of its own (Tab to complete, say) is a protocol change, and a
   candidate for protocol v1 (task 1.16), not a view hack.

@@ -13,9 +13,9 @@ use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
 use gpui::{
-    App, Application, AsyncApp, Bounds, ClipboardItem, Context, FocusHandle, KeyDownEvent, Render,
-    SharedString, Window, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, px, rgb,
-    size,
+    App, Application, AsyncApp, Bounds, ClipboardItem, Context, FocusHandle, KeyDownEvent, Pixels,
+    Render, SharedString, Window, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
+    point, px, rgb, size,
 };
 
 const WIDTH: f32 = 680.0;
@@ -54,6 +54,7 @@ impl LauncherView {
     }
 
     /// A worker answered or ran something; the state machine decides what it means.
+    /// Errors get the plugin's name here, and only here.
     fn on_host_event(&mut self, event: HostEvent, cx: &mut Context<Self>) {
         let event = match event {
             HostEvent::Answered {
@@ -75,12 +76,18 @@ impl LauncherView {
                 error: format!("{}: {error}", self.plugin_name(plugin)),
             },
             HostEvent::Ran {
-                result: Ok(effect), ..
-            } => Event::Ran(effect),
+                generation,
+                result: Ok(effect),
+                ..
+            } => Event::Ran { generation, effect },
             HostEvent::Ran {
+                generation,
                 plugin,
                 result: Err(error),
-            } => Event::Failed(format!("{}: {error}", self.plugin_name(plugin))),
+            } => Event::Failed {
+                generation,
+                message: format!("{}: {error}", self.plugin_name(plugin)),
+            },
         };
         self.handle(event, cx);
     }
@@ -101,6 +108,15 @@ impl LauncherView {
             .map(|plugin| self.plugin_name(*plugin))
             .collect();
         Some(format!("waiting on {}", names.join(", ")))
+    }
+
+    /// The chord: bring the window up, or put it away if it is already up.
+    fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shown {
+            self.hide(cx);
+        } else {
+            self.show(window, cx);
+        }
     }
 
     /// Bring the window up with an empty, focused input.
@@ -166,12 +182,16 @@ impl LauncherView {
                 .detach();
             }
             Step::Run {
+                generation,
                 plugin,
                 item,
                 action,
             } => {
-                if let Err(error) = self.host.run(plugin, &item, &action) {
-                    self.state.apply(Event::Failed(error.to_string()));
+                if let Err(error) = self.host.run(generation, plugin, &item, &action) {
+                    self.state.apply(Event::Failed {
+                        generation,
+                        message: error.to_string(),
+                    });
                 }
             }
             Step::Hide => self.put_away(cx),
@@ -328,17 +348,36 @@ async fn relay_host_events(
     }
 }
 
-/// Show the window on every press until the channel or the window goes away.
+/// Toggle the window on every press until the channel or the window goes away.
 async fn show_on_press(
     presses: async_channel::Receiver<()>,
     window: WindowHandle<LauncherView>,
     cx: &mut AsyncApp,
 ) {
     while presses.recv().await.is_ok() {
-        let shown = window.update(cx, LauncherView::show);
+        let shown = window.update(cx, LauncherView::toggle);
         if shown.is_err() {
             break;
         }
+    }
+}
+
+/// Where the launcher sits: centred across the primary display, a third of the way down.
+/// Falls back to the centre of the screen when no display is reported.
+fn launcher_bounds(cx: &App) -> Bounds<Pixels> {
+    let size = size(px(WIDTH), px(HEIGHT));
+    match cx.primary_display() {
+        Some(display) => {
+            let screen = display.bounds();
+            Bounds {
+                origin: point(
+                    screen.origin.x + (screen.size.width - size.width) / 2.0,
+                    screen.origin.y + screen.size.height / 3.0 - size.height / 2.0,
+                ),
+                size,
+            }
+        }
+        None => Bounds::centered(None, size, cx),
     }
 }
 
@@ -348,7 +387,7 @@ fn main() {
     let (notify, presses) = async_channel::bounded(1);
     let _hotkey = register_hotkey(notify);
     Application::new().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(WIDTH), px(HEIGHT)), cx);
+        let bounds = launcher_bounds(cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: None,
