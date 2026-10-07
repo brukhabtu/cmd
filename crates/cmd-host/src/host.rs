@@ -75,6 +75,30 @@ pub enum StartError {
     },
 }
 
+impl StartError {
+    /// The plugin this is about, as its manifest names it, so a caller can strike it off a
+    /// list of plugins still starting without reading the message.
+    pub fn name(&self) -> &str {
+        match self {
+            StartError::Spawn { name, .. }
+            | StartError::Describe { name, .. }
+            | StartError::Protocol { name, .. }
+            | StartError::Duplicate { name, .. } => name,
+        }
+    }
+}
+
+/// What [`Host::start_reporting`] says about each plugin, in the order the plugins were
+/// given, each before the next handshake begins.
+#[derive(Debug)]
+pub enum Startup {
+    /// The plugin described itself and has a worker; `plugin` is its index in the host
+    /// and `name` is what its manifest calls it, as in [`StartError::name`].
+    Up { plugin: usize, name: String },
+    /// The plugin was not started.
+    Failed(StartError),
+}
+
 /// Why an action could not even be asked for.
 #[derive(Debug, Error)]
 pub enum RunError {
@@ -180,28 +204,48 @@ impl Host {
     /// Failures come back beside the host, so one broken plugin does not take
     /// the rest down. Plugin indices in events refer to the plugins that started.
     pub fn start(plugins: Vec<Located>, timeouts: Timeouts) -> (Host, Vec<StartError>) {
-        let (events, inbox) = async_channel::unbounded();
-        let mut started = Vec::new();
         let mut errors = Vec::new();
+        let host = Self::start_reporting(plugins, timeouts, |report| {
+            if let Startup::Failed(error) = report {
+                errors.push(error);
+            }
+        });
+        (host, errors)
+    }
+
+    /// [`Host::start`], telling `report` about each plugin as its handshake ends, so a
+    /// caller that cannot wait for the slowest plugin (the window, on a first launch
+    /// where uv may be fetching Python) can say which ones are still starting.
+    ///
+    /// Handshakes stay one after another: the first directory to declare a name wins,
+    /// and indices follow the order given, so both must be decided in sequence.
+    pub fn start_reporting(
+        plugins: Vec<Located>,
+        timeouts: Timeouts,
+        mut report: impl FnMut(Startup),
+    ) -> Host {
+        let (events, inbox) = async_channel::unbounded();
+        let mut started: Vec<Plugin> = Vec::new();
         for located in plugins {
             let same_name =
                 |plugin: &&Plugin| plugin.located.manifest.name == located.manifest.name;
             if let Some(first) = started.iter().find(same_name) {
-                errors.push(StartError::Duplicate {
+                report(Startup::Failed(StartError::Duplicate {
                     name: located.manifest.name,
                     first: first.located.dir.clone(),
                     second: located.dir,
-                });
+                }));
                 continue;
             }
             match handshake(located, timeouts.describe) {
                 Ok((located, description, process)) => {
                     let (commands, work) = mpsc::channel();
                     let reports = events.clone();
-                    let name = format!("plugin:{}", description.name);
+                    let plugin = started.len();
+                    let name = located.manifest.name.clone();
                     let description = Arc::new(RwLock::new(description));
                     let worker = Worker {
-                        plugin: started.len(),
+                        plugin,
                         home: located.clone(),
                         description: Arc::clone(&description),
                         process,
@@ -210,30 +254,30 @@ impl Host {
                         timeouts_in_a_row: 0,
                     };
                     let spawned = thread::Builder::new()
-                        .name(name.clone())
+                        .name(format!("plugin:{name}"))
                         .spawn(move || worker.serve(&work, &reports));
                     match spawned {
-                        Ok(_handle) => started.push(Plugin {
-                            located,
-                            description,
-                            commands,
-                        }),
-                        Err(source) => errors.push(StartError::Spawn { name, source }),
+                        Ok(_handle) => {
+                            started.push(Plugin {
+                                located,
+                                description,
+                                commands,
+                            });
+                            report(Startup::Up { plugin, name });
+                        }
+                        Err(source) => report(Startup::Failed(StartError::Spawn { name, source })),
                     }
                 }
-                Err(error) => errors.push(error),
+                Err(error) => report(Startup::Failed(error)),
             }
         }
         let watcher = watch_plugins(&started);
-        (
-            Host {
-                plugins: started,
-                events,
-                inbox,
-                _watcher: watcher,
-            },
-            errors,
-        )
+        Host {
+            plugins: started,
+            events,
+            inbox,
+            _watcher: watcher,
+        }
     }
 
     /// The channel every worker reports on. Clone it and await it on the window's executor.

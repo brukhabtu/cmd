@@ -6,7 +6,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use cmd_core::protocol::{Effect, Icon};
-use cmd_host::{Host, HostEvent, Timeouts};
+use cmd_host::{Host, HostEvent, Located, Manifest, StartError, Startup, Timeouts};
 
 fn host(plugins: &[(&str, bool)]) -> Host {
     host_with(plugins, Timeouts::default())
@@ -449,4 +449,80 @@ fn blank_input_asks_nobody_and_the_plugin_is_still_described() {
     assert_eq!(host.descriptions().count(), 1);
     assert_eq!(host.name(0).as_deref(), Some("a"));
     assert_eq!(host.query(1, "   "), Vec::<usize>::new());
+}
+
+#[test]
+fn start_reports_each_plugin_in_order_with_its_index() {
+    let mut reports = Vec::new();
+    let host = Host::start_reporting(
+        vec![
+            common::located("a", false),
+            common::speaking("future", 2),
+            common::located("b", false),
+        ],
+        Timeouts::default(),
+        |report| reports.push(report),
+    );
+    match reports.as_slice() {
+        [
+            Startup::Up { plugin: 0, name: a },
+            Startup::Failed(refused @ StartError::Protocol { .. }),
+            Startup::Up { plugin: 1, name: b },
+        ] => {
+            assert_eq!(a, "a");
+            assert_eq!(refused.name(), "future");
+            assert_eq!(b, "b");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    assert_eq!(host.descriptions().count(), 2);
+    assert_eq!(host.name(1).as_deref(), Some("b"));
+    host.query(1, "hello");
+    assert_eq!(
+        common::answer_from(&host.events(), 1, 1)[0].title,
+        "b:hello"
+    );
+}
+
+#[test]
+fn a_plugin_is_reported_before_the_next_handshake_finishes() {
+    let began = Instant::now();
+    let mut stamps = Vec::new();
+    let _host = Host::start_reporting(
+        vec![common::located("a", false), common::describing_slowly("b")],
+        Timeouts::default(),
+        |report| stamps.push((report, began.elapsed())),
+    );
+    let whole = began.elapsed();
+    assert!(whole >= Duration::from_millis(300), "{whole:?}");
+    match stamps.as_slice() {
+        [
+            (Startup::Up { name: a, .. }, first),
+            (Startup::Up { name: b, .. }, second),
+        ] => {
+            assert_eq!((a.as_str(), b.as_str()), ("a", "b"));
+            // b's describe alone takes 300 ms, so a gap that long means a was reported
+            // before b's handshake began, not when the whole start was over. A bound on
+            // a's own time would only measure how busy the machine running the test is.
+            assert!(
+                second.saturating_sub(*first) >= Duration::from_millis(300),
+                "a came up at {first:?}, b at {second:?}"
+            );
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn a_plugin_that_cannot_be_spawned_is_named_by_its_manifest() {
+    let missing = Located {
+        dir: ".".into(),
+        manifest: Manifest {
+            name: "missing".into(),
+            command: vec!["cmd-no-such-program".into()],
+        },
+    };
+    let (_host, errors) = Host::start(vec![missing], Timeouts::default());
+    let names: Vec<&str> = errors.iter().map(StartError::name).collect();
+    assert_eq!(names, ["missing"]);
 }

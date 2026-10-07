@@ -16,6 +16,6 @@ pub mod manifest;
 pub mod process;
 
 pub use cli::Env;
-pub use host::{Host, HostEvent, RunError, StartError, Timeouts};
+pub use host::{Host, HostEvent, RunError, StartError, Startup, Timeouts};
 pub use manifest::{Located, Manifest};
 pub use process::{CallError, PluginProcess};
