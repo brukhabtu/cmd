@@ -76,7 +76,10 @@ def test_offline_checks_the_shape_alone() -> None:
     assert main(["check_index.py"]) == 2
 
 
-def test_the_repository_index_is_well_shaped() -> None:
+def test_the_repository_index_lists_every_plugin_here_and_is_well_shaped() -> None:
     index = tomllib.loads((REPOSITORY / "plugins" / "index.toml").read_text(encoding="utf-8"))
     assert shape_problems(index) == []
-    assert {plugin["name"] for plugin in index["plugin"]} == {"calculator", "websearch"}
+    here = {path.parent.name for path in (REPOSITORY / "plugins").glob("*/cmd-plugin.toml")}
+    listed = {plugin["name"] for plugin in index["plugin"]}
+    assert listed == here, "every plugin in this repository is listed, by its subdirectory"
+    assert all(plugin["subdirectory"] == f"plugins/{plugin['name']}" for plugin in index["plugin"])
