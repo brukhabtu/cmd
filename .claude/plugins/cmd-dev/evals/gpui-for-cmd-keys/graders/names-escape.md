@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: 'cx\s*\.\s*spawn'
+pattern: '"escape"'
 match: contains
 target: last_message
 ---

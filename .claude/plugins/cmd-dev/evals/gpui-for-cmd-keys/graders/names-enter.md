@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '&\[String\]'
+pattern: '"enter"'
 match: contains
 target: last_message
 ---

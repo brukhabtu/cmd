@@ -5,7 +5,7 @@ status: Draft
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 05:37'
+updated_date: '2026-10-07 05:41'
 labels:
   - size-3
 dependencies: []
@@ -38,4 +38,6 @@ Review before milestone 2 (2026-10-07, after 1.14, 1.28 and 1.29 closed): the co
 Built as .claude/plugins/cmd-dev/skills/gpui-for-cmd/SKILL.md (commit follows): the verified gpui 0.2.2 facts as the window uses them, where the source is, the Linux scratch-workspace recipe, and the pedantic lints that bit. Eval cases next; the gate runs on the first pull request touching the plugin. Promotion waits on that result.
 
 Five eval cases written under .claude/plugins/cmd-dev/evals/gpui-for-cmd-{timer,focus-loss,linux-check,keys,lints}: each run starts in an empty directory, so they are questions graded by regex on the answer (the executor timer and no Timer type; observe_window_activation taking the window and is_window_active; xattr, the crates-io patch and ENODATA; key_char, modifiers.platform and the key names; needless_pass_by_value and &[String]), with a Skill tool_used grader as the plugin-fired indicator that the two-arm run excludes from the score. Not run here: no credential in this container. Opening a pull request that touches the plugin runs the gate (threshold 1.0, with-without ablation, cost ceiling 15 USD, scripts/eval_gate.py on the delta); promote this draft only with that result attached.
+
+Correction from the design review: gpui 0.2.2 re-exports smol::Timer unconditionally (src/gpui.rs:94) and 'use gpui::Timer' compiles in the scratch workspace, so the 'feature-gated Timer' miss recorded above does not hold; the evidence is the observe_window_activation miss, the Linux recipe, and the repeated lookups. The skill's Timer bullet is now the crate's convention, not a fact about gpui; the libc line names the version in the tree (0.2.190). Cases cut to three (focus-loss, linux-check, keys): the timer case rested on the false miss and the lints case would score the same without the skill; graders widened so a correct answer with the skill cannot fail on wording.
 <!-- SECTION:NOTES:END -->

@@ -1,15 +1,16 @@
 ---
 name: gpui-for-cmd
-description: Use when editing crates/cmd-app or any Rust that touches gpui types. Verified API facts for gpui 0.2.2 as this repository uses them, where to read its source, the recipe that compile-checks cmd-app on Linux (the workspace itself cannot build it there), and the pedantic clippy lints that bite.
+description: Use when editing crates/cmd-app or any Rust that touches gpui types, when answering how to do something in gpui 0.2, when compile-checking cmd-app on Linux, or when satisfying this workspace's pedantic clippy. Verified API facts for gpui 0.2.2 as this repository uses them, where to read its source, and the Linux check recipe.
 ---
 
 # GPUI 0.2 for cmd
 
 GPUI's API is not in memory in usable detail: in milestone 1 every API the window needed
-was read from the gpui 0.2.2 source, and the two times it was recalled instead (a
-feature-gated `Timer` re-export, `observe_window_activation` placed on the wrong type) the
-build failed. Everything below was read from that source and compiled in this repository.
-Anything not listed is read from the source before it is used, never recalled.
+was read from the gpui 0.2.2 source, and when one was recalled instead
+(`observe_window_activation` placed on `App` rather than `Context<V>`) the build failed.
+Everything below was read from that source and compiled in this repository, so answer
+from these facts when the source is not on disk. Anything not listed here is read from the
+source before it is used, never recalled.
 
 ## Where the source is
 
@@ -30,8 +31,9 @@ grep -rn "pub fn observe_window_activation" ~/.cargo/registry/src/*/gpui-0.2.2/s
 - **Window activation.** `cx.observe_window_activation(window, |view, window, cx| ...)`
   lives on `Context<V>` and takes the `&mut Window`; inside, `window.is_window_active()`
   says which way it went. `App` has no such method.
-- **Timers.** gpui re-exports `smol::Timer` only behind a feature. Use
-  `cx.background_executor().timer(duration).await` inside a spawned task.
+- **Timers.** The convention here is `cx.background_executor().timer(duration).await`
+  inside a spawned task, as `crates/cmd-app/src/main.rs` does; gpui also re-exports
+  `smol::Timer`, which is not used in this crate.
 - **Tasks.** On `Context<V>`: `cx.spawn(async move |view, cx| { ... })` where `view` is a
   `WeakEntity<V>` and `view.update(cx, |view, cx| ...)` returns a `Result` because the
   entity may be gone. On `App`: `cx.spawn(async move |cx: &mut AsyncApp| ...)`. A
@@ -56,9 +58,9 @@ grep -rn "pub fn observe_window_activation" ~/.cargo/registry/src/*/gpui-0.2.2/s
 ## Compile-checking cmd-app on Linux
 
 The workspace cannot build `cmd-app` on Linux: `xattr 0.2.3`, below gpui, uses
-`libc::ENOATTR`, which libc 0.2.182 and later do not define, and rustix pins the newer
-libc. CI builds the app on macOS. For clippy on Linux, use a scratch workspace outside the
-repository:
+`libc::ENOATTR`, which the libc in this tree (0.2.190) defines for Apple and BSD targets
+and not for Linux. CI builds the app on macOS. For clippy on Linux, use a scratch
+workspace outside the repository:
 
 1. Copy `Cargo.toml` and `rust-toolchain.toml` there; in the copied `Cargo.toml` drop the
    `[profile.dev.package."*"]` section and append
