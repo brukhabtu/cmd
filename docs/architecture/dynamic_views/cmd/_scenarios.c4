@@ -1,0 +1,14 @@
+// Single-system scenarios for cmd. Container level, fully qualified names.
+views {
+  dynamic view cmdQueryAnswered {
+    title 'Dynamic — A query is typed, answered and run'
+    user -> cmd.app 'types 2+2 into'
+    cmd.app -> cmd.plugin 'sends a query request, as one JSON line, to'
+    cmd.app <- cmd.plugin 'answers with one item, 4, as one JSON line'
+    user -> cmd.app 'presses Enter in'
+    cmd.app -> cmd.plugin 'sends a run request for the item to'
+    cmd.app <- cmd.plugin 'answers with a copy effect'
+    cmd.app -> macos 'writes 4 to the pasteboard through, then hides'
+    include cmd
+  }
+}

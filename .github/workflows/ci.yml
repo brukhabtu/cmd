@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: everything that builds everywhere
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Python 3.15 for the plugins
+        run: uv python install 3.15
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Claude Code CLI, for plugin validation
+        run: npm install --global @anthropic-ai/claude-code
+      - name: Install the pypeeker gate's build tools
+        run: sudo apt-get install -y --no-install-recommends git
+      - run: scripts/check.sh
+
+  app:
+    name: the GPUI app, on the platform it targets
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p cmd-app -- -D warnings
+      - run: cargo build -p cmd-app

@@ -1,0 +1,17 @@
+[project]
+name = "calculator"
+version = "0.1.0"
+description = "A cmd plugin: type arithmetic, get the answer, press Enter to copy it."
+requires-python = ">=3.15"
+license = "MIT"
+dependencies = ["cmd-sdk"]
+
+[project.scripts]
+calculator = "calculator:main"
+
+[tool.uv.sources]
+cmd-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9,<1"]
+build-backend = "uv_build"

@@ -1,0 +1,23 @@
+// Intra-system relationships for cmd, plus the person and external edges that
+// land on its containers and components. Explicit endpoints only.
+model {
+  extend cmd {
+    user -> app 'types a query into and picks a result from'
+    author -> plugin 'writes and installs'
+
+    app.ui -> app.core 'applies events to and performs the steps returned by'
+    app.ui -> app.host 'asks for results and runs actions through'
+    app.host -> app.core 'routes queries, merges results and encodes the protocol with'
+
+    app.host -> plugin 'sends describe, query and run requests to' {
+      technology 'JSON lines over stdin and stdout'
+    }
+
+    app.ui -> macos 'writes the pasteboard, opens targets and hides the window through' {
+      technology 'AppKit via GPUI'
+    }
+    plugin -> macos 'reads from and acts on, as its author chooses' {
+      technology 'whatever the plugin calls'
+    }
+  }
+}

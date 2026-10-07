@@ -1,0 +1,6 @@
+// Software system: cmd. Containers are in sibling files via `extend cmd { ... }`.
+model {
+  cmd = softwareSystem 'cmd' {
+    description 'A launcher for macOS in the place of Spotlight: type, see results from plugins, press Enter. Rust core, Python plugins.'
+  }
+}

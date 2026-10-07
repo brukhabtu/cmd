@@ -1,0 +1,9 @@
+// Container: a plugin process. One runs per installed plugin.
+model {
+  extend cmd {
+    plugin = container 'Plugin process' {
+      technology 'Python 3.15 via uv, cmd-sdk'
+      description 'One process per installed plugin, started by the app. Answers describe, query and run over its stdin and stdout. Written by anyone.'
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# Repositories I own. One pattern per line, matched as a substring of the git origin
+# once it is reduced to host/owner/repo. A repository whose origin matches is in owner
+# mode. One with no origin is local, so it is owner mode too. Everything else is guest
+# mode, where the Python dialect rules are not loaded.
+github.com/bruk-io/
+github.com/brukhabtu/

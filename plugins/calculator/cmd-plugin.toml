@@ -1,0 +1,2 @@
+name = "calculator"
+command = ["uv", "run", "--quiet", "calculator"]

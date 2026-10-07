@@ -1,0 +1,7 @@
+// System Context — cmd.
+views {
+  view cmdContext of cmd {
+    title 'System Context — cmd'
+    include cmd, user, author, macos
+  }
+}

@@ -1,0 +1,7 @@
+// Containers — cmd.
+views {
+  view cmdContainers of cmd {
+    title 'Containers — cmd'
+    include *
+  }
+}

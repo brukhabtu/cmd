@@ -1,0 +1,8 @@
+model {
+  extend cmd.app {
+    ui = component 'Launcher view' {
+      technology 'GPUI view, crate cmd-app'
+      description 'Turns key presses into events for the core and performs the steps the core returns: query, run, copy, open, hide.'
+    }
+  }
+}

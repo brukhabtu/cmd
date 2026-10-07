@@ -1,0 +1,20 @@
+{
+  "extraKnownMarketplaces": {
+    "bruk-philosophy": {
+      "source": {
+        "source": "directory",
+        "path": "./plugins/bruk-philosophy"
+      }
+    },
+    "cmd-dev": {
+      "source": {
+        "source": "directory",
+        "path": "./plugins/cmd-dev"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "philosophy@bruk-philosophy": true,
+    "cmd-dev@cmd-dev": true
+  }
+}

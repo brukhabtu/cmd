@@ -1,0 +1,10 @@
+{
+  "name": "cmd-dev",
+  "version": "0.1.0",
+  "description": "Skills for working on cmd. Each skill ships with its eval suite under evals/ and is accepted only when the suite passes.",
+  "author": {
+    "name": "Bruk Habtu"
+  },
+  "keywords": ["cmd", "gpui", "plugins", "skills"],
+  "license": "MIT"
+}

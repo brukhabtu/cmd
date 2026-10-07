@@ -1,0 +1,19 @@
+// LANDSCAPE LAYER: people, external systems, and cross-system wiring.
+// The cmd software system is declared in models/cmd/cmd.c4.
+model {
+  user = person 'Person at the Mac' {
+    description 'Presses the hotkey, types a few characters, picks a result, presses Enter'
+  }
+
+  author = person 'Plugin author' {
+    description 'Writes a Python plugin against cmd-sdk and installs it. Need not know Rust.'
+  }
+
+  macos = externalSystem 'macOS' {
+    #external
+    description 'The desktop: window server, pasteboard, Launch Services, global hotkeys'
+  }
+
+  user -> cmd 'launches apps, runs commands and looks things up with'
+  author -> cmd 'extends with Python plugins'
+}

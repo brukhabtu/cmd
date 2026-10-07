@@ -1,0 +1,8 @@
+// Components — Launcher app. Mirrors the three crates, which is the point: the
+// crate boundary is the component boundary, and cargo enforces it.
+views {
+  view cmdAppComponents of cmd.app {
+    title 'Components — Launcher app'
+    include *
+  }
+}

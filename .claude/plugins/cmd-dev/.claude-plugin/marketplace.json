@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "cmd-dev",
+  "description": "Single-plugin marketplace for cmd-dev, the skills for working on cmd",
+  "owner": {
+    "name": "Bruk Habtu"
+  },
+  "plugins": [
+    {
+      "name": "cmd-dev",
+      "description": "Skills for working on cmd, each gated by its eval suite.",
+      "author": {
+        "name": "Bruk Habtu"
+      },
+      "category": "development",
+      "source": "./"
+    }
+  ]
+}

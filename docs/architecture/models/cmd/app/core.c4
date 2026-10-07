@@ -1,0 +1,8 @@
+model {
+  extend cmd.app {
+    core = component 'Core' {
+      technology 'Rust library, crate cmd-core'
+      description 'Pure logic, no I/O: the protocol types, query routing and result merging, and the launcher state machine.'
+    }
+  }
+}

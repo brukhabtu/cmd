@@ -1,0 +1,84 @@
+# Root of the uv workspace. Not a package: one lock, one venv, shared config.
+[project]
+name = "cmd-workspace"
+version = "0.0.0"
+description = "Workspace root for cmd's Python: the plugin SDK and the plugins."
+requires-python = ">=3.15"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["python/cmd-sdk", "plugins/*"]
+
+[tool.uv.sources]
+cmd-sdk = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8.4", "mypy>=1.18", "ruff>=0.14"]
+# pypeeker is pre-1.0 and pinned to a commit on purpose. Bump deliberately.
+arch = ["pypeeker @ git+https://github.com/brukhabtu/pypeeker@26b272040dca10e5193aac24cded4f2e18364dfc"]
+
+[tool.ruff]
+line-length = 100
+preview = true
+target-version = "py314"
+# The vendored Claude Code plugin is written for Python 3.9 and has its own tests.
+extend-exclude = [".claude"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812", # trailing commas: the formatter owns them
+  "CPY001", # no copyright headers
+  "D203",   # conflicts with D211
+  "D213",   # conflicts with D212
+  "D107",   # dataclasses need no __init__ docstring
+  "DOC201", # docstrings explain intent and exceptions; the signature explains the return
+  "DOC202", # as above
+  "EM101",  # the message belongs in the raise, where the reader looks for it
+  "EM102",  # as above
+  "RUF067", # a package's __init__ may re-export its public names
+  "RUF201", # rule codes are how this table reads
+  "TC001",  # annotations are deferred from 3.14, so a typing-only import is a plain import
+  "TC002",  # as above
+  "TC003",  # as above
+  "TD003",  # a TODO points at the board, not an issue tracker
+  "TRY003", # as EM101
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "D", "ANN", "PLR2004", "INP001", "FBT", "E501"]
+
+[tool.mypy]
+strict = true
+explicit_package_bases = true
+mypy_path = "python/cmd-sdk/src:plugins/calculator/src"
+files = ["python", "plugins"]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+consider_namespace_packages = true
+testpaths = ["python/cmd-sdk/tests", "plugins/calculator/tests"]
+
+[tool.pypeeker]
+src = ["python/cmd-sdk/src", "plugins/calculator/src"]
+rules = [
+  "import-boundaries",
+  "no-import-cycles",
+  "unused-imports",
+  "star-imports",
+  "import-time-side-effects",
+]
+
+# Units are the top-level packages under each source root. A plugin may import the SDK.
+# The SDK imports no plugin. Not yet gated in scripts/check.sh: at the pinned commit the rule
+# cannot see an import that crosses the two source roots (probed in the foundation session),
+# and the core/shell line inside cmd_sdk is below this granularity. The board has the task.
+[tool.pypeeker.import-boundaries]
+allow = { calculator = ["cmd_sdk"], cmd_sdk = [] }
+report-unused-allowances = true

@@ -1,0 +1,9 @@
+// Container: the launcher app. Components are in models/cmd/app/.
+model {
+  extend cmd {
+    app = container 'Launcher app' {
+      technology 'Rust, GPUI'
+      description 'The window at the hotkey. Takes keys, routes the query to plugins, shows the merged results, performs the chosen effect.'
+    }
+  }
+}

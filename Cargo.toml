@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/cmd-core", "crates/cmd-host", "crates/cmd-app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/brukhabtu/cmd"
+rust-version = "1.90"
+
+[workspace.dependencies]
+cmd-core = { path = "crates/cmd-core" }
+cmd-host = { path = "crates/cmd-host" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+thiserror = "2"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+must_use_candidate = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2

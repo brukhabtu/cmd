@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "bruk-philosophy",
+  "description": "Single-plugin marketplace for philosophy - how I build software, as constraints, rules, and skills for Claude Code",
+  "owner": {
+    "name": "bruk-io"
+  },
+  "plugins": [
+    {
+      "name": "philosophy",
+      "description": "The standing constraints every session, Python and agent-tooling rules when a matching file is touched, and the work-loop and python-idioms skills on demand.",
+      "author": {
+        "name": "bruk-io"
+      },
+      "category": "development",
+      "source": "./"
+    }
+  ]
+}

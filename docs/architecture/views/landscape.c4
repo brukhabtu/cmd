@@ -1,0 +1,7 @@
+// Estate-wide view. There is one software system, so this doubles as the front door.
+views {
+  view index {
+    title 'System Landscape — cmd and its surroundings'
+    include *
+  }
+}

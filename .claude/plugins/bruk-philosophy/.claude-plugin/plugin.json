@@ -1,0 +1,10 @@
+{
+  "name": "philosophy",
+  "version": "0.1.0",
+  "description": "How I build software, loaded the way Claude Code needs it: the standing constraints every session, Python and agent-tooling rules when a matching file is touched, and the work-loop and python-idioms skills on demand.",
+  "author": {
+    "name": "Bruk Habtu"
+  },
+  "keywords": ["philosophy", "python", "work-loop", "rules", "hooks"],
+  "license": "MIT"
+}

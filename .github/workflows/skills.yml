@@ -1,0 +1,40 @@
+name: skills
+
+# The gate from docs/skills.md: a change to the cmd-dev plugin must leave every eval case
+# passing. Each case is a real agent session on the repository's ANTHROPIC_API_KEY, so this
+# runs only when the plugin changes, carries a cost ceiling, and keeps the report local.
+on:
+  pull_request:
+    paths: [".claude/plugins/cmd-dev/**"]
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --global @anthropic-ai/claude-code
+      - run: claude plugin validate --strict .claude/plugins/cmd-dev
+      - name: Run the eval suite, if there is one
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if ! ls .claude/plugins/cmd-dev/evals/*/prompt.md >/dev/null 2>&1; then
+            echo "no eval cases yet; nothing to gate"
+            exit 0
+          fi
+          claude plugin eval .claude/plugins/cmd-dev \
+            --trust-plugin \
+            --threshold 1.0 \
+            --no-publish \
+            --max-cost-usd 15 \
+            --json eval-result.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-result
+          path: eval-result.json
+          if-no-files-found: ignore
