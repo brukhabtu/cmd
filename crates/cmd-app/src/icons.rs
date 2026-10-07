@@ -105,7 +105,6 @@ mod platform {
     use std::path::Path;
 
     use cmd_core::protocol::Icon;
-    use objc2::rc::Retained;
     use objc2_app_kit::{
         NSBitmapImageFileType, NSBitmapImageRep, NSFontWeightRegular, NSImage,
         NSImageSymbolConfiguration, NSImageSymbolScale, NSWorkspace,
@@ -145,7 +144,7 @@ mod platform {
         // every size it ships with and the one nearest the slot is picked.
         let tiff = image.TIFFRepresentation()?;
         let pages = NSBitmapImageRep::imageRepsWithData(&tiff);
-        let bitmaps: Vec<Retained<NSBitmapImageRep>> = pages
+        let bitmaps: Vec<_> = pages
             .iter()
             .filter_map(|page| page.downcast::<NSBitmapImageRep>().ok())
             .collect();
