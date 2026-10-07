@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- The macOS icon grid: the rounded square fills 824 of 1024 and leaves the margin the
+       system expects; rx is the 22 per cent Apple's shape approximates. Paths only, no text,
+       so no font is needed to render it. Colours are the window's. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#1c1c1e"/>
+  <path d="M 330 372 L 470 512 L 330 652" fill="none" stroke="#f2f2f7" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 540 652 L 700 652" fill="none" stroke="#ff9f0a" stroke-width="64" stroke-linecap="round"/>
+</svg>

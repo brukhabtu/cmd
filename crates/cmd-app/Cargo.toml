@@ -11,6 +11,23 @@ rust-version.workspace = true
 name = "cmd"
 path = "src/main.rs"
 
+# cmd.app, made by `cargo bundle` in scripts/bundle.sh (task 1.23). cargo-bundle resolves
+# these paths from the working directory, not from this package, so it runs from the
+# repository root. The identifier is permanent: preferences, notarisation and the cask
+# all key on it.
+[package.metadata.bundle]
+name = "cmd"
+identifier = "com.brukhabtu.cmd"
+icon = ["assets/cmd.svg"]
+category = "Utility"
+short_description = "A launcher at Cmd-Space that anyone can extend in Python."
+copyright = "Copyright Bruk Habtu"
+
+[package.metadata.bundle.osx]
+minimum_system_version = "12.0"
+# LSUIElement: no Dock icon and no menu bar.
+info_plist_exts = ["assets/info-plist-extras.xml"]
+
 [dependencies]
 cmd-core.workspace = true
 cmd-host.workspace = true
@@ -23,9 +40,11 @@ async-channel = "2"
 # type is GPUI's own.
 image = { version = "0.25", default-features = false, features = ["png"] }
 
-# AppKit resolves icons: NSWorkspace for a path, NSImage for a symbol. These crates are
-# already in the tree below global-hotkey; only features are added.
+# AppKit resolves icons: NSWorkspace for a path, NSImage for a symbol; NSApplication
+# makes the app an accessory (no Dock icon). These crates are already in the tree below
+# global-hotkey; only features are added. objc2 is direct for MainThreadMarker.
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std",
   "NSArray",
@@ -36,10 +55,13 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 ] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std",
+  "NSApplication",
   "NSBitmapImageRep",
   "NSFontDescriptor",
   "NSImage",
   "NSImageRep",
+  "NSResponder",
+  "NSRunningApplication",
   "NSWorkspace",
   "objc2-core-foundation",
 ] }
