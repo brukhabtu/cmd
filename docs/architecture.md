@@ -23,9 +23,17 @@ per plugin and a round trip per keystroke, which is why the protocol is one line
 and the host keeps the processes alive. Decision 1 on the board has the alternatives.
 
 **The core is pure.** `cmd-core` has no I/O. It knows the protocol's shapes, decides which
-plugins see a query, merges answers, and runs the launcher's state machine: an event in, a
-step out. `cmd-host` and `cmd-app` are the shell that performs the steps. The pure part is
-where the tests are, and the shell is thin enough to read in one sitting.
+plugins see a query, merges answers as they arrive, and runs the launcher's state machine:
+an event in, a step out. `cmd-host` and `cmd-app` are the shell that performs the steps.
+The pure part is where the tests are, and the shell is thin enough to read in one sitting.
+
+**The window never waits on a plugin.** Each plugin has a worker thread in `cmd-host` that
+owns its process. A query goes to the workers as a command and returns at once; answers
+come back as events on a channel the window's executor awaits, each tagged with the
+generation of the text it answers, so a late answer to an older query is dropped and a
+slow plugin delays only its own rows. A plugin whose process dies is started again with
+back-off, and the window says so. `cmd-doctor` runs the same process layer from the
+command line for plugin authors.
 
 **The plugin returns effects; the host performs them.** A plugin says "copy this" or "open
 that" and the app does it. This keeps the plugin side simple and keeps the app in control of
