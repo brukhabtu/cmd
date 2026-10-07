@@ -1,0 +1,56 @@
+name: pages
+
+# The documentation site goes to GitHub Pages from releases only, so what it describes is
+# what someone can download. A pre-release does not publish it; promoting one to a release
+# does. https://brukhabtu.github.io/cmd/
+#
+# Two repository settings, once: Pages (Settings, Pages) on, with GitHub Actions as its
+# source; and the github-pages environment (Settings, Environments) allowing tags to
+# deploy, with a tag rule such as v*. GitHub lets only the default branch deploy there,
+# and a release runs on its tag. A deploy refused for either reason can be re-run from
+# the run's page once the setting is changed.
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+
+# One deployment at a time; a second release waits for the first instead of cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: the documentation site, from the release's tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The Rust toolchain rust-toolchain.toml pins, for rustdoc
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Python 3.15 for the docs toolchain
+        run: uv python install 3.15
+      # The same strict build check.sh runs, with the folder URLs GitHub Pages serves.
+      - run: scripts/docs.sh
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/
+
+  deploy:
+    name: the documentation site, on GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

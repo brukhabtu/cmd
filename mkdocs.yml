@@ -9,8 +9,11 @@ repo_url: https://github.com/brukhabtu/cmd
 repo_name: brukhabtu/cmd
 docs_dir: docs
 site_dir: site
-# Folder URLs (page/) need a server that maps them to index.html; set
-# MKDOCS_DIRECTORY_URLS=false for static hosting or browsing the files directly.
+# Where each release publishes the site (.github/workflows/pages.yml). The 404 page needs it
+# for links that work under /cmd/, and the sitemap for its addresses.
+site_url: https://brukhabtu.github.io/cmd/
+# Folder URLs (page/) need a server that maps them to index.html, as GitHub Pages does; set
+# MKDOCS_DIRECTORY_URLS=false to browse the files from disk.
 use_directory_urls: !ENV [MKDOCS_DIRECTORY_URLS, true]
 
 # The LikeC4 model's sources live under docs/architecture/; the site shows the prose in

@@ -72,7 +72,9 @@ uv run --group docs mkdocs serve         # preview while writing (no Rust API re
 ```
 
 `scripts/check.sh` builds it, so a broken link fails CI, and CI uploads the built site as the
-`docs-site` artifact.
+`docs-site` artifact. Each release (not a pre-release) publishes it to GitHub Pages at
+https://brukhabtu.github.io/cmd/ through `.github/workflows/pages.yml`, whose header names
+the two repository settings that needs.
 
 ## Writing a plugin
 
