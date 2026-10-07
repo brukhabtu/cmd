@@ -3,7 +3,9 @@
 # the commit it pointed at when it was reviewed, since a tag can be moved and a commit
 # cannot. `subdirectory` is for a plugin that lives inside a larger repository.
 # scripts/check_index.py checks this file: the shape here, and at each ref that the
-# manifest exists and its name is the entry's.
+# manifest exists and its name is the entry's. A ref must stay reachable from a branch or
+# tag that lasts: a commit only on a branch that is later squashed and deleted stops being
+# served, and every install of that entry fails with no change to this file.
 
 [[plugin]]
 name = "calculator"

@@ -10,7 +10,8 @@ carries `commit`, the commit the tag pointed at when it was reviewed; the check 
 the tag with `git ls-remote` and compares. For every entry the manifest at `ref` is
 fetched with git and its name must be the entry's. Standard library and git only.
 
-Usage: python scripts/check_index.py plugins/index.toml
+Usage: python scripts/check_index.py plugins/index.toml [--offline]
+  --offline checks the shape only, for a machine without the network.
 """
 
 import re
@@ -139,13 +140,15 @@ _USAGE_ERROR = 2
 def main(argv: list[str]) -> int:
     """Check the shape, then every entry against its remote; the verdict is the exit code."""
     match argv:
-        case [_, index_path]:
+        case [_, index_path] | [_, index_path, "--offline"]:
             index = tomllib.loads(Path(index_path).read_text(encoding="utf-8"))
         case _:
             print(__doc__, file=sys.stderr)
             return _USAGE_ERROR
     problems = shape_problems(index)
-    if not problems:
+    if argv[-1] == "--offline":
+        print(f"{len(index.get('plugin', []))} entries, shape only: no network")
+    elif not problems:
         for entry in index.get("plugin", []):
             problems += remote_problems(entry)
             print(f"{entry['name']}: {entry['source']} at {entry['ref']}")

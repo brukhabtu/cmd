@@ -45,7 +45,12 @@ step "python: no import crosses from the SDK to a plugin, or between plugins"
 uv run python scripts/import_boundaries.py python/cmd-sdk/src plugins/*/src
 
 step "plugins: the index is well formed and each entry's manifest is at its ref"
-uv run python scripts/check_index.py plugins/index.toml
+if git ls-remote -q --exit-code https://github.com/brukhabtu/cmd HEAD >/dev/null 2>&1; then
+  uv run python scripts/check_index.py plugins/index.toml
+else
+  echo "no network: checking the shape alone"
+  uv run python scripts/check_index.py plugins/index.toml --offline
+fi
 
 if command -v npx >/dev/null; then
   step "architecture: the LikeC4 model parses and resolves"

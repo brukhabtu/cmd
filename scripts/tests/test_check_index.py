@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from check_index import git, remote_problems, shape_problems
+from check_index import git, main, remote_problems, shape_problems
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
@@ -68,6 +68,12 @@ def test_an_entry_is_checked_against_its_repository(tmp_path: Path) -> None:
     ]
     [problem] = remote_problems(good | {"subdirectory": "plugins/missing"})
     assert problem.startswith(f"p: cannot read the manifest at {commit!r}")
+
+
+def test_offline_checks_the_shape_alone() -> None:
+    index = str(REPOSITORY / "plugins" / "index.toml")
+    assert main(["check_index.py", index, "--offline"]) == 0
+    assert main(["check_index.py"]) == 2
 
 
 def test_the_repository_index_is_well_shaped() -> None:

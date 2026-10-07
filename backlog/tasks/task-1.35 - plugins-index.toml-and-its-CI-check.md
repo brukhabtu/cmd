@@ -1,10 +1,10 @@
 ---
 id: TASK-1.35
 title: plugins/index.toml and its CI check
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 05:24'
-updated_date: '2026-10-07 05:31'
+updated_date: '2026-10-07 05:32'
 labels:
   - size-2
 milestone: m-2
@@ -21,8 +21,8 @@ Decision 8. The index lists plugins by name with summary, source (git URL), ref 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The index lists calculator and websearch by subdirectory at a commit of this repository
-- [ ] #2 CI fails on a malformed entry, a duplicate name, a missing ref, or a tag the check cannot resolve, and records each tag's commit
+- [x] #1 The index lists calculator and websearch by subdirectory at a commit of this repository
+- [x] #2 CI fails on a malformed entry, a duplicate name, a missing ref, or a tag the check cannot resolve, and records each tag's commit
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,4 +40,6 @@ uv run pytest scripts/tests; scripts/check.sh; a broken entry fails the step.
 
 <!-- SECTION:NOTES:BEGIN -->
 Landed: plugins/index.toml lists calculator and websearch by subdirectory at commit 1159f73 of this repository. scripts/check_index.py (stdlib and git) checks the shape without the network (required and known fields, strings, unique names, a tag needs its reviewed commit, commits are full hashes), then for each entry fetches the ref shallowly, reads cmd-plugin.toml at the subdirectory and compares the name, and for a tag resolves it with git ls-remote (peeling annotated tags) and compares with the recorded commit; a moved tag is reported and nothing else is fetched. scripts/check.sh runs it after the boundary step (1.8 s for the two entries, fetching by commit from GitHub). Tests: shape problems one by one, the entries against a local git repository with a tag, and the repository's own index. Not done here: 1.34's install must rewrite the in-repository plugins' cmd-sdk workspace source to the git source at the same ref, since 'workspace = true' cannot resolve outside the workspace; noted on 1.34. Awaiting review.
+
+Closed on the reviewer's verdict against b8362e8. From the review: the index header now says a ref must stay reachable from a lasting branch or tag, with TASK-1.36 to re-pin after the merge; scripts/check.sh runs the shape-only --offline check when GitHub is unreachable, so the script still works without the network. A 40-hex tag name would be read as a commit; accepted as theoretical.
 <!-- SECTION:NOTES:END -->
