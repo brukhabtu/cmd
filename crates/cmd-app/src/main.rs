@@ -5,6 +5,7 @@
 //! Escape and losing focus hide it. That is the whole shell.
 
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use cmd_core::query::Hit;
@@ -508,7 +509,13 @@ fn launcher_bounds(cx: &App) -> Bounds<Pixels> {
     }
 }
 
-fn main() {
+/// `cmd plugin ...` is answered here, before the host, the hotkey or the GPUI
+/// application exist, so a subcommand never opens the launcher (decision 8).
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("plugin") {
+        return cmd_host::cli::run(&args[1..], &cmd_host::cli::Env::from_process());
+    }
     let (host, trouble) = start_host();
     let events = host.events();
     let (notify, presses) = async_channel::bounded(1);
@@ -541,4 +548,5 @@ fn main() {
             .detach();
         cx.activate(true);
     });
+    ExitCode::SUCCESS
 }

@@ -53,8 +53,12 @@ Read `docs/plugin-protocol.md` and `python/cmd-sdk/README.md`, then copy
 `query` function and a `run` function.
 
 Installed plugins live in `~/Library/Application Support/cmd/plugins`, one directory each.
-The app also loads `./plugins` from the directory it was started in, which is how this
-repository's plugins run during development. `CMD_PLUGINS=/dir:/other` replaces both.
+`cmd plugin install <name | owner/name | url | path>`, `update`, `remove` and `list` manage
+them from the app's own binary (`cargo run -p cmd-app -- plugin list` from a clone), and
+`cmd plugin doctor <dir>` runs one directory the way the launcher does. The names come
+from `plugins/index.toml`. The app also loads `./plugins` from the directory it was started
+in, which is how this repository's plugins run during development.
+`CMD_PLUGINS=/dir:/other` replaces both.
 
 ## Working on cmd with Claude Code
 
