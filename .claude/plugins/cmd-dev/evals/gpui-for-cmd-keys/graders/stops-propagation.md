@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: 'modifiers[\s\S]{0,40}platform'
+pattern: 'stop_propagation'
 match: contains
 target: last_message
 ---

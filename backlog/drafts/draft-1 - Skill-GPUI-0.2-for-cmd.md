@@ -5,7 +5,7 @@ status: Draft
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 05:41'
+updated_date: '2026-10-07 12:00'
 labels:
   - size-3
 dependencies: []
@@ -40,4 +40,6 @@ Built as .claude/plugins/cmd-dev/skills/gpui-for-cmd/SKILL.md (commit follows): 
 Five eval cases written under .claude/plugins/cmd-dev/evals/gpui-for-cmd-{timer,focus-loss,linux-check,keys,lints}: each run starts in an empty directory, so they are questions graded by regex on the answer (the executor timer and no Timer type; observe_window_activation taking the window and is_window_active; xattr, the crates-io patch and ENODATA; key_char, modifiers.platform and the key names; needless_pass_by_value and &[String]), with a Skill tool_used grader as the plugin-fired indicator that the two-arm run excludes from the score. Not run here: no credential in this container. Opening a pull request that touches the plugin runs the gate (threshold 1.0, with-without ablation, cost ceiling 15 USD, scripts/eval_gate.py on the delta); promote this draft only with that result attached.
 
 Correction from the design review: gpui 0.2.2 re-exports smol::Timer unconditionally (src/gpui.rs:94) and 'use gpui::Timer' compiles in the scratch workspace, so the 'feature-gated Timer' miss recorded above does not hold; the evidence is the observe_window_activation miss, the Linux recipe, and the repeated lookups. The skill's Timer bullet is now the crate's convention, not a fact about gpui; the libc line names the version in the tree (0.2.190). Cases cut to three (focus-loss, linux-check, keys): the timer case rested on the false miss and the lints case would score the same without the skill; graders widened so a correct answer with the skill cannot fail on wording.
+
+Milestone 2 skill review, on branch skills-milestone-2: SKILL.md updated with the gpui 0.2.2 facts the builders verified and recorded in tasks 1.10, 1.12, 1.24 and 1.27 (the input handler's key routing and why key_char must not be inserted, displays at origin zero and display_id placement, Blurred and appearance, assets and RenderImage, two more pedantic lints); the Displays bullet, wrong against the source, is replaced. The keys case is rewritten to the input handler, since a correct answer no longer reads key_char. Promote only when the eval gate passes on a pull request.
 <!-- SECTION:NOTES:END -->

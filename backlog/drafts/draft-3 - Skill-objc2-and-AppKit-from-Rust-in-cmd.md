@@ -4,7 +4,7 @@ title: 'Skill: objc2 and AppKit from Rust in cmd'
 status: Draft
 assignee: []
 created_date: '2026-10-07 10:53'
-updated_date: '2026-10-07 11:21'
+updated_date: '2026-10-07 12:00'
 labels:
   - size-2
 dependencies: []
@@ -29,4 +29,6 @@ objc2 0.6 and objc2-foundation/objc2-app-kit 0.3 facts as this repository uses t
 
 <!-- SECTION:NOTES:BEGIN -->
 Third demonstrated miss, 2026-10-07 11:19: the bundle task's macOS-only become_accessory (cfg target_os = macos) failed clippy's doc_markdown on CI (LSUIElement, PopUp, NSPanel unquoted in its doc comment), which the Linux scratch clippy cannot see because the item is compiled out there. Fixed in ea337f6. Pattern across all three: code under cfg(target_os = "macos") is never linted or compiled before CI, so the skill should carry the habit of quoting Apple type names in docs, the objc2 facts above, and pushing such code alone so CI's macOS job checks it before anything stacks on it.
+
+Built on branch skills-milestone-2 as .claude/plugins/cmd-dev/skills/objc2-appkit-for-cmd/SKILL.md with three cases (downcast of owned NSArray elements, the target-specific dependency table, checking cfg(macos) code through CI's macOS job). Promote only when the eval gate passes on a pull request.
 <!-- SECTION:NOTES:END -->

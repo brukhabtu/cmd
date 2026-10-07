@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '"enter"'
+pattern: 'EntityInputHandler'
 match: contains
 target: last_message
 ---

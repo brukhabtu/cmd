@@ -5,4 +5,4 @@ allowed_tools: [Read, Glob, Grep, Skill]
 tags: [gpui]
 ---
 
-In a GPUI 0.2 view's key handler, `fn on_key(&mut self, event: &KeyDownEvent, ...)`, I need to tell Cmd-Backspace (clear the whole input) from plain Backspace, treat Return and Escape as commands, and for every other key without Cmd or Ctrl held get the text the key would type into the input. Which fields of the event do I read, and what are the exact key names gpui uses for Return and Escape? Give the Rust `match`.
+The cmd launcher's query line is a GPUI 0.2 view on macOS. Typing should work for plain keys, for dead keys like Option-E then E, and for Japanese input-method composition. Where should the typed text reach the view, and what must the view's key-down handler do and not do so that no character arrives twice? Name the gpui trait and methods involved.
