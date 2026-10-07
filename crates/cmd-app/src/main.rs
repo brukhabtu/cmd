@@ -9,7 +9,7 @@
 mod icons;
 mod input;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::thread;
@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use cmd_core::input::Motion;
 use cmd_core::query::Hit;
 use cmd_core::state::{Event, Launcher, Step};
-use cmd_host::{Host, HostEvent, Located, Startup, Timeouts, manifest};
+use cmd_host::{Bundle, Host, HostEvent, Located, Startup, Timeouts, bundle, manifest};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
@@ -49,6 +49,9 @@ const PLACEHOLDER: &str = "Search, or type a keyword";
 const DEFAULT_HOTKEY: &str = "alt+Space";
 /// How long a plugin may keep the person waiting before the window says so.
 const PATIENCE: Duration = Duration::from_millis(300);
+/// Stands first in the starting list while uv fetches the plugins' Python, so the line needs
+/// no state of its own. Only a manifest that spelt out a NUL in its name could clash.
+const FETCHING_PYTHON: &str = "\0python";
 
 /// The colours for one appearance. The tints are translucent so the blur behind the
 /// window shows through them.
@@ -154,6 +157,15 @@ impl LauncherView {
     fn on_startup(&mut self, starting: Starting, cx: &mut Context<Self>) {
         match starting {
             Starting::Report(Startup::Up { name, .. }) => self.started(&name),
+            Starting::Report(Startup::FetchingPython) => {
+                self.starting.insert(0, FETCHING_PYTHON.to_string());
+            }
+            Starting::Report(Startup::FetchedPython(fetched)) => {
+                self.started(FETCHING_PYTHON);
+                if let Err(message) = fetched {
+                    self.note_trouble(message);
+                }
+            }
             Starting::Report(Startup::Failed(error)) => {
                 self.started(error.name());
                 self.note_trouble(error.to_string());
@@ -268,7 +280,7 @@ impl LauncherView {
     /// the person waiting, by name.
     fn waiting_on(&self) -> Option<String> {
         if !self.starting.is_empty() {
-            return Some(format!("starting {}", self.starting.join(", ")));
+            return Some(starting_line(&self.starting));
         }
         if self.state.pending.is_empty() || self.asked_at.elapsed() < PATIENCE {
             return None;
@@ -597,6 +609,32 @@ fn locate_plugins() -> (Vec<Located>, Vec<String>) {
     (located, trouble)
 }
 
+/// The line under the input while the plugins start: uv fetching their Python comes first,
+/// on a first launch inside cmd.app, and says so, since it is the long wait.
+fn starting_line(starting: &[String]) -> String {
+    match starting.split_first() {
+        Some((first, [])) if first == FETCHING_PYTHON => {
+            format!("fetching Python {}", bundle::PYTHON)
+        }
+        Some((first, rest)) if first == FETCHING_PYTHON => format!(
+            "fetching Python {}, then starting {}",
+            bundle::PYTHON,
+            rest.join(", ")
+        ),
+        _ => format!("starting {}", starting.join(", ")),
+    }
+}
+
+/// The cmd.app this binary runs from, if any. The path is made canonical first: the
+/// cask links the binary from outside the bundle, and the link would hide it.
+fn running_bundle() -> Option<Bundle> {
+    let exe = std::env::current_exe()
+        .and_then(|exe| exe.canonicalize())
+        .ok()?;
+    let home = std::env::var_os("HOME")?;
+    Bundle::detect(&exe, Path::new(&home))
+}
+
 /// Start the plugins on a thread of their own, beside the window: each handshake can
 /// take up to the describe timeout, and on a first launch uv may be fetching Python
 /// (decision 7). Each plugin is reported as it comes up or fails, and the host follows
@@ -606,12 +644,25 @@ fn start_host_beside(located: Vec<Located>, reports: async_channel::Sender<Start
     let started = thread::Builder::new()
         .name("cmd-startup".to_string())
         .spawn(move || {
-            let host = Host::start_reporting(located, Timeouts::default(), |report| {
-                if let Startup::Failed(error) = &report {
-                    eprintln!("cmd: {error}");
-                }
-                let _ = reports.send_blocking(Starting::Report(report));
-            });
+            // Inside cmd.app the bundle's uv fetches Python here, before the first plugin.
+            let app = running_bundle();
+            let path = std::env::var_os("PATH");
+            let host = bundle::start_reporting(
+                app.as_ref(),
+                path.as_deref(),
+                located,
+                Timeouts::default(),
+                |report| {
+                    match &report {
+                        Startup::Failed(error) => eprintln!("cmd: {error}"),
+                        Startup::FetchedPython(Err(message)) => eprintln!("cmd: {message}"),
+                        Startup::Up { .. }
+                        | Startup::FetchingPython
+                        | Startup::FetchedPython(Ok(())) => {}
+                    }
+                    let _ = reports.send_blocking(Starting::Report(report));
+                },
+            );
             let _ = reports.send_blocking(Starting::Ready(host));
         });
     // Without this thread the window would say "starting" forever; like a window that
@@ -800,6 +851,23 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_starting_line_says_python_is_being_fetched_before_the_plugins() {
+        let names = |names: &[&str]| names.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(
+            starting_line(&names(&[FETCHING_PYTHON, "applications", "calculator"])),
+            "fetching Python 3.15, then starting applications, calculator"
+        );
+        assert_eq!(
+            starting_line(&names(&[FETCHING_PYTHON])),
+            "fetching Python 3.15"
+        );
+        assert_eq!(
+            starting_line(&names(&["applications", "calculator"])),
+            "starting applications, calculator"
+        );
+    }
 
     fn pressed(source: &str) -> Key {
         key(&Keystroke::parse(source).expect("a keystroke"))

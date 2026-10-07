@@ -96,6 +96,11 @@ clone use the developer's own uv and Python, as they do today.
 - The host applies the PATH and the three variables only inside a bundle, so a plugin
   behaves the same under `cmd-doctor` and under the app, each in its own environment.
   Plugins outside this repository keep `uv run` as their command and need no change.
+- Task 1.41 wires it: `cmd_host::bundle` detects the bundle from the canonical executable
+  path (the cask's link would hide it), fetches the Python on the start-up thread before
+  the first handshake, reports a failed fetch as start trouble with uv's own words, and
+  keeps the environment for every restart of a plugin. A failed fetch does not stop the
+  plugins starting: each then says for itself that it found no Python.
 - An offline first launch is not supported; if one is ever needed, the third option is the
   answer, and this decision is revisited with that evidence.
 - The bundle is the app plus uv: 92 MB here against 26 MB for the app alone. If it must
