@@ -60,6 +60,9 @@ else
   step "architecture: skipped, no npx on this machine"
 fi
 
+step "docs: the site builds from the repository, strict (scripts/docs.sh)"
+scripts/docs.sh
+
 step "claude code: plugin manifests"
 claude plugin validate --strict .claude/plugins/bruk-philosophy
 claude plugin validate --strict .claude/plugins/cmd-dev

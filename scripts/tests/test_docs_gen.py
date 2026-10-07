@@ -16,6 +16,7 @@ from docs_gen import (
     module_docs,
     python_modules,
     rust_string_constant,
+    rustdoc_crates,
 )
 
 
@@ -34,6 +35,12 @@ def test_a_rust_string_constant_is_read_with_its_escapes() -> None:
     source = 'const USAGE: &str = "usage: x <dir>\\n\\\n    second line with \\"quotes\\"";\n'
     assert rust_string_constant(source, "USAGE") == 'usage: x <dir>\nsecond line with "quotes"'
     assert rust_string_constant(source, "OTHER") is None
+
+
+def test_rustdocs_crate_list_is_read_from_crates_js() -> None:
+    text = 'window.ALL_CRATES = ["cmd_core","cmd_host","cmd_plugin"];\n//{"start":21}\n'
+    assert rustdoc_crates(text) == ["cmd_core", "cmd_host", "cmd_plugin"]
+    assert rustdoc_crates("") == []
 
 
 def test_front_matter_reads_folded_titles_and_quoted_values() -> None:

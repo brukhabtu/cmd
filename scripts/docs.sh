@@ -6,6 +6,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# rustdoc merges its crate list and search index into whatever an earlier run left in
+# target/doc, so the reference starts from an empty one. --lib leaves out cmd-host's
+# cmd-plugin binary, whose pages the site does not carry.
+cargo clean --doc
 # Warnings are errors here too: a broken intra-doc link is a broken page in the site.
-RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc --no-deps -p cmd-core -p cmd-host
+RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc --no-deps --lib -p cmd-core -p cmd-host
 uv run --group docs mkdocs build --strict "$@"

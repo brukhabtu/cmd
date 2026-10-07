@@ -10,6 +10,8 @@ text. The functions that read and shape are pure; `main` is the thin shell that 
 
 import ast
 import importlib
+import json
+import logging
 import os
 import re
 import tomllib
@@ -25,6 +27,8 @@ PYTHON_ROOTS = (
     ("Example plugins", REPOSITORY / "plugins"),
 )
 RUST_LIBRARIES = ("cmd_core", "cmd_host")
+# Under the mkdocs logger, so a warning here fails `mkdocs build --strict`.
+LOG = logging.getLogger("mkdocs.plugins.docs_gen")
 
 Opener = Callable[[str, str], IO[Any]]
 
@@ -363,6 +367,12 @@ def rustdoc_dir() -> Path:
     return target / "doc"
 
 
+def rustdoc_crates(crates_js: str) -> list[str]:
+    """The crates rustdoc's shared crate list names, read from its crates.js."""
+    match = re.search(r"ALL_CRATES = (\[[^\]]*\])", crates_js)
+    return [str(name) for name in json.loads(match.group(1))] if match else []
+
+
 def rustdoc_files(doc: Path, libraries: tuple[str, ...]) -> Iterator[Path]:
     """The rustdoc output the site serves.
 
@@ -420,6 +430,13 @@ def write_rust(open_file: Opener) -> None:
     doc = rustdoc_dir()
     built = {name for name in RUST_LIBRARIES if (doc / name / "index.html").exists()}
     if built:
+        # rustdoc's crate list and search index would name these, and link to pages the
+        # site leaves out.
+        listed = rustdoc_crates((doc / "crates.js").read_text(encoding="utf-8"))
+        if others := sorted(set(listed) - set(RUST_LIBRARIES)):
+            LOG.warning(
+                "%s also documents %s; scripts/docs.sh rebuilds it clean", doc, ", ".join(others)
+            )
         for path in rustdoc_files(doc, RUST_LIBRARIES):
             with open_file(f"reference/rust/{path.relative_to(doc).as_posix()}", "wb") as handle:
                 handle.write(path.read_bytes())

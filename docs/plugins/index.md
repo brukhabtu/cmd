@@ -10,11 +10,14 @@ functions and little else.
 ```python
 from cmd_sdk import Copy, Description, Effect, Item, Plugin
 
+
 def query(text: str) -> list[Item]:
     return [Item(id=text, title=text.upper())]
 
+
 def run(item: str, action: str) -> Effect:
     return Copy(item.upper())
+
 
 PLUGIN = Plugin(Description(name="shout", version="0.1.0"), query, run)
 ```
