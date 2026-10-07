@@ -4,7 +4,7 @@ title: 'Show on the hotkey, hide on Escape and on focus loss'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 03:46'
+updated_date: '2026-10-07 04:24'
 labels:
   - size-3
 milestone: m-1
@@ -39,4 +39,6 @@ cargo clippy and build green on macOS CI; core tests for the new events; a perso
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented in 995871a: the chord shows the window (activate, activate_window, focus), Escape, an effect and losing focus hide it through cx.hide(), and the state resets on hide so the next show starts empty. Clippy -D warnings green in the scratch workspace; awaiting the macOS CI build and a person at a Mac for the behaviour.
+
+CI run 8 (https://github.com/brukhabtu/cmd/actions/runs/37568145747, 995871a): cmd-app passed clippy -D warnings and cargo build on macos-latest. Run 7 on a730f3f failed on a rename the scratch check should have caught; the chain now gates the commit on the scratch clippy result.
 <!-- SECTION:NOTES:END -->

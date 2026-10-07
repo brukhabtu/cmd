@@ -4,7 +4,7 @@ title: 'Spike: a global hotkey for a GPUI app on macOS'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 03:46'
+updated_date: '2026-10-07 04:24'
 labels:
   - size-3
 milestone: m-1
@@ -37,4 +37,6 @@ A decision record on the board; cmd-app compiles on macOS CI with the hotkey wir
 
 <!-- SECTION:NOTES:BEGIN -->
 Decision 5 on the board records the mechanism (global-hotkey crate, Carbon RegisterEventHotKey, no permissions), the delivery path into GPUI (Send + Sync callback, async-channel, foreground task), Spotlight coexistence (Option-Space by default, CMD_HOTKEY=super+Space once Spotlight's shortcut is off) and the demo (cmd-app itself, task 1.9). Awaiting review once macOS CI has built a730f3f/995871a.
+
+CI run 8 (https://github.com/brukhabtu/cmd/actions/runs/37568145747, 995871a): cmd-app passed clippy -D warnings and cargo build on macos-latest. Run 7 on a730f3f failed on a rename the scratch check should have caught; the chain now gates the commit on the scratch clippy result.
 <!-- SECTION:NOTES:END -->

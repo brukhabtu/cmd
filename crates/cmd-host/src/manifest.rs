@@ -6,6 +6,10 @@
 //! ```
 //!
 //! The command runs with the plugin directory as its working directory.
+//!
+//! Where plugin directories live is decided by [`plugin_dirs`]: the directories named in
+//! `CMD_PLUGINS` when it is set, otherwise the per-user directory and, for development,
+//! `./plugins` when it exists.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -81,6 +85,69 @@ pub fn load(dir: &Path) -> Result<Located, LoadError> {
     })
 }
 
+/// Where to look for plugins.
+///
+/// `env` is the value of `CMD_PLUGINS`, a list of directories separated by `:`; when set
+/// it is the whole answer. Otherwise the per-user directory under `home` (Application
+/// Support on macOS, `.config` elsewhere) and `./plugins` under `cwd` when that exists.
+pub fn plugin_dirs(env: Option<&str>, home: Option<&Path>, cwd: &Path) -> Vec<PathBuf> {
+    if let Some(list) = env {
+        return list
+            .split(':')
+            .filter(|entry| !entry.is_empty())
+            .map(PathBuf::from)
+            .collect();
+    }
+    let mut dirs = Vec::new();
+    if let Some(home) = home {
+        dirs.push(user_plugin_dir(home));
+    }
+    let development = cwd.join("plugins");
+    if development.is_dir() {
+        dirs.push(development);
+    }
+    dirs
+}
+
+/// The per-user plugin directory: `~/Library/Application Support/cmd/plugins` on macOS,
+/// `~/.config/cmd/plugins` elsewhere.
+pub fn user_plugin_dir(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/cmd/plugins")
+    } else {
+        home.join(".config/cmd/plugins")
+    }
+}
+
+/// Load the plugins under every root, in root order then name order.
+///
+/// A root that does not exist is not an error: nothing has been installed there yet.
+/// A bad manifest is reported beside the plugins that did load.
+pub fn discover_all(roots: &[PathBuf]) -> (Vec<Located>, Vec<LoadError>) {
+    let mut plugins = Vec::new();
+    let mut errors = Vec::new();
+    for root in roots {
+        let found = match discover(root) {
+            Ok(found) => found,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(source) => {
+                errors.push(LoadError::Io {
+                    path: root.clone(),
+                    source,
+                });
+                continue;
+            }
+        };
+        for entry in found {
+            match entry {
+                Ok(plugin) => plugins.push(plugin),
+                Err(error) => errors.push(error),
+            }
+        }
+    }
+    (plugins, errors)
+}
+
 /// Load every subdirectory of `root` that holds a manifest, in name order.
 ///
 /// A directory without a manifest is not a plugin and is skipped. A directory
@@ -120,5 +187,62 @@ mod tests {
             parse("name = \"calc\"\ncommand = [\"x\"]\nkeyword = \"c\"\n"),
             Err(ManifestError::Toml(_))
         ));
+    }
+
+    #[test]
+    fn cmd_plugins_is_the_whole_answer_when_set() {
+        let dirs = plugin_dirs(
+            Some("/a:/b::"),
+            Some(Path::new("/home/me")),
+            Path::new("/work"),
+        );
+        assert_eq!(dirs, vec![PathBuf::from("/a"), PathBuf::from("/b")]);
+    }
+
+    #[test]
+    fn otherwise_the_user_directory_comes_first_and_the_development_directory_only_if_present() {
+        let scratch = scratch_dir("plugin-dirs");
+        let dirs = plugin_dirs(None, Some(Path::new("/home/me")), &scratch);
+        assert_eq!(dirs, vec![user_plugin_dir(Path::new("/home/me"))]);
+        std::fs::create_dir_all(scratch.join("plugins")).unwrap();
+        let dirs = plugin_dirs(None, Some(Path::new("/home/me")), &scratch);
+        assert_eq!(dirs[1], scratch.join("plugins"));
+        assert!(user_plugin_dir(Path::new("/home/me")).ends_with("cmd/plugins"));
+    }
+
+    #[test]
+    fn discover_all_skips_a_missing_root_and_reports_a_bad_manifest_with_its_path() {
+        let scratch = scratch_dir("discover-all");
+        let good = scratch.join("good");
+        let bad = scratch.join("bad");
+        std::fs::create_dir_all(&good).unwrap();
+        std::fs::create_dir_all(&bad).unwrap();
+        std::fs::create_dir_all(scratch.join("not-a-plugin")).unwrap();
+        std::fs::write(
+            good.join(FILE_NAME),
+            "name = \"good\"\ncommand = [\"true\"]\n",
+        )
+        .unwrap();
+        std::fs::write(bad.join(FILE_NAME), "name = \"bad\"\ncommand = []\n").unwrap();
+        let (plugins, errors) = discover_all(&[scratch.join("missing"), scratch.clone()]);
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].manifest.name, "good");
+        assert_eq!(errors.len(), 1);
+        let message = errors[0].to_string();
+        assert!(
+            message.contains(&bad.join(FILE_NAME).display().to_string()),
+            "{message}"
+        );
+        assert!(
+            message.contains("`command` must name a program"),
+            "{message}"
+        );
+    }
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("cmd-host-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
     }
 }

@@ -52,6 +52,10 @@ Read `docs/plugin-protocol.md` and `python/cmd-sdk/README.md`, then copy
 `plugins/calculator`. A plugin is a directory with a `cmd-plugin.toml`, a `Description`, a
 `query` function and a `run` function.
 
+Installed plugins live in `~/Library/Application Support/cmd/plugins`, one directory each.
+The app also loads `./plugins` from the directory it was started in, which is how this
+repository's plugins run during development. `CMD_PLUGINS=/dir:/other` replaces both.
+
 ## Working on cmd with Claude Code
 
 `.claude/settings.json` enables two vendored plugins: `philosophy` (how the work is done)

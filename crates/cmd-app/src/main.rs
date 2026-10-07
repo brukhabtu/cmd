@@ -255,23 +255,24 @@ impl Render for LauncherView {
     }
 }
 
-/// Where plugins live: `CMD_PLUGINS` if set, else `./plugins` for development.
-fn plugins_dir() -> PathBuf {
-    std::env::var_os("CMD_PLUGINS").map_or_else(|| PathBuf::from("plugins"), PathBuf::from)
-}
-
+/// Find and start the plugins. Where to look is `manifest::plugin_dirs`'s decision; this
+/// only reads the environment and reports.
 fn start_host() -> Host {
-    let mut located = Vec::new();
-    match manifest::discover(&plugins_dir()) {
-        Ok(found) => {
-            for entry in found {
-                match entry {
-                    Ok(plugin) => located.push(plugin),
-                    Err(error) => eprintln!("cmd: {error}"),
-                }
-            }
-        }
-        Err(error) => eprintln!("cmd: no plugins directory: {error}"),
+    let env = std::env::var("CMD_PLUGINS").ok();
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let dirs = manifest::plugin_dirs(env.as_deref(), home.as_deref(), &cwd);
+    let (located, errors) = manifest::discover_all(&dirs);
+    for error in &errors {
+        eprintln!("cmd: {error}");
+    }
+    if located.is_empty() {
+        let looked = dirs
+            .iter()
+            .map(|dir| dir.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("cmd: no plugins found in {looked}");
     }
     let (host, errors) = Host::start(located, Timeouts::default());
     for error in &errors {
