@@ -34,11 +34,16 @@ struct LauncherView {
     shown: bool,
     /// When the current query was asked, for the waiting line.
     asked_at: Instant,
+    /// What went wrong finding and starting plugins, shown under the input on every show
+    /// until the person has pressed a key at the window.
+    start_trouble: Option<String>,
 }
 
 impl LauncherView {
-    /// `trouble` is what went wrong while finding and starting plugins; it is the first
-    /// thing shown under the input, so a plugin that is missing is not simply silent.
+    /// `trouble` is what went wrong while finding and starting plugins. It is shown under
+    /// the input until the person has pressed a key here, so a plugin that is missing is
+    /// not simply silent, even when a focus loss at launch hid the window before anyone
+    /// looked.
     fn new(host: Host, trouble: &[String], window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe_window_activation(window, |view, window, cx| {
             if view.shown && !window.is_window_active() {
@@ -46,9 +51,10 @@ impl LauncherView {
             }
         })
         .detach();
+        let start_trouble = (!trouble.is_empty()).then(|| trouble.join("; "));
         let mut state = Launcher::default();
-        if !trouble.is_empty() {
-            state.apply(Event::Noted(trouble.join("; ")));
+        if let Some(message) = &start_trouble {
+            state.apply(Event::Noted(message.clone()));
         }
         Self {
             state,
@@ -56,6 +62,7 @@ impl LauncherView {
             focus: cx.focus_handle(),
             shown: true,
             asked_at: Instant::now(),
+            start_trouble,
         }
     }
 
@@ -137,9 +144,13 @@ impl LauncherView {
         }
     }
 
-    /// Bring the window up with an empty, focused input.
+    /// Bring the window up with an empty, focused input, and the start trouble under it
+    /// while that is still unseen.
     fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shown = true;
+        if let Some(message) = &self.start_trouble {
+            self.state.apply(Event::Noted(message.clone()));
+        }
         cx.activate(true);
         window.activate_window();
         window.focus(&self.focus);
@@ -173,6 +184,8 @@ impl LauncherView {
             _ => keystroke.key_char.clone().map(Event::Typed),
         };
         if let Some(event) = event {
+            // A key pressed here means the person has seen what was under the input.
+            self.start_trouble = None;
             self.handle(event, cx);
         }
     }

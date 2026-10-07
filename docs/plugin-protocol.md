@@ -140,11 +140,11 @@ gone (it exited, or its pipe broke) has the call in hand answered with that fact
 started again with back-off (2 s, doubling to 30 s, forgotten after a healthy call), and
 the window says "started again". A plugin that hangs, timing out three calls in a row,
 is treated the same way. A change to any file under the plugin's directory, other than
-hidden files and `__pycache__`, starts it again on the new code and the window says
-"reloaded"; the manifest is read again too, so a changed `command` takes effect. Every
-restart begins with `describe`, and the new description replaces the old one. A plugin
-that cannot be started again, or started at all, is reported in the window, and the old
-process keeps answering while a reload fails.
+hidden files, `__pycache__` and `uv.lock`, starts it again on the new code and the
+window says "reloaded"; the manifest is read again too, so a changed `command` takes
+effect. Every restart begins with `describe`, and the new description replaces the old
+one. A plugin that cannot be started again, or started at all, is reported in the
+window, and the old process keeps answering while a reload fails.
 
 ## Errors
 

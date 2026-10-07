@@ -414,7 +414,9 @@ impl Worker {
     }
 
     /// Answer one command and, when the process turned out to be gone or hung, start it
-    /// again with back-off. Whether the host is still listening.
+    /// again with back-off. Only an answered call counts as healthy and forgets the
+    /// back-off: a plugin that hangs every time waits longer each restart, like one that
+    /// dies every time. Whether the host is still listening.
     fn answer_and_recover(
         &mut self,
         command: Command,
@@ -422,7 +424,7 @@ impl Worker {
     ) -> bool {
         let (event, health) = self.answer(command);
         let (event, gone) = self.hung_or_gone(event, health);
-        if !gone {
+        if health == Health::Fine {
             self.restarts.healthy();
         }
         if reports.send_blocking(event).is_err() {
@@ -606,16 +608,16 @@ fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
 }
 
 /// Whether `path` is a file under the plugin directory `dir` that its author would edit,
-/// as opposed to one Python or uv writes while the plugin runs: anything hidden or under
-/// `__pycache__` below `dir` does not count. `dir` itself may sit under a hidden
-/// directory, as the per-user plugin directory does on Linux.
+/// as opposed to one Python or uv writes while the plugin runs: anything hidden, under
+/// `__pycache__` or named `uv.lock` below `dir` does not count. `dir` itself may sit
+/// under a hidden directory, as the per-user plugin directory does on Linux.
 fn is_source_under(path: &Path, dir: &Path) -> bool {
     let Ok(below) = path.strip_prefix(dir) else {
         return false;
     };
     !below.components().any(|component| {
         let name = component.as_os_str().to_string_lossy();
-        name == "__pycache__" || name.starts_with('.')
+        name == "__pycache__" || name == "uv.lock" || name.starts_with('.')
     })
 }
 
@@ -672,6 +674,7 @@ mod tests {
             dir
         ));
         assert!(!is_source_under(Path::new("/elsewhere/src/x.py"), dir));
+        assert!(!is_source_under(Path::new("/p/uv.lock"), dir));
     }
 
     #[test]

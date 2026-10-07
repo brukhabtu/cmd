@@ -274,6 +274,54 @@ fn a_plugin_that_keeps_timing_out_counts_as_hung_and_is_started_again() {
     assert_eq!(ask(&host, 3, "hello"), "a:hello");
 }
 
+/// Two stalled queries on a host whose plugin counts as hung after two timeouts, with
+/// their two answers taken, so the restart is the next event.
+fn hang_twice(host: &Host, first_generation: u64) {
+    for generation in [first_generation, first_generation + 1] {
+        host.query(generation, "stall");
+        match next(host) {
+            HostEvent::Answered { result: Err(_), .. } => {}
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_plugin_that_hangs_again_waits_longer_before_its_second_restart() {
+    let host = host_with(
+        &[("a", false)],
+        Timeouts {
+            query: Duration::from_millis(100),
+            hung_after: 2,
+            ..Timeouts::default()
+        },
+    );
+    hang_twice(&host, 1);
+    assert_eq!(
+        next(&host),
+        HostEvent::Restarted {
+            plugin: 0,
+            attempt: 1
+        }
+    );
+    let restarted = Instant::now();
+    hang_twice(&host, 3);
+    // The timeouts in between did not count as healthy calls, so this is restart two,
+    // and it waited the first back-off step (2 s) from the last one.
+    assert_eq!(
+        next_within(&host, Duration::from_secs(10)),
+        HostEvent::Restarted {
+            plugin: 0,
+            attempt: 2
+        }
+    );
+    assert!(
+        restarted.elapsed() >= Duration::from_millis(1500),
+        "the second restart came after {:?}",
+        restarted.elapsed()
+    );
+}
+
 #[test]
 fn a_changed_file_reloads_the_plugin_onto_the_new_code_and_manifest() {
     let (dir, located) = editable("reload", "before");
