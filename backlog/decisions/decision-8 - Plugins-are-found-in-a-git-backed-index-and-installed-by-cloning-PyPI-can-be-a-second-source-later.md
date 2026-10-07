@@ -41,8 +41,12 @@ manifest's name, and the directory it installs to), `summary`, `source` (a git U
 `ref` (a tag or a commit, required) and `subdirectory` (optional, for a plugin that
 lives inside a larger repository, as this repository's own plugins do). Listing a plugin
 is a pull request against the file, and so is moving its `ref`; CI checks the file's
-shape. The `ref` is what makes the listing mean something: what someone here read is what
-installs, and what an update moves to, until a pull request says otherwise.
+shape and pins every tag to the commit it pointed at when it was reviewed, since a tag can
+be moved and a commit cannot. The `ref` is what makes the listing mean something: what
+someone here read is what installs, and what an update moves to, until a pull request
+says otherwise. An install writes where it came from (the kind of source, the index name,
+the URL and the ref) to `.cmd-install.toml` in the plugin directory, which `update` and
+`list` read; the name is hidden so the file watcher ignores it.
 
 The app's own binary takes the subcommands, so nothing else is installed. It reads its
 arguments before any window or hotkey exists, so `cmd plugin ...` never opens the

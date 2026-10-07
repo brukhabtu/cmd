@@ -1,10 +1,10 @@
 ---
 id: TASK-1.26
 title: 'Design: a plugin index and cmd plugin install <source>'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 05:23'
+updated_date: '2026-10-07 05:24'
 labels:
   - size-3
 milestone: m-4
@@ -16,7 +16,7 @@ ordinal: 27000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A decision picks how plugins are found (a git-backed index, PyPI classifiers, or both) and how they are installed and updated
+- [x] #1 A decision picks how plugins are found (a git-backed index, PyPI classifiers, or both) and how they are installed and updated
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -35,4 +35,6 @@ The reviewer checks the reasoning against the tutorial's install step and decisi
 Decision 8 written: a git-backed index (plugins/index.toml: name, summary, source, optional ref; listing is a pull request), 'cmd plugin install <name | git URL | owner/name | path>' cloning into the plugin directory, 'cmd plugin update' fast-forwarding, remove and list; the app's own binary takes the subcommands. PyPI is weighed and deferred to a later decision with evidence, since PyPI offers no keyword search and would make a ten-minute plugin need a release. The intent's open question on distribution is ticked with decision 7. Awaiting review.
 
 Reviewer (working tree): KEEP OPEN, an optional ref let unreviewed code through the index. Decision 8 now requires ref (tag or commit) on every entry, installs and updates index plugins at that ref only (a shallow fetch of the commit, since clone --branch takes only tags and branches), adds an optional subdirectory so this repository's own plugins can be listed, names the install directory (per-user, or the first CMD_PLUGINS entry), says a failed fast-forward or a changed source changes nothing, has the host refuse the second plugin of a name (TASK-1.33), parses subcommands before any window or hotkey exists, folds cmd-doctor into 'cmd plugin doctor' later, and notes that an update reloads through 1.14 while a new install waits on 1.31. Awaiting review.
+
+Closed on the reviewer's verdict (working tree at c7a559d plus the two sentences below). From the review, written into decision 8 and into the tasks it names (TASK-1.34 subcommands, TASK-1.35 index and CI check): CI pins each tag to its commit, since a tag can be moved after review; an install records its source in a hidden .cmd-install.toml that update and list read.
 <!-- SECTION:NOTES:END -->
