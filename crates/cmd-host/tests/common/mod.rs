@@ -3,7 +3,8 @@
 
 #![allow(dead_code)]
 
-use cmd_host::{Located, Manifest};
+use cmd_core::protocol::{Effect, Item};
+use cmd_host::{HostEvent, Located, Manifest};
 
 /// Answers describe, echoes queries as one item, copies the item on run. Special texts:
 /// "stall" never answers, "late" answers after 300 ms, "chatter" writes a stray line,
@@ -72,4 +73,45 @@ pub fn speaking(name: &str, protocol: u32) -> Located {
     );
     *script = script.replace("\"protocol\": 0", &format!("\"protocol\": {protocol}"));
     located
+}
+
+/// The items `plugin` answered for `generation`. A query without a keyword reaches
+/// every keywordless plugin, so the other plugins' answers to the same query arrive in
+/// any order around this one and are skipped.
+pub fn answer_from(
+    events: &async_channel::Receiver<HostEvent>,
+    plugin: usize,
+    generation: u64,
+) -> Vec<Item> {
+    loop {
+        match events.recv_blocking().unwrap() {
+            HostEvent::Answered {
+                generation: answered,
+                plugin: from,
+                result: Ok(items),
+            } if answered == generation && from == plugin => return items,
+            HostEvent::Answered { plugin: other, .. } if other != plugin => {}
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+}
+
+/// The effect of `plugin`'s run in `generation`, skipping other plugins' answers to
+/// earlier queries that were still on their way.
+pub fn effect_from(
+    events: &async_channel::Receiver<HostEvent>,
+    plugin: usize,
+    generation: u64,
+) -> Effect {
+    loop {
+        match events.recv_blocking().unwrap() {
+            HostEvent::Ran {
+                generation: ran,
+                plugin: from,
+                result: Ok(effect),
+            } if ran == generation && from == plugin => return effect,
+            HostEvent::Answered { plugin: other, .. } if other != plugin => {}
+            other => panic!("unexpected {other:?}"),
+        }
+    }
 }
