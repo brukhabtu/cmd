@@ -1,10 +1,10 @@
 ---
 id: TASK-1.22
 title: 'Design: how a bundle finds or carries uv and Python 3.15'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 05:26'
+updated_date: '2026-10-07 05:27'
 labels:
   - size-3
 milestone: m-3
@@ -16,7 +16,7 @@ ordinal: 23000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A decision picks between requiring uv on PATH, bundling uv, and bundling a Python, with first-launch time and bundle size measured
+- [x] #1 A decision picks between requiring uv on PATH, bundling uv, and bundling a Python, with first-launch time and bundle size measured
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,4 +37,6 @@ Decision 7 written: cmd.app carries uv and nothing else; uv manages one Python u
 Reviewer at 79d4c47: KEEP OPEN, the two figures the criterion names were assembled, not measured end to end; cmd-doctor must not inherit only-managed; the window cannot say 'fetching Python' while start_host runs before the window exists. Done since: measured end to end on this container with both plugins outside the workspace through cmd-doctor one after the other, no managed Python, cold cache: 5.8 s with an explicit 'uv python install 3.15', then 0.34 s warm, 0.06 s for the install when present; each plugin environment 192 KB. Finding: with only-managed and no Python, 'uv run' refuses to fetch a version its embedded list does not know (3.15 was a pre-release for this uv), so the decision now has the app run 'uv python install 3.15' explicitly before the first plugin. The environment is applied only inside a bundle; cmd-doctor and a clone use the developer's own. TASK-1.32 filed for opening the window before the host starts. A release build of the app is running for the bundle total.
 
 Bundle total added from a release build of the app in the Linux scratch workspace: cmd 26 MB, uv 66 MB, so 92 MB for the bundle and 204 MB with a Python inside as well. Awaiting review.
+
+Closed on the reviewer's verdict against 1159f73. Kept visible on 1.23: uv 0.11.32 knows no stable 3.15, so decision 2's floor means a pre-release Python fetched by the explicit install until 3.15 is final and the bundled uv postdates it.
 <!-- SECTION:NOTES:END -->

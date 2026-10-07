@@ -54,7 +54,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "D", "ANN", "PLR2004", "INP001", "FBT", "E501"]
-"scripts/**" = ["T201", "INP001"] # a script's job is to print; scripts are not a package
+"scripts/**" = ["T201", "INP001", "S404", "S603"] # scripts print, are not a package, and check_index.py runs git
 
 [tool.mypy]
 strict = true

@@ -4,7 +4,7 @@ title: cmd.app bundle built by CI
 status: To Do
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 02:43'
+updated_date: '2026-10-07 05:27'
 labels:
   - size-5
 milestone: m-3
@@ -20,3 +20,9 @@ ordinal: 24000
 - [ ] #1 cargo-bundle or an equivalent produces cmd.app with an icon and an Info.plist that hides the Dock icon
 - [ ] #2 The macOS CI job uploads the bundle as an artifact on every push to main
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From the review of decision 7: uv 0.11.32 knows no stable Python 3.15, so an automatic download during uv run fails and even the explicit install fetches a pre-release; the bundled uv must be a release that knows the 3.15 the plugins need, which means revisiting this when 3.15 is final. Also owed here, per decision 7: the arm64 uv binary size, the Python fetch time on a home connection, and the first launch of each bundled plugin.
+<!-- SECTION:NOTES:END -->

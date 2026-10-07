@@ -22,7 +22,7 @@ hotkey, no app launcher plugin, and no bundle yet. The board in `backlog/` has t
 
 ## Build and run
 
-Rust 1.90 or later and [uv](https://docs.astral.sh/uv/).
+Rust 1.99, which `rust-toolchain.toml` pins, and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync --all-packages --all-groups     # Python 3.15 and the plugins' environments

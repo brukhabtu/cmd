@@ -1,0 +1,20 @@
+# The plugins `cmd plugin install <name>` can fetch (decision 8). Listing one is a pull
+# request, and so is moving its ref. `ref` is a commit, or a tag that carries in `commit`
+# the commit it pointed at when it was reviewed, since a tag can be moved and a commit
+# cannot. `subdirectory` is for a plugin that lives inside a larger repository.
+# scripts/check_index.py checks this file: the shape here, and at each ref that the
+# manifest exists and its name is the entry's.
+
+[[plugin]]
+name = "calculator"
+summary = "Arithmetic as you type; Enter copies the result."
+source = "https://github.com/brukhabtu/cmd"
+ref = "1159f73f7c9cc1248abe259a3a2de8592cfa7a67"
+subdirectory = "plugins/calculator"
+
+[[plugin]]
+name = "websearch"
+summary = "Type web and a question; Enter searches the web for it."
+source = "https://github.com/brukhabtu/cmd"
+ref = "1159f73f7c9cc1248abe259a3a2de8592cfa7a67"
+subdirectory = "plugins/websearch"

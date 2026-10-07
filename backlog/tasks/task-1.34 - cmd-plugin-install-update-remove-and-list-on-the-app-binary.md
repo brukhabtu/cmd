@@ -4,6 +4,7 @@ title: 'cmd plugin install, update, remove and list on the app binary'
 status: To Do
 assignee: []
 created_date: '2026-10-07 05:24'
+updated_date: '2026-10-07 05:31'
 labels:
   - size-3
 milestone: m-2
@@ -24,3 +25,9 @@ Decision 8. The app binary reads its arguments before any window or hotkey exist
 - [ ] #2 cmd plugin ... never opens a window or registers the hotkey
 - [ ] #3 cmd-doctor's behaviour is reachable as cmd plugin doctor <dir> and the tutorial says so
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From 1.35: the plugins listed from inside this repository depend on cmd-sdk as a workspace member (cmd-sdk = { workspace = true }), which cannot resolve once the plugin is installed on its own. The install must rewrite that one source to the git source at the same ref (git = <source>, subdirectory = python/cmd-sdk, rev = <commit>), and say so in .cmd-install.toml.
+<!-- SECTION:NOTES:END -->

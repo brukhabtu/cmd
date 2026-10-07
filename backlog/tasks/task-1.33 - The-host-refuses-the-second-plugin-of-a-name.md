@@ -1,10 +1,10 @@
 ---
 id: TASK-1.33
 title: The host refuses the second plugin of a name
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 05:23'
-updated_date: '2026-10-07 05:26'
+updated_date: '2026-10-07 05:27'
 labels:
   - size-1
 milestone: m-2
@@ -21,7 +21,7 @@ Two plugin directories can declare the same manifest name, for instance an insta
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With two directories declaring one name, the first in plugin_dirs order loads and the second is a StartError naming both directories, shown in the window as 1.30 shows start failures
+- [x] #1 With two directories declaring one name, the first in plugin_dirs order loads and the second is a StartError naming both directories, shown in the window as 1.30 shows start failures
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,4 +38,6 @@ cargo test -p cmd-host --test host; scripts/check.sh.
 
 <!-- SECTION:NOTES:BEGIN -->
 Landed: Host::start keeps the first plugin of a manifest name and pushes StartError::Duplicate ('<name> is already running from <dir>; not starting the copy in <dir>') for a later directory with the same name, before any handshake, so the window shows it through the start-trouble line. Test a_second_directory_declaring_a_running_name_is_refused_naming_both. The protocol document's plugin-locations paragraph says so. Awaiting review.
+
+Closed on the reviewer's verdict against 1159f73. Edges accepted, none blocking: when the first copy fails to start, a later copy of the name loads; names are compared from the manifest, not the description; a reload that renames a plugin to a running name is not checked (noted on 1.31).
 <!-- SECTION:NOTES:END -->
