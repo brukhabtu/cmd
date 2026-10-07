@@ -1,10 +1,10 @@
 ---
 id: TASK-1.6
 title: CI runs the same checks as scripts/check.sh
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 03:09'
+updated_date: '2026-10-07 03:20'
 labels:
   - size-2
 milestone: m-0
@@ -16,8 +16,8 @@ ordinal: 7000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An ubuntu job runs scripts/check.sh; a macOS job builds and clippies cmd-app
-- [ ] #2 CI is green on the branch head before merge (a commit that touches only the board does not re-prove it), and the toolchain is pinned so local and CI clippy agree
+- [x] #1 An ubuntu job runs scripts/check.sh; a macOS job builds and clippies cmd-app
+- [x] #2 CI is green on the branch head before merge (a commit that touches only the board does not re-prove it), and the toolchain is pinned so local and CI clippy agree
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -32,4 +32,6 @@ First run (37564168447) on bb92a89: the ubuntu job failed in scripts/check.sh be
 Run 2 (https://github.com/brukhabtu/cmd/actions/runs/37564566819) on 5fc99d0: the ubuntu job ran scripts/check.sh green in 57 s (fmt, clippy, tests including the adapter test through uv, ruff, mypy, pytest, the functional suite twice, pypeeker strict, likec4 validate, both plugin validations, the hook tests). The macOS job passed cargo clippy -p cmd-app -D warnings at 03:03 and was building the app when this note was written; run 1's macOS job (https://github.com/brukhabtu/cmd/actions/runs/37564168447) built cmd-app green on bb92a89. There is no pull request yet, so 'green on the first pull request' is evidenced by the branch runs.
 
 The finish line moved after the work started, which counts: the second criterion assumed a pull request that this branch never had, and the first run showed local and CI running different clippy versions. Reworded on the reviewer's proposal to the branch run plus the toolchain pin. ci.yml now installs the pinned toolchain with rustup show instead of naming @stable, so the workflow says which Rust runs.
+
+Closed per the reviewer's verdict conditions: run 2 (https://github.com/brukhabtu/cmd/actions/runs/37564566819, 5fc99d0) is green on both jobs, the macOS build finishing at 03:12; the second criterion is reworded to the branch run plus the toolchain pin. Run 3 (board-only commit) passed. Run 4 (https://github.com/brukhabtu/cmd/actions/runs/37565478906, a60a315, the rustup show step): ubuntu scripts/check.sh green in 44 s, macOS rustup show and clippy green, cargo build -p cmd-app in progress at close; the app's source is unchanged since run 2.
 <!-- SECTION:NOTES:END -->
