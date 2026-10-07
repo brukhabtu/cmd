@@ -1,10 +1,10 @@
 ---
 id: TASK-1.34
 title: 'cmd plugin install, update, remove and list on the app binary'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 05:24'
-updated_date: '2026-10-07 07:28'
+updated_date: '2026-10-07 07:50'
 labels:
   - size-3
 milestone: m-2
@@ -21,9 +21,9 @@ Decision 8. The app binary reads its arguments before any window or hotkey exist
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each of install (index name, URL, owner/name, path), update, remove and list behaves as decision 8 says, with a functional test per source kind against a local git repository
-- [ ] #2 cmd plugin ... never opens a window or registers the hotkey
-- [ ] #3 cmd-doctor's behaviour is reachable as cmd plugin doctor <dir> and the tutorial says so
+- [x] #1 Each of install (index name, URL, owner/name, path), update, remove and list behaves as decision 8 says, with a functional test per source kind against a local git repository
+- [x] #2 cmd plugin ... never opens a window or registers the hotkey
+- [x] #3 cmd-doctor's behaviour is reachable as cmd plugin doctor <dir> and the tutorial says so
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,4 +44,6 @@ Evidence: scripts/check.sh all checks passed (exit 0). cargo test --workspace --
 Owed on a Mac: run cmd plugin list from the real cmd binary and see no window and no hotkey; an install lands in ~/Library/Application Support/cmd/plugins and the app finds it on the next launch; cmd plugin install calculator against GitHub, once the index's pinned commits are reachable from a lasting branch; a running app picking up an index update after the directory swap (FSEvents is path-based, inotify is not); a newcomer following the revised tutorial.
 
 Notes: the warning before the first install from outside the index is printed, not confirmed, as decision 8 words it. A cloned plugin whose pyproject was rewritten keeps the SDK pinned at its install commit after a fast-forward: the line is no longer the workspace form and that commit still exists; only a plugin that is itself a uv workspace with cmd-sdk as a member is affected. The pinned index commits exist on this branch only until it is merged; the tests never touch GitHub. For 1.31: the new-plugin watcher must skip dot-directories, since the staging and the retired copy live in the root as .staging-<pid> and .old-<name>-<pid> for the life of a command. Awaiting review.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit 21970ad, merged into the branch. Owed on a Mac: cmd plugin list from the real binary opens no window and registers no hotkey; a path install lands under Application Support and the app finds it next launch; an index install and an owner/name install over the network once the index is on a lasting branch (1.36); a running app picking up an update after the directory swap (FSEvents is path-based); a newcomer follows the revised tutorial steps 4 and 5. Reviewer notes, not built: a tag entry without a commit pin records the tag name (check_index refuses such an entry); a failure between the directory swap and the record write leaves the plugin without a record; doctor's pub items have no outside callers; 1.31's watcher must skip every dot-directory, including .update-<name>-<pid>.
 <!-- SECTION:NOTES:END -->
