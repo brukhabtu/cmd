@@ -36,7 +36,9 @@ uv run pytest -q --keep-duplicates python/cmd-sdk/tests/functional python/cmd-sd
 
 step "python: pypeeker, strict, for the core/shell line inside the SDK (see [tool.pypeeker])"
 uv run --group arch pypeeker index python/cmd-sdk/src >/dev/null
-uv run --group arch pypeeker index plugins/calculator/src >/dev/null
+for plugin_src in plugins/*/src; do
+  uv run --group arch pypeeker index "$plugin_src" >/dev/null
+done
 uv run --group arch pypeeker check --strict
 
 step "python: no import crosses from the SDK to a plugin, or between plugins"

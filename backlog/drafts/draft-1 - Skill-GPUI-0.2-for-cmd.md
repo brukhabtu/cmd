@@ -5,7 +5,7 @@ status: Draft
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 04:37'
+updated_date: '2026-10-07 05:13'
 labels:
   - size-3
 dependencies: []
@@ -29,3 +29,9 @@ Where the source lives in ~/.cargo/registry and how to read it; the verified API
 3. 'Hide the window when it loses focus' -> regex for observe_window_activation taking a window argument.
 4. 'Why does the window not take focus on open?' -> llm grader: the answer names FocusHandle and window.focus.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Review before milestone 2 (2026-10-07, after 1.14, 1.28 and 1.29 closed): the coming work is GPUI from end to end (1.10 text input, 1.12 window look, 1.24 icons, 1.27 active display, 1.30's Mac check), so the model will keep reading gpui-0.2.2 from the cargo registry and compile-checking in the Linux scratch workspace. Evidence added this session: none new on GPUI itself, since the window code only gained the start-trouble line; one pedantic clippy miss (needless_pass_by_value on a Vec parameter) cost a build cycle, which the check caught and a skill would not change. Verdict: build this skill first in milestone 2, before 1.10, with the four cases above and a fifth, 'compile-check cmd-app on Linux', graded by tool_used on the scratch recipe. The eval runs in CI only on a pull request touching .claude/plugins/cmd-dev (skills.yml), on the repository's Claude credential, so the build goes up as a pull request and the result is attached here before promotion.
+<!-- SECTION:NOTES:END -->

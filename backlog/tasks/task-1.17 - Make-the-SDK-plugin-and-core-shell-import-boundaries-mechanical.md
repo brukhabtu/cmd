@@ -1,10 +1,10 @@
 ---
 id: TASK-1.17
 title: Make the SDK/plugin and core/shell import boundaries mechanical
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 05:12'
+updated_date: '2026-10-07 05:13'
 labels:
   - size-2
 milestone: m-2
@@ -22,8 +22,8 @@ pypeeker's import-boundaries rule, as pinned, derives units from each file's own
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 pypeeker check --strict (or its replacement) fails when cmd_sdk imports a plugin or a plugin imports another plugin, and passes on main
-- [ ] #2 The existing gate for the core/shell line inside cmd_sdk keeps passing and stays in scripts/check.sh
+- [x] #1 pypeeker check --strict (or its replacement) fails when cmd_sdk imports a plugin or a plugin imports another plugin, and passes on main
+- [x] #2 The existing gate for the core/shell line inside cmd_sdk keeps passing and stays in scripts/check.sh
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -43,4 +43,6 @@ uv run pytest scripts/tests; scripts/check.sh; a deliberate crossing fails the s
 
 <!-- SECTION:NOTES:BEGIN -->
 Landed: scripts/import_boundaries.py (stdlib only) reads every absolute import under the source roots with ast and fails on cmd_sdk importing a plugin package or a plugin importing a sibling, printing path:line: <package> imports <package>; scripts/check.sh runs it after pypeeker, and pypeeker's core/shell gate inside the SDK stays as it was. Five tests in scripts/tests/test_import_boundaries.py (clean tree, SDK to plugin, plugin to sibling and to itself, nested modules and relative imports, the real tree). A deliberate 'import websearch' in the calculator fails the step with the file and line. docs/architecture.md's boundary table calls the line mechanical. Awaiting review.
+
+Closed on the reviewer's verdict against 33ee847. Its two tidy-ups landed in the next commit: scripts/check.sh indexes every plugins/*/src for pypeeker (websearch was never indexed), and the [tool.pypeeker] comment in pyproject.toml points at scripts/import_boundaries.py. Limits accepted: packages without __init__.py and dynamic imports are invisible to the script; no plugin here has either.
 <!-- SECTION:NOTES:END -->
