@@ -44,6 +44,9 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # makes the app an accessory (no Dock icon). These crates are already in the tree below
 # global-hotkey; only features are added. objc2 is direct for MainThreadMarker.
 [target.'cfg(target_os = "macos")'.dependencies]
+# The displays' arrangement and the pointer in one space (task 1.27): GPUI reports every
+# display at origin zero. Already in the tree as GPUI's own dependency.
+core-graphics = "0.24"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std",

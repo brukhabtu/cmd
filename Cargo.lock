@@ -849,6 +849,7 @@ dependencies = [
  "async-channel 2.5.0",
  "cmd-core",
  "cmd-host",
+ "core-graphics 0.24.0",
  "global-hotkey",
  "gpui",
  "image",

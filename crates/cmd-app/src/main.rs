@@ -5,7 +5,10 @@
 //! from the key handler: typing, dead keys and input-method composition reach the state
 //! machine through GPUI's input handler, installed by the query line in `input.rs`. The
 //! global chord shows the window, Escape and losing focus hide it. That is the whole shell.
+//! The window is opened again on the display under the pointer when that has changed; the
+//! view, with the host and the state, outlives it.
 
+mod displays;
 mod icons;
 mod input;
 
@@ -16,6 +19,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cmd_core::input::Motion;
+use cmd_core::placement::{self, Placement};
 use cmd_core::query::Hit;
 use cmd_core::state::{Event, Launcher, Step};
 use cmd_host::{Bundle, Host, HostEvent, Located, Startup, Timeouts, bundle, manifest};
@@ -23,9 +27,9 @@ use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
 use gpui::{
-    App, Application, AsyncApp, Bounds, ClipboardItem, Context, Div, Entity, FocusHandle,
-    KeyDownEvent, Keystroke, Pixels, Render, RenderImage, Rgba, ShapedLine, Window,
-    WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind,
+    App, Application, AsyncApp, Bounds, ClipboardItem, Context, DisplayId, Div, Entity,
+    FocusHandle, Global, KeyDownEvent, Keystroke, Pixels, Render, RenderImage, Rgba, ShapedLine,
+    Window, WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind,
     WindowOptions, div, img, point, px, rgb, rgba, size,
 };
 use input::InputElement;
@@ -116,22 +120,8 @@ impl LauncherView {
     /// `trouble` is what went wrong while finding them. It is shown under the input until
     /// the person has pressed a key here, so a plugin that is missing is not simply
     /// silent, even when a focus loss at launch hid the window before anyone looked.
-    fn new(
-        starting: Vec<String>,
-        trouble: &[String],
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe_window_activation(window, |view, window, cx| {
-            if view.shown && !window.is_window_active() {
-                view.hide(cx);
-            }
-        })
-        .detach();
-        // The palette is read on every draw, so a switch between light and dark only
-        // needs a redraw.
-        cx.observe_window_appearance(window, |_, _, cx| cx.notify())
-            .detach();
+    /// The view belongs to no window: [`LauncherView::attach`] joins it to each one.
+    fn new(starting: Vec<String>, trouble: &[String], cx: &mut Context<Self>) -> Self {
         let start_trouble = (!trouble.is_empty()).then(|| trouble.join("; "));
         let mut state = Launcher::new(VISIBLE_ROWS);
         if let Some(message) = &start_trouble {
@@ -148,6 +138,22 @@ impl LauncherView {
             last_line: None,
             last_bounds: None,
         }
+    }
+
+    /// Join the view to a newly opened window. The observers live in the window and go
+    /// with it, so a window opened again on another display gets its own.
+    fn attach(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.observe_window_activation(window, |view, window, cx| {
+            if view.shown && !window.is_window_active() {
+                view.hide(cx);
+            }
+        })
+        .detach();
+        // The palette is read on every draw, so a switch between light and dark only
+        // needs a redraw.
+        cx.observe_window_appearance(window, |_, _, cx| cx.notify())
+            .detach();
+        window.focus(&self.focus);
     }
 
     /// The start-up thread said something. A plugin that could not be started joins the
@@ -292,15 +298,6 @@ impl LauncherView {
             .map(|plugin| self.plugin_name(*plugin))
             .collect();
         Some(format!("waiting on {}", names.join(", ")))
-    }
-
-    /// The chord: bring the window up, or put it away if it is already up.
-    fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.shown {
-            self.hide(cx);
-        } else {
-            self.show(window, cx);
-        }
     }
 
     /// Bring the window up with an empty, focused input, and the start trouble under it
@@ -701,15 +698,16 @@ fn register_hotkey(presses: async_channel::Sender<()>) -> Option<GlobalHotKeyMan
     Some(manager)
 }
 
-/// Hand every worker report to the view until the host or the window goes away.
+/// Hand every worker report to the view until the host or the app goes away. The view,
+/// not a window, is the receiver, so a window opened again never cuts the host off.
 async fn relay_host_events(
     events: async_channel::Receiver<HostEvent>,
-    window: WindowHandle<LauncherView>,
+    view: Entity<LauncherView>,
     cx: &mut AsyncApp,
 ) {
     while let Ok(event) = events.recv().await {
-        if window
-            .update(cx, |view, _, cx| view.on_host_event(event, cx))
+        if view
+            .update(cx, |view, cx| view.on_host_event(event, cx))
             .is_err()
         {
             break;
@@ -721,7 +719,7 @@ async fn relay_host_events(
 /// for as long as both last.
 async fn bring_up_host(
     progress: async_channel::Receiver<Starting>,
-    window: WindowHandle<LauncherView>,
+    view: Entity<LauncherView>,
     cx: &mut AsyncApp,
 ) {
     while let Ok(starting) = progress.recv().await {
@@ -731,50 +729,141 @@ async fn bring_up_host(
             Starting::Ready(host) => Some(host.events()),
             Starting::Report(_) => None,
         };
-        if window
-            .update(cx, |view, _, cx| view.on_startup(starting, cx))
+        if view
+            .update(cx, |view, cx| view.on_startup(starting, cx))
             .is_err()
         {
             return;
         }
         if let Some(events) = events {
-            relay_host_events(events, window, cx).await;
+            relay_host_events(events, view, cx).await;
             return;
         }
     }
 }
 
-/// Toggle the window on every press until the channel or the window goes away.
-async fn show_on_press(
-    presses: async_channel::Receiver<()>,
-    window: WindowHandle<LauncherView>,
-    cx: &mut AsyncApp,
-) {
+/// Answer every press until the channel or the app goes away.
+async fn show_on_press(presses: async_channel::Receiver<()>, cx: &mut AsyncApp) {
     while presses.recv().await.is_ok() {
-        let shown = window.update(cx, LauncherView::toggle);
-        if shown.is_err() {
+        if cx.update(reveal).is_err() {
             break;
         }
     }
 }
 
-/// Where the launcher sits: centred across the primary display, a third of the way down.
-/// Falls back to the centre of the screen when no display is reported.
-fn launcher_bounds(cx: &App) -> Bounds<Pixels> {
+/// The view, which lives as long as the app, and the window it is in now, which is
+/// replaced when the launcher moves to another display.
+#[derive(Clone)]
+struct Shell {
+    view: Entity<LauncherView>,
+    window: WindowHandle<LauncherView>,
+}
+
+impl Global for Shell {}
+
+/// Where the launcher goes now (`cmd_core::placement` decides), with the display as GPUI
+/// names it. `None` when no display is reported.
+fn launcher_placement(cx: &App) -> Option<(DisplayId, Placement)> {
+    let seen = displays::look(cx);
+    let window = placement::Size {
+        width: WIDTH,
+        height: HEIGHT,
+    };
+    let placed = placement::place(&seen.displays, seen.pointer, seen.primary, window)?;
+    let id = cx
+        .displays()
+        .iter()
+        .map(|display| display.id())
+        .find(|id| u32::from(*id) == placed.display)?;
+    Some((id, placed))
+}
+
+/// Open the launcher's window on the given display, or centred on the screen when there
+/// is none, and join the view to it. GPUI 0.2.2 cannot move an open window, so this is
+/// also how the launcher changes display. `None` when the window would not open.
+fn open_launcher(
+    view: &Entity<LauncherView>,
+    at: Option<(DisplayId, Placement)>,
+    cx: &mut App,
+) -> Option<WindowHandle<LauncherView>> {
     let size = size(px(WIDTH), px(HEIGHT));
-    match cx.primary_display() {
-        Some(display) => {
-            let screen = display.bounds();
+    let (display_id, bounds) = match at {
+        // The origin is relative to that display's top-left, as GPUI places it.
+        Some((id, placed)) => (
+            Some(id),
             Bounds {
-                origin: point(
-                    screen.origin.x + (screen.size.width - size.width) / 2.0,
-                    screen.origin.y + screen.size.height / 3.0 - size.height / 2.0,
-                ),
+                origin: point(px(placed.origin.x), px(placed.origin.y)),
                 size,
-            }
-        }
-        None => Bounds::centered(None, size, cx),
+            },
+        ),
+        None => (None, Bounds::centered(None, size, cx)),
+    };
+    // Blurred makes the NSWindow transparent with a vibrancy view beneath the content,
+    // so the rounded, tinted root is the window's whole shape.
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        display_id,
+        titlebar: None,
+        kind: WindowKind::PopUp,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Blurred,
+        ..Default::default()
+    };
+    let view = view.clone();
+    cx.open_window(options, move |window, cx| {
+        view.update(cx, |view, cx| view.attach(window, cx));
+        view
+    })
+    .map_err(|error| eprintln!("cmd: the launcher window would not open: {error}"))
+    .ok()
+}
+
+/// The chord: put the launcher away if it is up; otherwise bring it up on the display
+/// under the pointer, worked out afresh on every press so a moved pointer or a changed
+/// arrangement is followed. The window is opened again only when it is not already there.
+fn reveal(cx: &mut App) {
+    let Some(shell) = cx.try_global::<Shell>().cloned() else {
+        return;
+    };
+    if shell.view.read(cx).shown {
+        shell.view.update(cx, LauncherView::hide);
+        return;
     }
+    let target = launcher_placement(cx);
+    let here = shell.window.update(cx, |_, window, cx| {
+        let origin = window.bounds().origin;
+        (
+            window.display(cx).map(|display| u32::from(display.id())),
+            placement::Point {
+                x: f32::from(origin.x),
+                y: f32::from(origin.y),
+            },
+        )
+    });
+    let stays = match (here, &target) {
+        (Ok((display, origin)), Some((_, placed))) => placed.matches(display, origin),
+        // With no display to place on, the window stays where it is.
+        (Ok(_), None) => true,
+        (Err(_), _) => false,
+    };
+    let window = if stays {
+        shell.window
+    } else {
+        let _ = shell
+            .window
+            .update(cx, |_, window, _| window.remove_window());
+        let Some(window) = open_launcher(&shell.view, target, cx) else {
+            return;
+        };
+        cx.set_global(Shell {
+            view: shell.view.clone(),
+            window,
+        });
+        window
+    };
+    let _ = window.update(cx, LauncherView::show);
 }
 
 /// Make the app an accessory: no Dock icon and no menu bar. The bundle's `LSUIElement` says
@@ -815,33 +904,19 @@ fn main() -> ExitCode {
     let _hotkey = register_hotkey(notify);
     Application::new().run(move |cx: &mut App| {
         become_accessory();
-        let bounds = launcher_bounds(cx);
-        // Blurred makes the NSWindow transparent with a vibrancy view beneath the content,
-        // so the rounded, tinted root is the window's whole shape.
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: None,
-            kind: WindowKind::PopUp,
-            is_movable: false,
-            is_resizable: false,
-            is_minimizable: false,
-            window_background: WindowBackgroundAppearance::Blurred,
-            ..Default::default()
-        };
-        let window = cx
-            .open_window(options, |window, cx| {
-                let view = cx.new(|cx| LauncherView::new(names, &trouble, window, cx));
-                let focus = view.read(cx).focus.clone();
-                window.focus(&focus);
-                view
-            })
-            .expect("the launcher window opens");
+        let view = cx.new(|cx| LauncherView::new(names, &trouble, cx));
+        let at = launcher_placement(cx);
+        let window = open_launcher(&view, at, cx).expect("the launcher window opens");
+        cx.set_global(Shell {
+            view: view.clone(),
+            window,
+        });
         // Only now, with the window open, does the first handshake begin.
         let (reports, progress) = async_channel::unbounded();
         start_host_beside(located, reports);
-        cx.spawn(async move |cx| show_on_press(presses, window, cx).await)
+        cx.spawn(async move |cx| show_on_press(presses, cx).await)
             .detach();
-        cx.spawn(async move |cx| bring_up_host(progress, window, cx).await)
+        cx.spawn(async move |cx| bring_up_host(progress, view, cx).await)
             .detach();
         cx.activate(true);
     });
