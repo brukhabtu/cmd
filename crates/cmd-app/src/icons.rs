@@ -105,6 +105,7 @@ mod platform {
     use std::path::Path;
 
     use cmd_core::protocol::Icon;
+    use objc2::rc::Retained;
     use objc2_app_kit::{
         NSBitmapImageFileType, NSBitmapImageRep, NSFontWeightRegular, NSImage,
         NSImageSymbolConfiguration, NSImageSymbolScale, NSWorkspace,
@@ -144,15 +145,15 @@ mod platform {
         // every size it ships with and the one nearest the slot is picked.
         let tiff = image.TIFFRepresentation()?;
         let pages = NSBitmapImageRep::imageRepsWithData(&tiff);
-        let bitmaps: Vec<&NSBitmapImageRep> = pages
+        let bitmaps: Vec<Retained<NSBitmapImageRep>> = pages
             .iter()
-            .filter_map(|page| page.downcast_ref::<NSBitmapImageRep>())
+            .filter_map(|page| page.downcast::<NSBitmapImageRep>().ok())
             .collect();
         let widths: Vec<u32> = bitmaps
             .iter()
             .map(|bitmap| u32::try_from(bitmap.pixelsWide()).unwrap_or(0))
             .collect();
-        let chosen = bitmaps[nearest(&widths, pixels)?];
+        let chosen = &bitmaps[nearest(&widths, pixels)?];
         // SAFETY: the properties dictionary is untyped in `AppKit`; an empty one asks for
         // the defaults, which is all a PNG needs.
         let png = unsafe {
