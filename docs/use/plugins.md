@@ -16,6 +16,7 @@ cmd plugin install calculator      # a plugin from the index
 cmd plugin install owner/name      # a plugin from a GitHub repository
 cmd plugin list                    # what is installed, and what the index has
 cmd plugin update                  # index plugins to their reviewed version, others to their latest
+cmd plugin update calculator       # one plugin only
 cmd plugin remove calculator
 ```
 

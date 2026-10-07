@@ -455,7 +455,10 @@ def write_cli(open_file: Opener) -> None:
         ("cmd plugin doctor", "crates/cmd-host/src/doctor.rs"),
     ):
         usage = rust_string_constant((REPOSITORY / source).read_text(encoding="utf-8"), "USAGE")
-        if usage is not None:
+        if usage is None:
+            # A USAGE built with concat! or format! is not a literal this can read.
+            LOG.warning("%s has no USAGE string literal for the CLI page", source)
+        else:
             commands.append((title, usage))
     with open_file("reference/cli.md", "w") as handle:
         handle.write(cli_page(commands))

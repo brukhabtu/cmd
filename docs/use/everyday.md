@@ -12,9 +12,10 @@
 | ++enter++ | Run the selected row |
 | ++cmd+1++ to ++cmd+9++ | Run the first to ninth row on screen |
 | ++escape++ | Hide the launcher (or cancel what an input method is composing) |
-| ++cmd+backspace++ | Clear the input |
+| ++cmd+backspace++ | Delete everything before the cursor |
 | ++option+backspace++ | Delete the word before the cursor |
-| ++left++ / ++right++, with ++shift++ | Move the cursor, and select |
+| ++left++ / ++right++ | Move the cursor; with ++option++ a word at a time, with ++cmd++ to the start or end |
+| ++shift++ with any of those | Select as the cursor moves |
 | ++cmd+a++, ++cmd+c++, ++cmd+v++ | Select all, copy, paste |
 
 The launcher hides itself when you click elsewhere.
@@ -23,8 +24,8 @@ The launcher hides itself when you click elsewhere.
 
 Some plugins answer only when the text starts with their keyword, so they stay out of the
 way otherwise: `web` searches the web, `f` finds files. Others answer anything they
-understand: the calculator answers arithmetic, the system plugin answers `sleep`, `lock`,
-`trash` and `dark`.
+understand: the applications plugin answers part of an app's name, the calculator answers
+arithmetic, and the system plugin answers `sleep`, `lock`, `trash` and `dark`.
 
 ![The system plugin's answer to dark](../assets/screenshots/system.png){ width="640" }
 
