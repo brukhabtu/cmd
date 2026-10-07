@@ -110,17 +110,18 @@ What each part declares:
 - Log to stderr. Stdout belongs to the protocol, and the host rejects anything else on it.
 
 **4. Try it without the app.** `cmd-doctor` runs a plugin directory the way the launcher
-does and prints what comes back. It needs a Rust toolchain, like the app itself:
+does and prints what comes back. It needs a Rust toolchain, like the app itself, so run it
+from a clone of this repository, with the path to your plugin:
 
 ```sh
-cargo run -p cmd-host --bin cmd-doctor -- plugins/websearch --query "rust gpui" --run "https://duckduckgo.com/?q=rust+gpui" --action copy
+cargo run -p cmd-host --bin cmd-doctor -- /path/to/your/plugin --query "rust gpui" --run "https://duckduckgo.com/?q=rust+gpui" --action copy
 ```
 
 **5. Install it.** Copy the directory into `~/Library/Application Support/cmd/plugins/`,
 or run the app with `CMD_PLUGINS=/path/to/your/plugins`. The launcher starts every plugin
-it finds. A plugin that fails to start is reported in the terminal the app was started
-from; once running, its errors appear as a line under the input, and editing its files
-reloads it.
+it finds. A plugin that fails to start is named in a line under the input when the window
+first opens, and in the terminal the app was started from. Once running, its errors appear
+in that line, and editing its files reloads it.
 
 ## Testing a plugin
 

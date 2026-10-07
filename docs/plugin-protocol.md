@@ -128,8 +128,9 @@ score first of all, and ties keep the plugins' order and then each plugin's own 
 | query | 3 s |
 | run | 10 s |
 
-A plugin that misses a deadline is reported in the launcher and not retried. Return quickly
-and do slow work in `run`.
+A plugin that misses a deadline is reported in the launcher and not retried. Three missed
+deadlines in a row count as a hang: the process is killed and started again as below.
+Return quickly and do slow work in `run`.
 
 ## Lifecycle
 
@@ -137,10 +138,13 @@ Plugins start when the launcher starts and stay running until it exits, each on 
 worker thread, so a slow plugin delays only its own answers. A plugin whose process has
 gone (it exited, or its pipe broke) has the call in hand answered with that fact, is
 started again with back-off (2 s, doubling to 30 s, forgotten after a healthy call), and
-the window says "started again". A change to any file under the plugin's directory,
-other than hidden directories and `__pycache__`, starts it again on the new code and the
-window says "reloaded". A plugin that cannot be started again is reported in the window.
-A plugin that hangs is not restarted today; each call times out instead.
+the window says "started again". A plugin that hangs, timing out three calls in a row,
+is treated the same way. A change to any file under the plugin's directory, other than
+hidden files and `__pycache__`, starts it again on the new code and the window says
+"reloaded"; the manifest is read again too, so a changed `command` takes effect. Every
+restart begins with `describe`, and the new description replaces the old one. A plugin
+that cannot be started again, or started at all, is reported in the window, and the old
+process keeps answering while a reload fails.
 
 ## Errors
 

@@ -31,9 +31,10 @@ The pure part is where the tests are, and the shell is thin enough to read in on
 owns its process. A query goes to the workers as a command and returns at once; answers
 come back as events on a channel the window's executor awaits, each tagged with the
 generation of the text it answers, so a late answer to an older query is dropped and a
-slow plugin delays only its own rows. A plugin whose process dies is started again with
-back-off, and the window says so. `cmd-doctor` runs the same process layer from the
-command line for plugin authors.
+slow plugin delays only its own rows. A plugin whose process dies or hangs is started
+again with back-off, a plugin whose files change is started again on the new code, and
+the window says so each time. `cmd-doctor` runs the same process layer from the command
+line for plugin authors.
 
 **The plugin returns effects; the host performs them.** A plugin says "copy this" or "open
 that" and the app does it. This keeps the plugin side simple and keeps the app in control of

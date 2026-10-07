@@ -9,13 +9,48 @@ use cmd_core::protocol::Effect;
 use cmd_host::{Host, HostEvent, Timeouts};
 
 fn host(plugins: &[(&str, bool)]) -> Host {
+    host_with(plugins, Timeouts::default())
+}
+
+fn host_with(plugins: &[(&str, bool)], timeouts: Timeouts) -> Host {
     let located = plugins
         .iter()
         .map(|(name, slow)| common::located(name, *slow))
         .collect();
-    let (host, errors) = Host::start(located, Timeouts::default());
+    let (host, errors) = Host::start(located, timeouts);
     assert!(errors.is_empty(), "{errors:?}");
     host
+}
+
+/// A plugin directory of its own, holding `fake.py` with the given NAME and no manifest.
+fn editable(tag: &str, name: &str) -> (std::path::PathBuf, cmd_host::Located) {
+    let dir = std::env::temp_dir().join(format!("cmd-host-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("fake.py"),
+        format!("NAME = {name:?}\n{}", common::FAKE),
+    )
+    .unwrap();
+    let located = cmd_host::Located {
+        dir: dir.clone(),
+        manifest: cmd_host::Manifest {
+            name: "editable".into(),
+            command: vec!["python3".into(), "fake.py".into()],
+        },
+    };
+    (dir, located)
+}
+
+/// The first title the plugin answers for `text`, so a test can see which code answered.
+fn ask(host: &Host, generation: u64, text: &str) -> String {
+    host.query(generation, text);
+    match next_within(host, Duration::from_secs(10)) {
+        HostEvent::Answered {
+            result: Ok(items), ..
+        } => items[0].title.clone(),
+        other => panic!("unexpected {other:?}"),
+    }
 }
 
 fn next(host: &Host) -> HostEvent {
@@ -196,40 +231,118 @@ fn a_plugin_that_exits_is_started_again_for_the_next_query() {
 }
 
 #[test]
-fn a_changed_file_reloads_the_plugin_onto_the_new_code() {
-    let dir = std::env::temp_dir().join(format!("cmd-host-reload-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let script = dir.join("fake.py");
-    std::fs::write(&script, format!("NAME = \"before\"\n{}", common::FAKE)).unwrap();
-    let located = cmd_host::Located {
-        dir: dir.clone(),
-        manifest: cmd_host::Manifest {
-            name: "editable".into(),
-            command: vec!["python3".into(), "fake.py".into()],
+fn a_plugin_that_keeps_timing_out_counts_as_hung_and_is_started_again() {
+    let host = host_with(
+        &[("a", false)],
+        Timeouts {
+            query: Duration::from_millis(100),
+            hung_after: 2,
+            ..Timeouts::default()
         },
-    };
+    );
+    host.query(1, "stall");
+    match next(&host) {
+        HostEvent::Answered {
+            generation: 1,
+            result: Err(error),
+            ..
+        } => assert!(
+            error.contains("no answer") && !error.contains("starting it again"),
+            "one timeout is not yet a hang: {error}"
+        ),
+        other => panic!("unexpected {other:?}"),
+    }
+    host.query(2, "stall");
+    match next(&host) {
+        HostEvent::Answered {
+            generation: 2,
+            result: Err(error),
+            ..
+        } => assert!(
+            error.contains("2 times in a row") && error.contains("starting it again"),
+            "{error}"
+        ),
+        other => panic!("unexpected {other:?}"),
+    }
+    assert_eq!(
+        next(&host),
+        HostEvent::Restarted {
+            plugin: 0,
+            attempt: 1
+        }
+    );
+    assert_eq!(ask(&host, 3, "hello"), "a:hello");
+}
+
+#[test]
+fn a_changed_file_reloads_the_plugin_onto_the_new_code_and_manifest() {
+    let (dir, located) = editable("reload", "before");
     let (host, errors) = Host::start(vec![located], Timeouts::default());
     assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(ask(&host, 1, "hello"), "before:hello");
 
-    std::fs::write(&script, format!("NAME = \"after\"\n{}", common::FAKE)).unwrap();
+    // The script changes: the plugin comes back on the new code.
+    std::fs::write(
+        dir.join("fake.py"),
+        format!("NAME = \"after\"\n{}", common::FAKE),
+    )
+    .unwrap();
     assert_eq!(
         next_within(&host, Duration::from_secs(10)),
         HostEvent::Reloaded { plugin: 0 }
     );
-    host.query(1, "hello");
+    assert_eq!(host.name(0).as_deref(), Some("after"));
+    assert_eq!(ask(&host, 2, "hello"), "after:hello");
+
+    // A manifest appears, naming another script: the reload reads it and runs that.
+    std::fs::write(
+        dir.join("other.py"),
+        format!("NAME = \"other\"\n{}", common::FAKE),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("cmd-plugin.toml"),
+        "name = \"editable\"\ncommand = [\"python3\", \"other.py\"]\n",
+    )
+    .unwrap();
+    // Two files, so one reload or two, depending on how the writes fell around the settle.
+    let started = Instant::now();
+    while host.name(0).as_deref() != Some("other") {
+        assert_eq!(
+            next_within(&host, Duration::from_secs(10)),
+            HostEvent::Reloaded { plugin: 0 }
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+    assert_eq!(ask(&host, 3, "hello"), "other:hello");
+}
+
+#[test]
+fn a_broken_manifest_is_reported_and_the_old_code_keeps_answering() {
+    let (dir, located) = editable("broken", "before");
+    let (host, errors) = Host::start(vec![located], Timeouts::default());
+    assert!(errors.is_empty(), "{errors:?}");
+
+    std::fs::write(
+        dir.join("cmd-plugin.toml"),
+        "name = \"editable\"\ncommand = []\n",
+    )
+    .unwrap();
     match next_within(&host, Duration::from_secs(10)) {
-        HostEvent::Answered {
-            result: Ok(items), ..
-        } => assert_eq!(items[0].title, "after:hello"),
+        HostEvent::Trouble { plugin: 0, message } => assert!(
+            message.contains("did not come back after a change")
+                && message.contains("not a valid manifest"),
+            "{message}"
+        ),
         other => panic!("unexpected {other:?}"),
     }
+    assert_eq!(ask(&host, 1, "hello"), "before:hello");
 }
 
 #[test]
 fn blank_input_asks_nobody_and_the_plugin_is_still_described() {
     let host = host(&[("a", false)]);
     assert_eq!(host.descriptions().count(), 1);
-    assert_eq!(host.name(0), Some("a"));
+    assert_eq!(host.name(0).as_deref(), Some("a"));
     assert_eq!(host.query(1, "   "), Vec::<usize>::new());
 }

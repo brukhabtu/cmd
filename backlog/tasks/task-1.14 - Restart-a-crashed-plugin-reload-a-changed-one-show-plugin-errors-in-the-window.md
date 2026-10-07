@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 04:44'
+updated_date: '2026-10-07 04:59'
 labels:
   - size-3
 milestone: m-2
@@ -18,7 +18,7 @@ ordinal: 15000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A plugin that exits is restarted on the next query, with back-off and a visible notice
+- [ ] #1 A plugin that exits is started again before the next query, with back-off and a visible notice
 - [ ] #2 Editing a plugin's files or manifest reloads it without restarting the app
 - [ ] #3 Errors from a plugin appear as a one-line message under the input and clear when the text changes
 <!-- AC:END -->
@@ -43,4 +43,6 @@ cargo test -p cmd-host --test host.
 First slice landed: a plugin whose process has gone (exited, broken pipe) gets its command answered with that fact, is started again with back-off (2 s doubling to 30 s, reset after a healthy call), and the window shows '<plugin> started again (restart n)'. Test a_plugin_that_exits_is_started_again_for_the_next_query. Not done: reload when a plugin's files change (the second criterion). The third criterion (errors as a line under the input, cleared when the text changes) is how Unanswered and Failed already render.
 
 Second slice: a change to any file under the plugin's directory (hidden directories and __pycache__ excepted) reloads it on the new code, with a 200 ms settle and collapsing of bursts; test a_changed_file_reloads_the_plugin_onto_the_new_code rewrites the fake and sees the new name answer. From the review: a failed restart or reload is now reported in the window (HostEvent::Trouble); Restarts::delay has a unit test; the Lifecycle section of docs/plugin-protocol.md is current. Not done, as tasks: a hung plugin counting as dead; start failures in the window. Awaiting review.
+
+Third slice, from the review: the worker is a struct (Worker) with one method per concern, so no function nears clippy's line limit. A reload re-reads cmd-plugin.toml (a directory without one keeps the manifest it started on, as the tests do), so a changed command takes effect, and the fresh description replaces the old one behind an Arc<RwLock> the host reads; test a_changed_file_reloads_the_plugin_onto_the_new_code_and_manifest covers both. A broken manifest is reported as Trouble and the old process keeps answering (test a_broken_manifest_is_reported_and_the_old_code_keeps_answering). Reload bursts that arrive during the settle collapse into the one restart. The hidden-directory filter now applies only below the plugin directory, so a plugin under ~/.config is watched. AC1 reworded to 'started again before the next query', which is what the test shows.
 <!-- SECTION:NOTES:END -->

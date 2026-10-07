@@ -4,7 +4,7 @@ title: 'SDK tutorial: a plugin in ten minutes'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 04:44'
+updated_date: '2026-10-07 04:59'
 labels:
   - size-2
 milestone: m-2
@@ -39,4 +39,6 @@ uv run pytest, cargo test -p cmd-host --test calculator.
 Implemented: plugins/websearch (keyword 'web', two actions, Open and Copy effects) with unit tests; python/cmd-sdk/README.md is the ten-minute tutorial built on it, from the three files to cmd-doctor and installing; the host adapter test proves keyword routing, the stripped text, both actions and that a global query never reaches a keyword plugin. Only a newcomer can prove the prose. Awaiting review.
 
 From the review: the tutorial now shows the src/websearch layout, gives a git source for cmd-sdk so it works from an empty directory outside this repository (the workspace form inside), says cmd-doctor needs a Rust toolchain, and no longer claims start failures show in the window. Awaiting review.
+
+From the review: step 4 now says to run cmd-doctor from a clone of the repository with the path to your plugin, and step 5 says start failures appear under the input. Still owed before closing: a person follows the tutorial outside the repository; nobody has yet.
 <!-- SECTION:NOTES:END -->

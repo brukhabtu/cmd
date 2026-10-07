@@ -37,15 +37,21 @@ struct LauncherView {
 }
 
 impl LauncherView {
-    fn new(host: Host, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    /// `trouble` is what went wrong while finding and starting plugins; it is the first
+    /// thing shown under the input, so a plugin that is missing is not simply silent.
+    fn new(host: Host, trouble: &[String], window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe_window_activation(window, |view, window, cx| {
             if view.shown && !window.is_window_active() {
                 view.hide(cx);
             }
         })
         .detach();
+        let mut state = Launcher::default();
+        if !trouble.is_empty() {
+            state.apply(Event::Noted(trouble.join("; ")));
+        }
         Self {
-            state: Launcher::default(),
+            state,
             host,
             focus: cx.focus_handle(),
             shown: true,
@@ -103,7 +109,9 @@ impl LauncherView {
     }
 
     fn plugin_name(&self, plugin: usize) -> String {
-        self.host.name(plugin).unwrap_or("a plugin").to_string()
+        self.host
+            .name(plugin)
+            .unwrap_or_else(|| "a plugin".to_string())
     }
 
     /// The plugins still owed an answer, by name, once they have kept the person waiting.
@@ -286,29 +294,29 @@ impl Render for LauncherView {
 }
 
 /// Find and start the plugins. Where to look is `manifest::plugin_dirs`'s decision; this
-/// only reads the environment and reports.
-fn start_host() -> Host {
+/// only reads the environment. What went wrong comes back beside the host, for the
+/// window to show, and goes to stderr for whoever started the app from a terminal.
+fn start_host() -> (Host, Vec<String>) {
     let env = std::env::var("CMD_PLUGINS").ok();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let dirs = manifest::plugin_dirs(env.as_deref(), home.as_deref(), &cwd);
-    let (located, errors) = manifest::discover_all(&dirs);
-    for error in &errors {
-        eprintln!("cmd: {error}");
-    }
+    let (located, load_errors) = manifest::discover_all(&dirs);
+    let mut trouble: Vec<String> = load_errors.iter().map(ToString::to_string).collect();
     if located.is_empty() {
         let looked = dirs
             .iter()
             .map(|dir| dir.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        eprintln!("cmd: no plugins found in {looked}");
+        trouble.push(format!("no plugins found in {looked}"));
     }
-    let (host, errors) = Host::start(located, Timeouts::default());
-    for error in &errors {
-        eprintln!("cmd: {error}");
+    let (host, start_errors) = Host::start(located, Timeouts::default());
+    trouble.extend(start_errors.iter().map(ToString::to_string));
+    for message in &trouble {
+        eprintln!("cmd: {message}");
     }
-    host
+    (host, trouble)
 }
 
 /// Register the chord and hand each press to `presses`. Returns the manager, which must
@@ -392,7 +400,7 @@ fn launcher_bounds(cx: &App) -> Bounds<Pixels> {
 }
 
 fn main() {
-    let host = start_host();
+    let (host, trouble) = start_host();
     let events = host.events();
     let (notify, presses) = async_channel::bounded(1);
     let _hotkey = register_hotkey(notify);
@@ -409,7 +417,7 @@ fn main() {
         };
         let window = cx
             .open_window(options, |window, cx| {
-                let view = cx.new(|cx| LauncherView::new(host, window, cx));
+                let view = cx.new(|cx| LauncherView::new(host, &trouble, window, cx));
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus);
                 view

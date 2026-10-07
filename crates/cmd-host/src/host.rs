@@ -7,17 +7,17 @@
 //! one-request-in-flight rule the process layer relies on still holds.
 
 use std::io;
-use std::sync::mpsc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, PoisonError, RwLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use cmd_core::protocol::{Description, Effect, Item, Items, Method, Ran, VERSION};
 use cmd_core::query::{self, Scope};
 use notify::{RecursiveMode, Watcher};
-use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-use crate::manifest::Located;
+use crate::manifest::{self, LoadError, Located};
 use crate::process::{CallError, PluginProcess};
 
 /// How long a worker waits on each kind of call.
@@ -27,6 +27,9 @@ pub struct Timeouts {
     pub describe: Duration,
     pub query: Duration,
     pub run: Duration,
+    /// This many timeouts in a row and the plugin counts as hung: it is killed and
+    /// started again like one that died. Zero never counts a plugin as hung.
+    pub hung_after: u32,
 }
 
 impl Default for Timeouts {
@@ -35,6 +38,7 @@ impl Default for Timeouts {
             describe: Duration::from_secs(60),
             query: Duration::from_secs(3),
             run: Duration::from_secs(10),
+            hung_after: 3,
         }
     }
 }
@@ -108,8 +112,10 @@ enum Command {
 }
 
 struct Plugin {
+    /// The directory the plugin runs from, with the manifest it was started on.
     located: Located,
-    description: Description,
+    /// Shared with the worker, which replaces it when the plugin starts again.
+    description: Arc<RwLock<Description>>,
     commands: mpsc::Sender<Command>,
 }
 
@@ -172,13 +178,21 @@ impl Host {
             match handshake(located, timeouts.describe) {
                 Ok((located, description, process)) => {
                     let (commands, work) = mpsc::channel();
-                    let index = started.len();
                     let reports = events.clone();
                     let name = format!("plugin:{}", description.name);
-                    let home = located.clone();
+                    let description = Arc::new(RwLock::new(description));
+                    let worker = Worker {
+                        plugin: started.len(),
+                        home: located.clone(),
+                        description: Arc::clone(&description),
+                        process,
+                        timeouts,
+                        restarts: Restarts::default(),
+                        timeouts_in_a_row: 0,
+                    };
                     let spawned = thread::Builder::new()
                         .name(name.clone())
-                        .spawn(move || serve(index, &home, process, &work, &reports, timeouts));
+                        .spawn(move || worker.serve(&work, &reports));
                     match spawned {
                         Ok(_handle) => started.push(Plugin {
                             located,
@@ -208,16 +222,22 @@ impl Host {
         self.inbox.clone()
     }
 
-    /// What each running plugin said about itself.
-    pub fn descriptions(&self) -> impl Iterator<Item = &Description> {
-        self.plugins.iter().map(|plugin| &plugin.description)
+    /// What each running plugin says about itself, as of now: a reload can change it.
+    pub fn descriptions(&self) -> impl Iterator<Item = Description> + '_ {
+        self.plugins.iter().map(|plugin| {
+            plugin
+                .description
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        })
     }
 
     /// The name of a plugin by index, for messages.
-    pub fn name(&self, plugin: usize) -> Option<&str> {
-        self.plugins
-            .get(plugin)
-            .map(|plugin| plugin.description.name.as_str())
+    pub fn name(&self, plugin: usize) -> Option<String> {
+        self.descriptions()
+            .nth(plugin)
+            .map(|description| description.name)
     }
 
     /// The directories of the running plugins, for diagnostics.
@@ -229,9 +249,8 @@ impl Host {
     /// each answers later with a [`HostEvent::Answered`] carrying this generation.
     pub fn query(&self, generation: u64, input: &str) -> Vec<usize> {
         let scopes: Vec<Scope> = self
-            .plugins
-            .iter()
-            .map(|plugin| Scope::from_keyword(plugin.description.keyword.clone()))
+            .descriptions()
+            .map(|description| Scope::from_keyword(description.keyword))
             .collect();
         let routes = query::route(input, &scopes);
         let asked: Vec<usize> = routes.iter().map(|route| route.plugin).collect();
@@ -309,151 +328,236 @@ fn handshake(
     Ok((located, description, process))
 }
 
-/// A plugin's worker: take commands until the host goes away, answer each on the event channel.
-///
-/// Commands that piled up while a call was in flight are taken together, and only the
-/// newest query among them is asked: the window has already moved past the others.
-/// A run is never skipped. When the process has died, the command in hand is answered
-/// with that fact, the plugin is started again with back-off, and the next command runs
-/// on the fresh process.
-fn serve(
+/// What a call said about the process behind it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Health {
+    Fine,
+    TimedOut,
+    /// The process has exited or its pipes are broken; the next call cannot reach it.
+    Gone,
+}
+
+fn health_of<T>(result: &Result<T, CallError>) -> Health {
+    match result {
+        Err(CallError::Exited | CallError::Write(_) | CallError::Read(_)) => Health::Gone,
+        Err(CallError::Timeout(_)) => Health::TimedOut,
+        Ok(_) | Err(_) => Health::Fine,
+    }
+}
+
+/// A plugin's worker: owns the process and answers commands on the event channel until
+/// the host goes away. Starts the plugin again when it dies, hangs, or its code changes.
+struct Worker {
     plugin: usize,
-    home: &Located,
-    mut process: PluginProcess,
-    work: &mpsc::Receiver<Command>,
-    reports: &async_channel::Sender<HostEvent>,
+    /// The directory and the manifest the process was last started on.
+    home: Located,
+    description: Arc<RwLock<Description>>,
+    process: PluginProcess,
     timeouts: Timeouts,
-) {
-    let mut restarts = Restarts::default();
-    while let Ok(first) = work.recv() {
-        let mut batch = vec![first];
-        while let Ok(more) = work.try_recv() {
-            batch.push(more);
-        }
-        let newest_query = batch
-            .iter()
-            .rposition(|command| matches!(command, Command::Query { .. }));
-        let mut reloads_pending = batch
-            .iter()
-            .filter(|command| matches!(command, Command::Reload))
-            .count();
-        for (position, command) in batch.into_iter().enumerate() {
-            if matches!(command, Command::Query { .. }) && Some(position) != newest_query {
-                continue;
-            }
-            if matches!(command, Command::Reload) {
-                if reloads_pending > 1 {
-                    reloads_pending -= 1;
-                    continue;
+    restarts: Restarts,
+    timeouts_in_a_row: u32,
+}
+
+impl Worker {
+    /// Commands that piled up while a call was in flight are taken together, and only the
+    /// newest query among them is asked: the window has already moved past the others.
+    /// A run is never skipped. Reloads among them become one restart, done first.
+    fn serve(mut self, work: &mpsc::Receiver<Command>, reports: &async_channel::Sender<HostEvent>) {
+        while let Ok(first) = work.recv() {
+            let mut batch = vec![first];
+            batch.extend(work.try_iter());
+            if batch
+                .iter()
+                .any(|command| matches!(command, Command::Reload))
+            {
+                match self.reload(work, reports) {
+                    Some(later) => batch.extend(later),
+                    None => return,
                 }
-                reloads_pending = 0;
-                // Let the editor finish writing before the new code is read.
-                thread::sleep(RELOAD_SETTLE);
-                match start_again(home, timeouts.describe) {
-                    Ok(fresh) => {
-                        process = fresh;
-                        restarts.healthy();
-                        if reports
-                            .send_blocking(HostEvent::Reloaded { plugin })
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
-                    Err(error) => {
-                        let message = format!("did not come back after a change: {error}");
-                        if reports
-                            .send_blocking(HostEvent::Trouble { plugin, message })
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
-                }
-                continue;
             }
-            let (event, gone) = answer(plugin, &mut process, command, timeouts);
-            if !gone {
-                restarts.healthy();
-            }
-            if reports.send_blocking(event).is_err() {
-                return;
-            }
-            if gone {
-                thread::sleep(restarts.delay());
-                let attempt = restarts.record();
-                match start_again(home, timeouts.describe) {
-                    Ok(fresh) => {
-                        process = fresh;
-                        if reports
-                            .send_blocking(HostEvent::Restarted { plugin, attempt })
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
-                    Err(error) => {
-                        let message = format!("did not come back after it died: {error}");
-                        if reports
-                            .send_blocking(HostEvent::Trouble { plugin, message })
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
+            let newest_query = batch
+                .iter()
+                .rposition(|command| matches!(command, Command::Query { .. }));
+            for (position, command) in batch.into_iter().enumerate() {
+                let skip = match &command {
+                    Command::Reload => true,
+                    Command::Query { .. } => Some(position) != newest_query,
+                    Command::Run { .. } => false,
+                };
+                if !skip && !self.answer_and_recover(command, reports) {
+                    return;
                 }
             }
         }
     }
-}
 
-/// Run one command and say whether the process turned out to be gone.
-fn answer(
-    plugin: usize,
-    process: &mut PluginProcess,
-    command: Command,
-    timeouts: Timeouts,
-) -> (HostEvent, bool) {
-    match command {
-        Command::Reload => unreachable!("reloads are handled before answering"),
-        Command::Query { generation, text } => {
-            let result = process.call::<Items>(Method::Query { text }, timeouts.query);
-            let gone = is_gone(&result);
-            let result = result.map(|items| items.items).map_err(describe_failure);
-            (
-                HostEvent::Answered {
-                    generation,
-                    plugin,
-                    result,
-                },
-                gone,
-            )
+    /// Start the plugin again on what its directory holds now, once the editor has had
+    /// a moment to finish writing. Commands that arrived meanwhile come back to be
+    /// answered on the fresh process; further reloads among them are covered by this
+    /// one. `None` once the host has gone.
+    fn reload(
+        &mut self,
+        work: &mpsc::Receiver<Command>,
+        reports: &async_channel::Sender<HostEvent>,
+    ) -> Option<Vec<Command>> {
+        thread::sleep(RELOAD_SETTLE);
+        let later: Vec<Command> = work
+            .try_iter()
+            .filter(|command| !matches!(command, Command::Reload))
+            .collect();
+        let plugin = self.plugin;
+        let event = self.start_again("after a change", HostEvent::Reloaded { plugin });
+        if matches!(event, HostEvent::Reloaded { .. }) {
+            self.restarts.healthy();
         }
-        Command::Run {
-            generation,
-            item,
-            action,
-        } => {
-            let result = process.call::<Ran>(Method::Run { item, action }, timeouts.run);
-            let gone = is_gone(&result);
-            let result = result.map(|ran| ran.effect).map_err(describe_failure);
-            (
-                HostEvent::Ran {
-                    generation,
-                    plugin,
-                    result,
-                },
-                gone,
-            )
+        reports.send_blocking(event).ok().map(|()| later)
+    }
+
+    /// Answer one command and, when the process turned out to be gone or hung, start it
+    /// again with back-off. Whether the host is still listening.
+    fn answer_and_recover(
+        &mut self,
+        command: Command,
+        reports: &async_channel::Sender<HostEvent>,
+    ) -> bool {
+        let (event, health) = self.answer(command);
+        let (event, gone) = self.hung_or_gone(event, health);
+        if !gone {
+            self.restarts.healthy();
+        }
+        if reports.send_blocking(event).is_err() {
+            return false;
+        }
+        if !gone {
+            return true;
+        }
+        thread::sleep(self.restarts.delay());
+        let attempt = self.restarts.record();
+        let plugin = self.plugin;
+        let event = self.start_again("after it died", HostEvent::Restarted { plugin, attempt });
+        reports.send_blocking(event).is_ok()
+    }
+
+    /// Run one command and say how the process behind it fared.
+    fn answer(&mut self, command: Command) -> (HostEvent, Health) {
+        let plugin = self.plugin;
+        match command {
+            Command::Reload => unreachable!("reloads are handled before answering"),
+            Command::Query { generation, text } => {
+                let result = self
+                    .process
+                    .call::<Items>(Method::Query { text }, self.timeouts.query);
+                let health = health_of(&result);
+                let result = result.map(|items| items.items).map_err(describe_failure);
+                (
+                    HostEvent::Answered {
+                        generation,
+                        plugin,
+                        result,
+                    },
+                    health,
+                )
+            }
+            Command::Run {
+                generation,
+                item,
+                action,
+            } => {
+                let result = self
+                    .process
+                    .call::<Ran>(Method::Run { item, action }, self.timeouts.run);
+                let health = health_of(&result);
+                let result = result.map(|ran| ran.effect).map_err(describe_failure);
+                (
+                    HostEvent::Ran {
+                        generation,
+                        plugin,
+                        result,
+                    },
+                    health,
+                )
+            }
         }
     }
-}
 
-fn is_gone<T>(result: &Result<T, CallError>) -> bool {
-    matches!(
-        result,
-        Err(CallError::Exited | CallError::Write(_) | CallError::Read(_))
-    )
+    /// Whether the process is to be started again: it has gone, or it has now timed out
+    /// `hung_after` times in a row, in which case the answer says so.
+    fn hung_or_gone(&mut self, event: HostEvent, health: Health) -> (HostEvent, bool) {
+        self.timeouts_in_a_row = match health {
+            Health::TimedOut => self.timeouts_in_a_row + 1,
+            Health::Fine | Health::Gone => 0,
+        };
+        let limit = self.timeouts.hung_after;
+        if limit == 0 || self.timeouts_in_a_row < limit {
+            return (event, health == Health::Gone);
+        }
+        self.timeouts_in_a_row = 0;
+        let hung = |error: String| format!("{error}, {limit} times in a row; starting it again");
+        let event = match event {
+            HostEvent::Answered {
+                generation,
+                plugin,
+                result: Err(error),
+            } => HostEvent::Answered {
+                generation,
+                plugin,
+                result: Err(hung(error)),
+            },
+            HostEvent::Ran {
+                generation,
+                plugin,
+                result: Err(error),
+            } => HostEvent::Ran {
+                generation,
+                plugin,
+                result: Err(hung(error)),
+            },
+            other => other,
+        };
+        (event, true)
+    }
+
+    /// Start the process again on what the directory holds now. The manifest is read
+    /// afresh, so a changed command takes effect, and the new description replaces the
+    /// old one in the host. Returns the event to report: `success` when the plugin is
+    /// up, or [`HostEvent::Trouble`] saying it did not come back `when`. On trouble the
+    /// old process, if any, keeps serving.
+    fn start_again(&mut self, when: &str, success: HostEvent) -> HostEvent {
+        let plugin = self.plugin;
+        let started = self
+            .manifest_now()
+            .map_err(|error| error.to_string())
+            .and_then(|located| {
+                handshake(located, self.timeouts.describe).map_err(|error| error.to_string())
+            });
+        match started {
+            Ok((located, description, process)) => {
+                self.home = located;
+                *self
+                    .description
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner) = description;
+                self.process = process;
+                self.timeouts_in_a_row = 0;
+                success
+            }
+            Err(error) => HostEvent::Trouble {
+                plugin,
+                message: format!("did not come back {when}: {error}"),
+            },
+        }
+    }
+
+    /// The manifest as the directory holds it now. A directory without one keeps the
+    /// manifest the plugin was started on: the host was handed it directly, as tests do.
+    fn manifest_now(&self) -> Result<Located, LoadError> {
+        match manifest::load(&self.home.dir) {
+            Err(LoadError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+                Ok(self.home.clone())
+            }
+            loaded => loaded,
+        }
+    }
 }
 
 fn describe_failure(error: CallError) -> String {
@@ -465,14 +569,7 @@ fn describe_failure(error: CallError) -> String {
     }
 }
 
-fn start_again(home: &Located, timeout: Duration) -> Result<PluginProcess, StartError> {
-    handshake(home.clone(), timeout).map(|(_, _, process)| process)
-}
-
 /// Watch every plugin directory and tell the owning worker when a file changes.
-///
-/// Paths under hidden directories and `__pycache__` are ignored: Python and uv write
-/// there when the plugin starts, and following them would reload forever.
 fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
     let homes: Vec<(PathBuf, mpsc::Sender<Command>)> = plugins
         .iter()
@@ -491,9 +588,9 @@ fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
         if !event.kind.is_modify() && !event.kind.is_create() && !event.kind.is_remove() {
             return;
         }
-        for path in event.paths.iter().filter(|path| is_source(path)) {
+        for path in &event.paths {
             for (dir, commands) in &homes {
-                if path.starts_with(dir) {
+                if is_source_under(path, dir) {
                     let _ = commands.send(Command::Reload);
                 }
             }
@@ -508,11 +605,17 @@ fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
     Some(watcher)
 }
 
-/// A path a plugin author would edit, as opposed to one Python or uv writes while running.
-fn is_source(path: &Path) -> bool {
-    !path.components().any(|component| {
+/// Whether `path` is a file under the plugin directory `dir` that its author would edit,
+/// as opposed to one Python or uv writes while the plugin runs: anything hidden or under
+/// `__pycache__` below `dir` does not count. `dir` itself may sit under a hidden
+/// directory, as the per-user plugin directory does on Linux.
+fn is_source_under(path: &Path, dir: &Path) -> bool {
+    let Ok(below) = path.strip_prefix(dir) else {
+        return false;
+    };
+    !below.components().any(|component| {
         let name = component.as_os_str().to_string_lossy();
-        name == "__pycache__" || (name.starts_with('.') && name != "." && name != "..")
+        name == "__pycache__" || name.starts_with('.')
     })
 }
 
@@ -550,14 +653,47 @@ mod tests {
 
     #[test]
     fn files_python_and_uv_write_while_running_are_not_source() {
-        assert!(is_source(Path::new("/p/src/calculator/arithmetic.py")));
-        assert!(is_source(Path::new("/p/cmd-plugin.toml")));
-        assert!(!is_source(Path::new(
-            "/p/src/calculator/__pycache__/arithmetic.cpython-315.pyc"
-        )));
-        assert!(!is_source(Path::new(
-            "/p/.venv/lib/python3.15/site-packages/x.py"
-        )));
-        assert!(!is_source(Path::new("/p/.pytest_cache/v/cache/nodeids")));
+        let dir = Path::new("/p");
+        assert!(is_source_under(
+            Path::new("/p/src/calculator/arithmetic.py"),
+            dir
+        ));
+        assert!(is_source_under(Path::new("/p/cmd-plugin.toml"), dir));
+        assert!(!is_source_under(
+            Path::new("/p/src/calculator/__pycache__/arithmetic.cpython-315.pyc"),
+            dir
+        ));
+        assert!(!is_source_under(
+            Path::new("/p/.venv/lib/python3.15/site-packages/x.py"),
+            dir
+        ));
+        assert!(!is_source_under(
+            Path::new("/p/.pytest_cache/v/cache/nodeids"),
+            dir
+        ));
+        assert!(!is_source_under(Path::new("/elsewhere/src/x.py"), dir));
+    }
+
+    #[test]
+    fn a_plugin_directory_under_a_hidden_one_is_still_watched() {
+        let dir = Path::new("/home/me/.config/cmd/plugins/p");
+        assert!(is_source_under(
+            Path::new("/home/me/.config/cmd/plugins/p/src/p/__init__.py"),
+            dir
+        ));
+        assert!(!is_source_under(
+            Path::new("/home/me/.config/cmd/plugins/p/.venv/bin/python"),
+            dir
+        ));
+    }
+
+    #[test]
+    fn a_call_that_hit_the_wire_is_the_process_s_health() {
+        assert_eq!(health_of(&Ok(())), Health::Fine);
+        assert_eq!(
+            health_of::<()>(&Err(CallError::Timeout(Duration::from_secs(1)))),
+            Health::TimedOut
+        );
+        assert_eq!(health_of::<()>(&Err(CallError::Exited)), Health::Gone);
     }
 }
