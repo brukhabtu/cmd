@@ -27,7 +27,9 @@ line on it that is not a protocol message is reported as an error that quotes th
 
 Where the host looks for plugin directories is the host's business: the per-user directory
 (`~/Library/Application Support/cmd/plugins` on macOS), `./plugins` under the working
-directory when it exists, or the directories in `CMD_PLUGINS` when that is set.
+directory when it exists, or the directories in `CMD_PLUGINS` when that is set. Two
+directories declaring one name are not both run: the first in that order is, and the
+second is reported as a start failure naming both.
 
 ## Transport
 

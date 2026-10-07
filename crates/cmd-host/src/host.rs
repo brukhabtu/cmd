@@ -65,6 +65,14 @@ pub enum StartError {
         oldest: u32,
         newest: u32,
     },
+    /// A later plugin directory declared a name that is already running: the first in the
+    /// order of the plugin directories wins, and this one is not started.
+    #[error("{name} is already running from {}; not starting the copy in {}", first.display(), second.display())]
+    Duplicate {
+        name: String,
+        first: PathBuf,
+        second: PathBuf,
+    },
 }
 
 /// Why an action could not even be asked for.
@@ -176,6 +184,16 @@ impl Host {
         let mut started = Vec::new();
         let mut errors = Vec::new();
         for located in plugins {
+            let same_name =
+                |plugin: &&Plugin| plugin.located.manifest.name == located.manifest.name;
+            if let Some(first) = started.iter().find(same_name) {
+                errors.push(StartError::Duplicate {
+                    name: located.manifest.name,
+                    first: first.located.dir.clone(),
+                    second: located.dir,
+                });
+                continue;
+            }
             match handshake(located, timeouts.describe) {
                 Ok((located, description, process)) => {
                     let (commands, work) = mpsc::channel();

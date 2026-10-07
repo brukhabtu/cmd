@@ -404,6 +404,24 @@ fn a_plugin_speaking_the_next_protocol_loads_and_an_unknown_one_is_refused_by_na
 }
 
 #[test]
+fn a_second_directory_declaring_a_running_name_is_refused_naming_both() {
+    let first = common::located("a", false);
+    let mut second = common::located("a", false);
+    second.dir = std::env::temp_dir();
+    let (host, errors) = Host::start(vec![first, second], Timeouts::default());
+    assert_eq!(host.descriptions().count(), 1);
+    let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        messages,
+        [format!(
+            "a is already running from .; not starting the copy in {}",
+            std::env::temp_dir().display()
+        )]
+    );
+    assert_eq!(ask(&host, 1, "hello"), "a:hello");
+}
+
+#[test]
 fn blank_input_asks_nobody_and_the_plugin_is_still_described() {
     let host = host(&[("a", false)]);
     assert_eq!(host.descriptions().count(), 1);

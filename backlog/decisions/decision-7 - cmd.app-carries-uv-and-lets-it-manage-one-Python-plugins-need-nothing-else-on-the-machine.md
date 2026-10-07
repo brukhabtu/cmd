@@ -15,10 +15,11 @@ runs it. So cmd.app needs uv, and uv needs a Python that satisfies the plugin's
 bundle should take: require uv on PATH, carry uv in the bundle, or carry a Python in the
 bundle.
 
-What was measured, on a Linux x86_64 container with uv 0.11.32, with the calculator and
-websearch plugins copied outside the workspace (cmd-sdk as a path source) and described
-through `cmd-doctor` one after the other, as `Host::start` does. A Mac will differ in the
-small numbers, not in the shape; the Mac figures are owed before task 1.23 closes.
+What was measured, on a Linux x86_64 container with uv 0.11.32 and a release build of
+the app, with the calculator and websearch plugins copied outside the workspace (cmd-sdk
+as a path source) and described through `cmd-doctor` one after the other, as
+`Host::start` does. A Mac will differ in the small numbers, not in the shape; the Mac
+figures are owed before task 1.23 closes.
 
 | Measurement | Result |
 |---|---|
@@ -28,6 +29,8 @@ small numbers, not in the shape; the Mac figures are owed before task 1.23 close
 | A plugin's own environment, cmd-sdk only | 192 KB |
 | The managed CPython 3.15 on disk | 112 MB |
 | The uv binary | 66 MB |
+| The `cmd` binary itself, release build | 26 MB |
+| The bundle: `cmd` plus uv | 92 MB; with a Python inside as well, 204 MB |
 
 The Python is the only expensive thing: a machine's first launch costs one download,
 once, and every plugin after that costs a tenth of a second or so on each launch.
@@ -94,7 +97,8 @@ clone use the developer's own uv and Python, as they do today.
   Plugins outside this repository keep `uv run` as their command and need no change.
 - An offline first launch is not supported; if one is ever needed, the third option is the
   answer, and this decision is revisited with that evidence.
-- The bundle grows by uv. If the app must be smaller than that, the first option is the
-  fallback, with a search of the known install locations.
+- The bundle is the app plus uv: 92 MB here against 26 MB for the app alone. If it must
+  be smaller than that, the first option is the fallback, with a search of the known
+  install locations.
 - Measured on a Mac before 1.23 closes: the arm64 uv binary, the Python fetch on a home
   connection, and the first launch of each plugin in the bundle.
