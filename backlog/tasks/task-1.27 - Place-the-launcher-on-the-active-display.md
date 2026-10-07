@@ -4,7 +4,7 @@ title: Place the launcher on the active display
 status: In Progress
 assignee: []
 created_date: '2026-10-07 04:34'
-updated_date: '2026-10-07 11:27'
+updated_date: '2026-10-07 11:52'
 labels:
   - size-2
 milestone: m-1
@@ -64,4 +64,6 @@ Owed on a Mac with two displays (criteria stay unticked until a person writes th
 5. No Accessibility or Input Monitoring prompt appears when the pointer is read.
 6. The focus-loss observer does not hide the freshly reopened window during the swap, and typing works at once in the reopened window.
 7. Whether CGDisplayBounds/CGEvent location agree with GPUI's display-relative placement to the point, and whether window.bounds() of the titleless PopUp equals the content rect (if not, every show reopens: slow, not wrong).
+
+Reviewer's verdict CLOSE against worktree commit 9b9ba95, merged into the branch. Both criteria stay unticked and the task In Progress: they need a Mac with two displays (pointer on the secondary display, press the chord: the window appears there; a rearrangement is followed without a restart). 'Or the active window' is not done, by decision 5 (it would need Accessibility). The corrected gpui display facts are in the notes above for the milestone skill review.
 <!-- SECTION:NOTES:END -->

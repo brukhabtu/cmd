@@ -1,10 +1,10 @@
 ---
 id: TASK-1.41
 title: 'Inside the bundle, plugins run on the bundle''s uv and a uv-managed Python'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 11:04'
-updated_date: '2026-10-07 11:26'
+updated_date: '2026-10-07 11:52'
 labels:
   - size-3
 milestone: m-3
@@ -43,4 +43,6 @@ Landed. cmd-host: bundle.rs (Bundle::detect from the canonical exe and HOME, Bun
 Evidence: cargo test -p cmd-host: tests/bundle.rs 6 passed (a fake cmd.app under a temp dir; a fake plugin found only through the bundle's PATH echoes PATH, UV_PYTHON_INSTALL_DIR, UV_CACHE_DIR and UV_PYTHON_PREFERENCE, before and after a restart; outside a bundle they equal the test process's own; a fake uv records 'python install 3.15 --no-bin' and the environment, and runs before the plugin's Up report; a failing fake uv gives FetchedPython(Err) carrying its stderr and the plugin still starts; a bundle without uv says it could not run it); the bundle unit tests, 5 passed. Mutation: with the Worker's env dropped, the restart test fails. Scratch workspace: cargo clippy -p cmd-app --all-targets -D warnings clean, cargo test -p cmd-app 13 passed including the starting line. scripts/check.sh: all checks passed.
 
 Owed on a Mac: launch cmd.app from the Dock with no ~/Library/Application Support/cmd/python and see 'fetching Python 3.15, then starting ...' under the input, then plugins answering; ~/Library/Application Support/cmd/python holds a CPython 3.15 and nothing was linked into ~/.local/bin; a second launch is quick; with the network off on a first launch the window shows uv's error as start trouble; launched through the cask's symlink, the bundle is still detected.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit a4e620c, merged into the branch. Owed on a Mac with no ~/Library/Application Support/cmd/python: launch the CI-built cmd.app from the Dock and see 'fetching Python 3.15, then starting ...' under the input, then plugins answering; afterwards the Python and uv-cache sit under Application Support and nothing was linked into ~/.local/bin; a second launch is quick; a first launch with the network off shows uv's error as start trouble.
 <!-- SECTION:NOTES:END -->
