@@ -13,9 +13,10 @@ Usage: python scripts/eval_gate.py eval-result.json
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 
-def failures(result: dict) -> list[str]:
+def failures(result: dict[str, Any]) -> list[str]:
     """Name every case that fails the gate. Pure: data in, data out."""
     problems = []
     for case in result.get("cases", []):

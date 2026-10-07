@@ -59,13 +59,13 @@ convention = "google"
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = "python/cmd-sdk/src:plugins/calculator/src"
-files = ["python", "plugins"]
+mypy_path = "python/cmd-sdk/src:plugins/calculator/src:scripts"
+files = ["python", "plugins", "scripts"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
 consider_namespace_packages = true
-testpaths = ["python/cmd-sdk/tests", "plugins/calculator/tests"]
+testpaths = ["python/cmd-sdk/tests", "plugins/calculator/tests", "scripts/tests"]
 
 [tool.pypeeker]
 src = ["python/cmd-sdk/src", "plugins/calculator/src"]

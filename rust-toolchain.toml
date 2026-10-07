@@ -1,0 +1,6 @@
+# One toolchain for everyone, CI included, so clippy's lints are the same lints everywhere.
+# The first CI run failed on a lint that Rust 1.99 has and a 1.97 workstation did not.
+# Bump this deliberately, and run scripts/check.sh under the new version before pushing.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]

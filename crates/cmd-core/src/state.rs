@@ -207,7 +207,7 @@ mod tests {
             hits: vec![hit(0, "a", vec![])],
         });
         assert_eq!(launcher.apply(Event::Backspace), Step::Nothing);
-        assert!(launcher.hits.is_empty());
+        assert_eq!(launcher.hits, []);
         assert_eq!(launcher.generation, 2);
     }
 
@@ -220,7 +220,7 @@ mod tests {
             generation: 1,
             hits: vec![hit(0, "stale", vec![])],
         });
-        assert!(launcher.hits.is_empty());
+        assert_eq!(launcher.hits, []);
         launcher.apply(Event::Results {
             generation: 2,
             hits: vec![hit(0, "fresh", vec![])],

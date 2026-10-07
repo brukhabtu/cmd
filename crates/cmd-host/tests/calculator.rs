@@ -43,5 +43,5 @@ fn the_calculator_answers_through_the_real_process() {
 
     let (hits, errors) = host.query("not arithmetic");
     assert!(errors.is_empty(), "{errors:?}");
-    assert!(hits.is_empty());
+    assert_eq!(hits, []);
 }
