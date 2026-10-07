@@ -20,6 +20,12 @@ dev = ["pytest>=8.4", "mypy>=1.18", "ruff>=0.14"]
 # pypeeker is installed from its repository, pinned to a commit on main. It is pre-1.0, so
 # bump the commit deliberately and re-run the probe described under [tool.pypeeker].
 arch = ["pypeeker @ git+https://github.com/brukhabtu/pypeeker@cf4f1687568e4e00d1bc7a64e0e9e4a2d660ef55"]
+docs = [
+    "mkdocs-gen-files>=0.6.1",
+    "mkdocs-literate-nav>=0.6.3",
+    "mkdocs-material>=9.7.7",
+    "mkdocstrings[python]>=1.0.6",
+]
 
 [tool.ruff]
 line-length = 100

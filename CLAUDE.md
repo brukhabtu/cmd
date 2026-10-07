@@ -12,6 +12,8 @@ A launcher for macOS in the place of Spotlight. Rust core, GPUI window, plugins 
   the adapter test change together.
 - **Skills** are proposed at milestone boundaries and accepted only by eval: `docs/skills.md`.
 - **Checks**: `scripts/check.sh` runs what CI runs. Run it before pushing.
+- **Docs**: the MkDocs site is `mkdocs.yml` and `docs/`; `scripts/docs_gen.py` generates the
+  reference pages from the code. `scripts/docs.sh` builds it, strict, and `check.sh` runs it.
 - **Layout**: `crates/` (Cargo workspace: `cmd-core` pure logic, `cmd-host` plugin
   processes, `cmd-app` the GPUI window), `python/cmd-sdk` (the plugin SDK),
   `plugins/` (Python plugins, one directory each with a `cmd-plugin.toml`),

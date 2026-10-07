@@ -59,6 +59,21 @@ Runs what CI runs: Rust formatting, clippy and tests, including the adapter test
 the real calculator plugin through uv; ruff, mypy and pytest for Python; validation of the
 Claude Code plugins.
 
+## Documentation
+
+The site is MkDocs (Material): hand-written pages in `docs/`, and pages generated from the
+repository on every build by `scripts/docs_gen.py` (the SDK and Rust API references, the
+plugin catalogue, the decisions and the CLI usage). It has three sections, for people using
+cmd, plugin authors and core contributors.
+
+```sh
+scripts/docs.sh                          # rustdoc, then mkdocs build --strict into site/
+uv run --group docs mkdocs serve         # preview while writing (no Rust API reference)
+```
+
+`scripts/check.sh` builds it, so a broken link fails CI, and CI uploads the built site as the
+`docs-site` artifact.
+
 ## Writing a plugin
 
 Read `docs/plugin-protocol.md` and `python/cmd-sdk/README.md`, then copy

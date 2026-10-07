@@ -7,6 +7,7 @@ A plugin is a `Plugin`: a `Description`, a `query` function that turns the typed
 `Item`s, and a `run` function that turns a chosen item and action into an `Effect` the host
 performs. `serve(plugin)` speaks the protocol over stdin and stdout.
 
+<!-- --8<-- [start:tutorial] -->
 ## A plugin in ten minutes
 
 The subject is `plugins/websearch` in this repository: type `web` and a question, press
@@ -139,8 +140,11 @@ launcher opens. A plugin that fails to start is named in a line under the input 
 window first opens, and in the terminal the app was started from. Once running, its errors
 appear in that line, and editing its files reloads it.
 
+<!-- --8<-- [end:tutorial] -->
+<!-- --8<-- [start:testing] -->
 ## Testing a plugin
 
 `query` and `run` are plain functions, so the tests are plain too; see
 `plugins/websearch/tests/unit/test_plugin.py`. The SDK's own functional tests show how to
 drive `serve` with `StringIO` streams if you need to test the loop.
+<!-- --8<-- [end:testing] -->
