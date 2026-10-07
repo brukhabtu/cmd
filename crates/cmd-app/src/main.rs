@@ -663,6 +663,28 @@ fn launcher_bounds(cx: &App) -> Bounds<Pixels> {
     }
 }
 
+/// Make the app an accessory: no Dock icon and no menu bar. The bundle's LSUIElement says
+/// the same, but GPUI sets the regular policy as it finishes launching, just before it
+/// calls the `run` closure, which overrides the plist; so this runs first in that closure.
+/// The PopUp panel, a non-activating NSPanel, still takes the keyboard.
+#[cfg(target_os = "macos")]
+fn become_accessory() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+    let Some(mtm) = MainThreadMarker::new() else {
+        eprintln!("cmd: not on the main thread; the Dock icon stays");
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    if !app.setActivationPolicy(NSApplicationActivationPolicy::Accessory) {
+        eprintln!("cmd: AppKit refused the accessory policy; the Dock icon stays");
+    }
+}
+
+/// Elsewhere there is no Dock to leave.
+#[cfg(not(target_os = "macos"))]
+fn become_accessory() {}
+
 /// `cmd plugin ...` is answered here, before the host, the hotkey or the GPUI
 /// application exist, so a subcommand never opens the launcher (decision 8).
 fn main() -> ExitCode {
@@ -678,6 +700,7 @@ fn main() -> ExitCode {
     let (notify, presses) = async_channel::bounded(1);
     let _hotkey = register_hotkey(notify);
     Application::new().run(move |cx: &mut App| {
+        become_accessory();
         let bounds = launcher_bounds(cx);
         // Blurred makes the NSWindow transparent with a vibrancy view beneath the content,
         // so the rounded, tinted root is the window's whole shape.

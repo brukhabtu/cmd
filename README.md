@@ -4,8 +4,11 @@ A launcher for macOS in the place of Spotlight, in the spirit of Raycast: press 
 type, see results, press Enter. The core is Rust on [GPUI](https://www.gpui.rs); plugins are
 Python, so anyone can extend it without touching the Rust.
 
-Status: milestone 0, foundation. The pieces exist and talk to each other; there is no
-hotkey and no bundle yet. The board in `backlog/` has the plan.
+Status: milestone 2 under way. The window, the hotkey, five plugins (calculator, web search,
+files, system, applications) and `cmd plugin` work on Linux under test; nothing has been
+seen on a Mac by a person yet. CI builds `cmd.app` on every push and publishes it as an
+artifact; `scripts/bundle.sh` builds the same bundle on a Mac. The board in `backlog/` has
+the plan.
 
 ## Layout
 
@@ -32,6 +35,16 @@ cargo run -p cmd-app                    # macOS: opens the launcher, loads ./plu
 Press Option-Space anywhere to bring it up, type `2 + 2 * 3`, press Enter, and `8` is on the
 clipboard. Escape or a click elsewhere hides it. To use Cmd-Space instead, switch off
 Spotlight's shortcut in System Settings and run with `CMD_HOTKEY=super+Space`.
+
+To try the bundle, download the `cmd.app` artifact from a CI run, unzip it, and since it is
+not yet signed (task 1.25), clear the quarantine before opening it:
+
+```sh
+unzip cmd.app.zip && xattr -dr com.apple.quarantine cmd.app && open cmd.app
+```
+
+It shows no Dock icon; Option-Space brings the window up. It carries `uv` beside the
+binary and no plugins: install them with `cmd.app/Contents/MacOS/cmd plugin install <name>`.
 
 On Linux the app crate does not compile (an `xattr`/`libc` clash below GPUI, not ours), so
 run the rest: `cargo test --workspace --exclude cmd-app`.

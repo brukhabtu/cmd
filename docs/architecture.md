@@ -64,5 +64,9 @@ to a manifest rather than a quiet import.
 ## Not yet
 
 A global hotkey, hiding on focus loss, a real text input, plugin calls off the UI thread,
-plugin restarts, and an application bundle. Each is a task on the board under its
-milestone.
+and plugin restarts. Each is a task on the board under its milestone.
+
+The application bundle exists: `scripts/bundle.sh` builds `cmd.app` and the macOS CI job
+publishes it. By decision 7 it carries `uv` in `Contents/MacOS` beside the binary and
+nothing else; the plugins' Python is fetched by that uv on first launch once the runtime
+wiring lands (its own task), and until then plugins resolve uv from the inherited PATH.
