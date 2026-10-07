@@ -8,6 +8,6 @@ pub mod host;
 pub mod manifest;
 pub mod process;
 
-pub use host::{Host, QueryError, RunError, StartError, Timeouts};
+pub use host::{Host, HostEvent, RunError, StartError, Timeouts};
 pub use manifest::{Located, Manifest};
 pub use process::{CallError, PluginProcess};

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use cmd_core::protocol::Effect;
 use cmd_core::state::DEFAULT_ACTION;
-use cmd_host::{Host, Timeouts, manifest};
+use cmd_host::{Host, HostEvent, Timeouts, manifest};
 
 fn plugins_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins")
@@ -25,23 +25,41 @@ fn the_calculator_answers_through_the_real_process() {
             .any(|plugin| plugin.manifest.name == "calculator")
     );
 
-    let (mut host, errors) = Host::start(located, Timeouts::default());
+    let (host, errors) = Host::start(located, Timeouts::default());
     assert!(errors.is_empty(), "{errors:?}");
-    assert!(
-        host.descriptions()
-            .any(|description| description.name == "calculator")
+    let calculator = host
+        .descriptions()
+        .position(|description| description.name == "calculator")
+        .expect("the calculator started");
+    let events = host.events();
+
+    assert!(host.query(1, "2 + 2 * 3").contains(&calculator));
+    let items = match events.recv_blocking().unwrap() {
+        HostEvent::Answered {
+            generation: 1,
+            plugin,
+            result: Ok(items),
+        } if plugin == calculator => items,
+        other => panic!("unexpected {other:?}"),
+    };
+    assert_eq!(items[0].title, "8");
+
+    host.run(calculator, &items[0].id, DEFAULT_ACTION).unwrap();
+    assert_eq!(
+        events.recv_blocking().unwrap(),
+        HostEvent::Ran {
+            plugin: calculator,
+            result: Ok(Effect::Copy { text: "8".into() })
+        }
     );
 
-    let (hits, errors) = host.query("2 + 2 * 3");
-    assert!(errors.is_empty(), "{errors:?}");
-    assert_eq!(hits[0].item.title, "8");
-
-    let effect = host
-        .run(hits[0].plugin, &hits[0].item.id, DEFAULT_ACTION)
-        .unwrap();
-    assert_eq!(effect, Effect::Copy { text: "8".into() });
-
-    let (hits, errors) = host.query("not arithmetic");
-    assert!(errors.is_empty(), "{errors:?}");
-    assert_eq!(hits, []);
+    host.query(2, "not arithmetic");
+    match events.recv_blocking().unwrap() {
+        HostEvent::Answered {
+            generation: 2,
+            result: Ok(items),
+            ..
+        } => assert_eq!(items, []),
+        other => panic!("unexpected {other:?}"),
+    }
 }

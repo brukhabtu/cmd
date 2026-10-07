@@ -4,7 +4,7 @@ title: 'Spike: a global hotkey for a GPUI app on macOS'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 03:37'
+updated_date: '2026-10-07 03:46'
 labels:
   - size-3
 milestone: m-1
@@ -32,3 +32,9 @@ No Mac in this environment: behaviour is verified by compile on macOS CI and by 
 ### Proof
 A decision record on the board; cmd-app compiles on macOS CI with the hotkey wired.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision 5 on the board records the mechanism (global-hotkey crate, Carbon RegisterEventHotKey, no permissions), the delivery path into GPUI (Send + Sync callback, async-channel, foreground task), Spotlight coexistence (Option-Space by default, CMD_HOTKEY=super+Space once Spotlight's shortcut is off) and the demo (cmd-app itself, task 1.9). Awaiting review once macOS CI has built a730f3f/995871a.
+<!-- SECTION:NOTES:END -->

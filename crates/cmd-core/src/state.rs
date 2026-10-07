@@ -4,8 +4,10 @@
 //! and performs the [`Step`] that comes back. Nothing here touches a window, a
 //! process, or the clipboard.
 
-use crate::protocol::Effect;
-use crate::query::Hit;
+use std::collections::BTreeMap;
+
+use crate::protocol::{Effect, Item};
+use crate::query::{self, Hit};
 
 /// The action id sent when an item declares no actions.
 pub const DEFAULT_ACTION: &str = "default";
@@ -20,6 +22,10 @@ pub struct Launcher {
     pub message: Option<String>,
     /// Bumped on every change to the text, so answers to an older query are dropped.
     pub generation: u64,
+    /// Plugins asked in this generation that have not answered yet.
+    pub pending: Vec<usize>,
+    /// What each plugin answered in this generation, by plugin index. `hits` is their merge.
+    answers: BTreeMap<usize, Vec<Item>>,
 }
 
 /// Something that happened: a key, or an answer arriving.
@@ -35,10 +41,22 @@ pub enum Event {
     /// Cmd-1 to Cmd-9: run the item at this position, counted from zero.
     Pick(usize),
     Escape,
-    /// The host finished a query started by [`Step::Query`] with this generation.
-    Results {
+    /// The host routed the query of this generation to these plugins. Answers follow one by one.
+    Asked {
         generation: u64,
-        hits: Vec<Hit>,
+        plugins: Vec<usize>,
+    },
+    /// One plugin answered the query of this generation.
+    Answered {
+        generation: u64,
+        plugin: usize,
+        items: Vec<Item>,
+    },
+    /// One plugin did not answer the query of this generation. The others still merge.
+    Unanswered {
+        generation: u64,
+        plugin: usize,
+        error: String,
     },
     /// The host finished a [`Step::Run`].
     Ran(Effect),
@@ -96,10 +114,44 @@ impl Launcher {
                 self.reset();
                 Step::Hide
             }
-            Event::Results { generation, hits } => {
+            Event::Asked {
+                generation,
+                plugins,
+            } => {
                 if generation == self.generation {
-                    self.hits = hits;
-                    self.selected = 0;
+                    self.answers.clear();
+                    if plugins.is_empty() {
+                        self.hits.clear();
+                    }
+                    self.pending = plugins;
+                }
+                Step::Nothing
+            }
+            Event::Answered {
+                generation,
+                plugin,
+                items,
+            } => {
+                if generation == self.generation {
+                    self.pending.retain(|asked| *asked != plugin);
+                    self.answers.insert(plugin, items);
+                    self.hits = query::merge(
+                        self.answers
+                            .iter()
+                            .map(|(plugin, items)| (*plugin, items.clone())),
+                    );
+                    self.selected = self.selected.min(self.hits.len().saturating_sub(1));
+                }
+                Step::Nothing
+            }
+            Event::Unanswered {
+                generation,
+                plugin,
+                error,
+            } => {
+                if generation == self.generation {
+                    self.pending.retain(|asked| *asked != plugin);
+                    self.message = Some(error);
                 }
                 Step::Nothing
             }
@@ -152,6 +204,8 @@ impl Launcher {
         self.generation += 1;
         self.selected = 0;
         self.message = None;
+        self.pending.clear();
+        self.answers.clear();
         if self.text.trim().is_empty() {
             self.hits.clear();
             return Step::Nothing;
@@ -174,7 +228,7 @@ impl Launcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{Action, Item};
+    use crate::protocol::Action;
 
     fn hit(plugin: usize, id: &str, actions: Vec<Action>) -> Hit {
         Hit {
@@ -191,6 +245,28 @@ mod tests {
 
     fn typed(launcher: &mut Launcher, text: &str) -> Step {
         launcher.apply(Event::Typed(text.into()))
+    }
+
+    /// Every plugin named in `hits` is asked and answers the given generation.
+    fn answered(launcher: &mut Launcher, generation: u64, hits: &[Hit]) {
+        let mut plugins: Vec<usize> = hits.iter().map(|hit| hit.plugin).collect();
+        plugins.dedup();
+        launcher.apply(Event::Asked {
+            generation,
+            plugins: plugins.clone(),
+        });
+        for plugin in plugins {
+            let items = hits
+                .iter()
+                .filter(|hit| hit.plugin == plugin)
+                .map(|hit| hit.item.clone())
+                .collect();
+            launcher.apply(Event::Answered {
+                generation,
+                plugin,
+                items,
+            });
+        }
     }
 
     #[test]
@@ -216,10 +292,7 @@ mod tests {
     fn blank_text_clears_the_list_and_asks_nothing() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "a");
-        launcher.apply(Event::Results {
-            generation: 1,
-            hits: vec![hit(0, "a", vec![])],
-        });
+        answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
         assert_eq!(launcher.apply(Event::Backspace), Step::Nothing);
         assert_eq!(launcher.hits, []);
         assert_eq!(launcher.generation, 2);
@@ -230,31 +303,112 @@ mod tests {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "a");
         typed(&mut launcher, "b");
-        launcher.apply(Event::Results {
+        answered(&mut launcher, 1, &[hit(0, "stale", vec![])]);
+        assert_eq!(launcher.hits, []);
+        answered(&mut launcher, 2, &[hit(0, "fresh", vec![])]);
+        assert_eq!(launcher.hits[0].item.id, "fresh");
+    }
+
+    #[test]
+    fn answers_merge_as_they_arrive_and_pending_shrinks() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        launcher.apply(Event::Asked {
             generation: 1,
-            hits: vec![hit(0, "stale", vec![])],
+            plugins: vec![0, 1],
+        });
+        assert_eq!(launcher.pending, vec![0, 1]);
+        launcher.apply(Event::Answered {
+            generation: 1,
+            plugin: 1,
+            items: vec![hit(1, "slow", vec![]).item],
+        });
+        assert_eq!(launcher.hits.len(), 1);
+        assert_eq!(launcher.pending, vec![0]);
+        launcher.apply(Event::Answered {
+            generation: 1,
+            plugin: 0,
+            items: vec![hit(0, "fast", vec![]).item],
+        });
+        let order: Vec<&str> = launcher
+            .hits
+            .iter()
+            .map(|hit| hit.item.id.as_str())
+            .collect();
+        assert_eq!(order, vec!["fast", "slow"]);
+        assert_eq!(launcher.pending, Vec::<usize>::new());
+    }
+
+    #[test]
+    fn an_unanswered_plugin_is_shown_and_the_rest_still_merge() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        launcher.apply(Event::Asked {
+            generation: 1,
+            plugins: vec![0, 1],
+        });
+        launcher.apply(Event::Unanswered {
+            generation: 1,
+            plugin: 0,
+            error: "calc: no answer within 3s".into(),
+        });
+        launcher.apply(Event::Answered {
+            generation: 1,
+            plugin: 1,
+            items: vec![hit(1, "x", vec![]).item],
+        });
+        assert_eq!(
+            launcher.message.as_deref(),
+            Some("calc: no answer within 3s")
+        );
+        assert_eq!(launcher.hits.len(), 1);
+        assert_eq!(launcher.pending, Vec::<usize>::new());
+    }
+
+    #[test]
+    fn the_old_list_stays_until_the_first_new_answer_and_asking_nobody_clears_it() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "old", vec![])]);
+        typed(&mut launcher, "b");
+        launcher.apply(Event::Asked {
+            generation: 2,
+            plugins: vec![0],
+        });
+        assert_eq!(launcher.hits.len(), 1);
+        launcher.apply(Event::Answered {
+            generation: 2,
+            plugin: 0,
+            items: vec![],
         });
         assert_eq!(launcher.hits, []);
-        launcher.apply(Event::Results {
-            generation: 2,
-            hits: vec![hit(0, "fresh", vec![])],
+        typed(&mut launcher, "c");
+        launcher.apply(Event::Asked {
+            generation: 3,
+            plugins: vec![],
         });
-        assert_eq!(launcher.hits[0].item.id, "fresh");
+        assert_eq!(launcher.hits, []);
     }
 
     #[test]
     fn selection_stays_inside_the_list() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "a");
-        launcher.apply(Event::Results {
-            generation: 1,
-            hits: vec![hit(0, "x", vec![]), hit(0, "y", vec![])],
-        });
+        answered(
+            &mut launcher,
+            1,
+            &[hit(0, "x", vec![]), hit(0, "y", vec![])],
+        );
         assert_eq!(launcher.apply(Event::Up), Step::Nothing);
         assert_eq!(launcher.selected, 0);
         launcher.apply(Event::Down);
         launcher.apply(Event::Down);
         assert_eq!(launcher.selected, 1);
+        answered(&mut launcher, 1, &[hit(0, "only", vec![])]);
+        assert_eq!(
+            launcher.selected, 0,
+            "a shorter list pulls the selection back inside"
+        );
     }
 
     #[test]
@@ -266,10 +420,11 @@ mod tests {
             id: "copy".into(),
             title: "Copy".into(),
         };
-        launcher.apply(Event::Results {
-            generation: 1,
-            hits: vec![hit(3, "plain", vec![]), hit(4, "rich", vec![copy])],
-        });
+        answered(
+            &mut launcher,
+            1,
+            &[hit(3, "plain", vec![]), hit(4, "rich", vec![copy])],
+        );
         assert_eq!(
             launcher.apply(Event::Submit),
             Step::Run {
@@ -293,10 +448,7 @@ mod tests {
     fn clear_empties_the_text_and_the_list_in_one_step() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "abc");
-        launcher.apply(Event::Results {
-            generation: 1,
-            hits: vec![hit(0, "a", vec![])],
-        });
+        answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
         assert_eq!(launcher.apply(Event::Clear), Step::Nothing);
         assert_eq!(launcher.text, "");
         assert_eq!(launcher.hits, []);
@@ -307,10 +459,11 @@ mod tests {
     fn pick_runs_the_nth_item_without_moving_the_selection() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "a");
-        launcher.apply(Event::Results {
-            generation: 1,
-            hits: vec![hit(0, "x", vec![]), hit(1, "y", vec![])],
-        });
+        answered(
+            &mut launcher,
+            1,
+            &[hit(0, "x", vec![]), hit(1, "y", vec![])],
+        );
         assert_eq!(
             launcher.apply(Event::Pick(1)),
             Step::Run {

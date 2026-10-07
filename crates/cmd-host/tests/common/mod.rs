@@ -1,0 +1,63 @@
+//! Fake plugins for the host's functional tests: a few lines of Python that speak the
+//! protocol and misbehave on request. Each test binary includes this module.
+
+#![allow(dead_code)]
+
+use cmd_host::{Located, Manifest};
+
+/// Answers describe, echoes queries as one item, copies the item on run. Special texts:
+/// "stall" never answers, "late" answers after 300 ms, "chatter" writes a stray line,
+/// "quit" exits, "fail" answers with an error, "unreadable" answers with an id-0 error.
+pub const FAKE: &str = r#"
+import json, sys, time
+for line in sys.stdin:
+    request = json.loads(line)
+    reply = lambda result: print(json.dumps({"id": request["id"], "result": result}), flush=True)
+    if request["method"] == "describe":
+        reply({"name": NAME, "version": "0", "protocol": 0})
+    elif request["method"] == "run":
+        reply({"effect": {"kind": "copy", "text": request["params"]["item"]}})
+    elif request["params"]["text"] == "stall":
+        pass
+    elif request["params"]["text"] == "late":
+        time.sleep(0.3)
+        reply({"items": [{"id": "late", "title": "late"}]})
+    elif request["params"]["text"] == "unreadable":
+        print(json.dumps({"id": 0, "error": {"code": "bad_request", "message": "params.text must be a str"}}), flush=True)
+    elif request["params"]["text"] == "chatter":
+        print("debugging...", flush=True)
+    elif request["params"]["text"] == "quit":
+        sys.exit(0)
+    elif request["params"]["text"] == "fail":
+        print(json.dumps({"id": request["id"], "error": {"code": "boom", "message": "no"}}), flush=True)
+    else:
+        reply({"items": [{"id": "echo", "title": NAME + ":" + request["params"]["text"]}]})
+"#;
+
+/// The command for a fake named `name`; `slow` makes every query take 300 ms.
+pub fn command(name: &str, slow: bool) -> Vec<String> {
+    let body = if slow {
+        FAKE.replace(
+            "    request = json.loads(line)\n",
+            "    request = json.loads(line)\n    if request[\"method\"] == \"query\":\n        time.sleep(0.3)\n",
+        )
+    } else {
+        FAKE.to_string()
+    };
+    vec![
+        "python3".to_string(),
+        "-c".to_string(),
+        format!("NAME = {name:?}\n{body}"),
+    ]
+}
+
+/// A plugin directory the host can start, pointing at a fake.
+pub fn located(name: &str, slow: bool) -> Located {
+    Located {
+        dir: ".".into(),
+        manifest: Manifest {
+            name: name.to_string(),
+            command: command(name, slow),
+        },
+    }
+}

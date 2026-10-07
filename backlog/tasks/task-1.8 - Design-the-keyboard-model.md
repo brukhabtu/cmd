@@ -4,7 +4,7 @@ title: 'Design: the keyboard model'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 03:37'
+updated_date: '2026-10-07 03:46'
 labels:
   - size-1
 milestone: m-1
@@ -30,3 +30,9 @@ IME behaviour can only be checked on a Mac.
 ### Proof
 A decision record; the key mapping in cmd-app matches it.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision 4 on the board is the key table. cmd-core gained Clear and Pick(n) with tests; crates/cmd-app/src/main.rs maps keys exactly as the table says. Awaiting review.
+<!-- SECTION:NOTES:END -->

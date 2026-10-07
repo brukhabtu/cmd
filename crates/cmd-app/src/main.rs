@@ -5,9 +5,10 @@
 //! Escape and losing focus hide it. That is the whole shell.
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use cmd_core::state::{Event, Launcher, Step};
-use cmd_host::{Host, Timeouts, manifest};
+use cmd_host::{Host, HostEvent, Timeouts, manifest};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
@@ -22,6 +23,8 @@ const HEIGHT: f32 = 420.0;
 const PLACEHOLDER: &str = "Search, or type a keyword";
 /// Option-Space. Spotlight holds Cmd-Space; `CMD_HOTKEY=super+Space` takes it once Spotlight lets go.
 const DEFAULT_HOTKEY: &str = "alt+Space";
+/// How long a plugin may keep the person waiting before the window says so.
+const PATIENCE: Duration = Duration::from_millis(300);
 
 struct LauncherView {
     state: Launcher,
@@ -29,6 +32,8 @@ struct LauncherView {
     focus: FocusHandle,
     /// Whether the window is meant to be on screen. Losing focus while shown hides it.
     shown: bool,
+    /// When the current query was asked, for the waiting line.
+    asked_at: Instant,
 }
 
 impl LauncherView {
@@ -44,7 +49,58 @@ impl LauncherView {
             host,
             focus: cx.focus_handle(),
             shown: true,
+            asked_at: Instant::now(),
         }
+    }
+
+    /// A worker answered or ran something; the state machine decides what it means.
+    fn on_host_event(&mut self, event: HostEvent, cx: &mut Context<Self>) {
+        let event = match event {
+            HostEvent::Answered {
+                generation,
+                plugin,
+                result: Ok(items),
+            } => Event::Answered {
+                generation,
+                plugin,
+                items,
+            },
+            HostEvent::Answered {
+                generation,
+                plugin,
+                result: Err(error),
+            } => Event::Unanswered {
+                generation,
+                plugin,
+                error: format!("{}: {error}", self.plugin_name(plugin)),
+            },
+            HostEvent::Ran {
+                result: Ok(effect), ..
+            } => Event::Ran(effect),
+            HostEvent::Ran {
+                plugin,
+                result: Err(error),
+            } => Event::Failed(format!("{}: {error}", self.plugin_name(plugin))),
+        };
+        self.handle(event, cx);
+    }
+
+    fn plugin_name(&self, plugin: usize) -> String {
+        self.host.name(plugin).unwrap_or("a plugin").to_string()
+    }
+
+    /// The plugins still owed an answer, by name, once they have kept the person waiting.
+    fn waiting_on(&self) -> Option<String> {
+        if self.state.pending.is_empty() || self.asked_at.elapsed() < PATIENCE {
+            return None;
+        }
+        let names: Vec<String> = self
+            .state
+            .pending
+            .iter()
+            .map(|plugin| self.plugin_name(*plugin))
+            .collect();
+        Some(format!("waiting on {}", names.join(", ")))
     }
 
     /// Bring the window up with an empty, focused input.
@@ -96,23 +152,27 @@ impl LauncherView {
     fn perform(&mut self, step: Step, cx: &mut Context<Self>) {
         match step {
             Step::Query { generation, text } => {
-                let (hits, errors) = self.host.query(&text);
-                self.state.apply(Event::Results { generation, hits });
-                if let Some(error) = errors.first() {
-                    self.state.apply(Event::Failed(error.to_string()));
-                }
+                let plugins = self.host.query(generation, &text);
+                self.asked_at = Instant::now();
+                self.state.apply(Event::Asked {
+                    generation,
+                    plugins,
+                });
+                // Redraw once the plugins have had their chance, so the waiting line can appear.
+                cx.spawn(async move |view, cx| {
+                    cx.background_executor().timer(PATIENCE).await;
+                    let _ = view.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
             }
             Step::Run {
                 plugin,
                 item,
                 action,
             } => {
-                let event = match self.host.run(plugin, &item, &action) {
-                    Ok(effect) => Event::Ran(effect),
-                    Err(error) => Event::Failed(error.to_string()),
-                };
-                let step = self.state.apply(event);
-                self.perform(step, cx);
+                if let Err(error) = self.host.run(plugin, &item, &action) {
+                    self.state.apply(Event::Failed(error.to_string()));
+                }
             }
             Step::Hide => self.put_away(cx),
             Step::CopyAndHide(text) => {
@@ -171,6 +231,14 @@ impl Render for LauncherView {
                     .text_sm()
                     .text_color(rgb(0xff_9f_0a))
                     .child(message)
+            }))
+            .children(self.waiting_on().map(|waiting| {
+                div()
+                    .px(px(18.0))
+                    .pb(px(8.0))
+                    .text_sm()
+                    .text_color(rgb(0x8e_8e_93))
+                    .child(waiting)
             }))
             .children(self.state.hits.iter().enumerate().map(|(index, hit)| {
                 div()
@@ -243,6 +311,22 @@ fn register_hotkey(presses: async_channel::Sender<()>) -> Option<GlobalHotKeyMan
     Some(manager)
 }
 
+/// Hand every worker report to the view until the host or the window goes away.
+async fn relay_host_events(
+    events: async_channel::Receiver<HostEvent>,
+    window: WindowHandle<LauncherView>,
+    cx: &mut AsyncApp,
+) {
+    while let Ok(event) = events.recv().await {
+        if window
+            .update(cx, |view, _, cx| view.on_host_event(event, cx))
+            .is_err()
+        {
+            break;
+        }
+    }
+}
+
 /// Show the window on every press until the channel or the window goes away.
 async fn show_on_press(
     presses: async_channel::Receiver<()>,
@@ -259,6 +343,7 @@ async fn show_on_press(
 
 fn main() {
     let host = start_host();
+    let events = host.events();
     let (notify, presses) = async_channel::bounded(1);
     let _hotkey = register_hotkey(notify);
     Application::new().run(move |cx: &mut App| {
@@ -281,6 +366,8 @@ fn main() {
             })
             .expect("the launcher window opens");
         cx.spawn(async move |cx| show_on_press(presses, window, cx).await)
+            .detach();
+        cx.spawn(async move |cx| relay_host_events(events, window, cx).await)
             .detach();
         cx.activate(true);
     });

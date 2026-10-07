@@ -4,7 +4,7 @@ title: 'Show on the hotkey, hide on Escape and on focus loss'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 03:39'
+updated_date: '2026-10-07 03:46'
 labels:
   - size-3
 milestone: m-1
@@ -34,3 +34,9 @@ Behaviour is unverified on a real Mac in this environment; focus-loss hide could
 ### Proof
 cargo clippy and build green on macOS CI; core tests for the new events; a person presses the chord.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented in 995871a: the chord shows the window (activate, activate_window, focus), Escape, an effect and losing focus hide it through cx.hide(), and the state resets on hide so the next show starts empty. Clippy -D warnings green in the scratch workspace; awaiting the macOS CI build and a person at a Mac for the behaviour.
+<!-- SECTION:NOTES:END -->

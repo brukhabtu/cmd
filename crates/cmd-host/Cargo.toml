@@ -13,6 +13,8 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true
+# Host events travel on a channel the window's executor can await and a test can block on.
+async-channel = "2"
 
 [lints]
 workspace = true
