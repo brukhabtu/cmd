@@ -1,0 +1,17 @@
+[project]
+name = "files"
+version = "0.1.0"
+description = "A cmd plugin: type f and part of a file name; Enter reveals it in Finder, the second action opens it."
+requires-python = ">=3.15"
+license = "MIT"
+dependencies = ["cmd-sdk"]
+
+[project.scripts]
+files = "files:main"
+
+[tool.uv.sources]
+cmd-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9,<1"]
+build-backend = "uv_build"
