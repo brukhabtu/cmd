@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from cmd_sdk import PathIcon
 from files.search import (
     LIMIT,
     file_url,
@@ -88,6 +89,7 @@ def test_a_row_carries_the_name_the_folder_and_reveal_then_open() -> None:
     assert row.subtitle == "~/Documents"
     assert [action.id for action in row.actions] == ["reveal", "open"]
     assert row.actions[0].title == "Reveal in Finder"
+    assert row.icon == PathIcon("/Users/me/Documents/readme.md")
 
 
 def test_no_more_than_the_limit_is_shown() -> None:

@@ -57,8 +57,10 @@ command = ["uv", "run", "--quiet", "websearch"]
 ```python
 from urllib.parse import quote_plus
 
-from cmd_sdk import Action, Copy, Description, Effect, Item, Open, Plugin, Show, serve
+from cmd_sdk import Action, Copy, Description, Effect, Item, Open, Plugin, Show, SymbolIcon, serve
 from cmd_sdk.protocol import DEFAULT_ACTION
+
+_ICON = SymbolIcon("globe")
 
 
 def search_url(question: str) -> str:
@@ -68,12 +70,15 @@ def search_url(question: str) -> str:
 def _query(text: str) -> tuple[Item, ...]:
     question = text.strip()
     if not question:
-        return (Item(id="", title="Search the web", subtitle="Type a question after 'web'"),)
+        return (
+            Item(id="", title="Search the web", subtitle="Type a question after 'web'", icon=_ICON),
+        )
     return (
         Item(
             id=search_url(question),
             title=f"Search the web for {question!r}",
             actions=(Action("open", "Open the search"), Action("copy", "Copy the address")),
+            icon=_ICON,
         ),
     )
 
@@ -104,6 +109,11 @@ What each part declares:
   `run`, so make it carry what `run` needs: here, the URL itself.
 - `actions` are what Enter can do; the first is the default. With none, the host sends
   `"default"`.
+- `icon` is what the row shows beside its text: `SymbolIcon("globe")` names a system
+  symbol, drawn in the row's text colour; `PathIcon("/Applications/Safari.app")` shows the
+  icon the system shows for whatever sits at that absolute path, an app, a document or a
+  folder. A name or path the system cannot resolve leaves the row without an icon; it is
+  never an error. Leave it out and the row is text alone.
 - `run` returns an `Effect` and the host performs it: `Open` a URL or path, `Copy` text,
   `Show` a line and stay open, or `Close`. A plugin may also do its own work in `run`
   (toggle a setting, say) and then return `Close`.

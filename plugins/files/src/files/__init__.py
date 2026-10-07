@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from cmd_sdk import Close, Description, Effect, Item, Open, Plugin, Show, serve
+from cmd_sdk import Close, Description, Effect, Item, Open, Plugin, Show, SymbolIcon, serve
 from cmd_sdk.protocol import DEFAULT_ACTION
 
 from files.search import (
@@ -38,7 +38,12 @@ def _executable(name: str) -> str:
     return found
 
 
-_HINT = Item(id="", title="Search files by name", subtitle="Type part of a file name after 'f'")
+_HINT = Item(
+    id="",
+    title="Search files by name",
+    subtitle="Type part of a file name after 'f'",
+    icon=SymbolIcon("magnifyingglass"),
+)
 
 
 def _query(text: str) -> tuple[Item, ...]:

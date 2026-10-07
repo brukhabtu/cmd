@@ -8,7 +8,9 @@ use cmd_host::{HostEvent, Located, Manifest};
 
 /// Answers describe, echoes queries as one item, copies the item on run. Special texts:
 /// "stall" never answers, "late" answers after 300 ms, "chatter" writes a stray line,
-/// "quit" exits, "fail" answers with an error, "unreadable" answers with an id-0 error.
+/// "quit" exits, "fail" answers with an error, "unreadable" answers with an id-0 error,
+/// "icon" answers one item carrying a path icon. It speaks protocol 0, which the host
+/// still loads, so the icon is the one version 1 field it sends.
 pub const FAKE: &str = r#"
 import json, sys, time
 for line in sys.stdin:
@@ -31,6 +33,8 @@ for line in sys.stdin:
         sys.exit(0)
     elif request["params"]["text"] == "fail":
         print(json.dumps({"id": request["id"], "error": {"code": "boom", "message": "no"}}), flush=True)
+    elif request["params"]["text"] == "icon":
+        reply({"items": [{"id": "safari", "title": "Safari", "icon": {"kind": "path", "path": "/Applications/Safari.app"}}]})
     else:
         reply({"items": [{"id": "echo", "title": NAME + ":" + request["params"]["text"]}]})
 "#;

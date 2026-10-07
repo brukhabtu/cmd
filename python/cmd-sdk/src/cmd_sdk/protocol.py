@@ -1,4 +1,4 @@
-"""Plugin protocol v0, the Python side.
+"""Plugin protocol v1, the Python side.
 
 Newline-delimited JSON over stdin and stdout. The host sends one request per line and
 the plugin answers with one response per line carrying the same ``id``. The
@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, assert_never
 
-PROTOCOL = 0
+PROTOCOL = 1
 """The protocol version this SDK speaks."""
 
 DEFAULT_ACTION = "default"
@@ -45,12 +45,39 @@ class Action:
 
 
 @dataclass(frozen=True)
+class PathIcon:
+    """The icon the system shows for whatever sits at an absolute path.
+
+    An application bundle gives its own icon, a document its type's, a folder a folder.
+    A path that does not exist leaves the row without an icon; it is never an error.
+    """
+
+    path: str
+
+
+@dataclass(frozen=True)
+class SymbolIcon:
+    """A system symbol by name, drawn in the row's text colour.
+
+    A name the system does not know leaves the row without an icon; it is never an error.
+    """
+
+    name: str
+
+
+type Icon = PathIcon | SymbolIcon
+"""What a row shows beside its text. The window resolves it; a plugin only names it."""
+
+
+@dataclass(frozen=True)
 class Item:
     """One row in the result list.
 
     ``score`` is a confidence in ``0.0..=1.0`` for fuzzy matches. Leave it ``None`` for a
     definite answer, which the host ranks above every fuzzy one. The first action is the
-    one Enter runs; with no actions the host sends ``DEFAULT_ACTION``.
+    one Enter runs; with no actions the host sends ``DEFAULT_ACTION``. ``icon`` is the
+    one field version 1 added, so it comes last: a plugin written against version 0
+    constructs an item positionally and still does.
     """
 
     id: str
@@ -58,6 +85,7 @@ class Item:
     subtitle: str | None = None
     score: float | None = None
     actions: tuple[Action, ...] = ()
+    icon: Icon | None = None
 
 
 @dataclass(frozen=True)
@@ -250,7 +278,19 @@ def _item_json(item: Item) -> dict[str, Any]:
         body["score"] = item.score
     if item.actions:
         body["actions"] = [{"id": action.id, "title": action.title} for action in item.actions]
+    if item.icon is not None:
+        body["icon"] = _icon_json(item.icon)
     return body
+
+
+def _icon_json(icon: Icon) -> dict[str, str]:
+    match icon:
+        case PathIcon():
+            return {"kind": "path", "path": icon.path}
+        case SymbolIcon():
+            return {"kind": "symbol", "name": icon.name}
+        case _ as unreachable:
+            assert_never(unreachable)
 
 
 def _effect_json(effect: Effect) -> dict[str, str]:

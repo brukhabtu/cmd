@@ -29,6 +29,7 @@ fn the_calculator_is_examined_end_to_end() {
     );
     assert!(stdout.contains("\"name\": \"calculator\""), "{stdout}");
     assert!(stdout.contains("\"title\": \"42\""), "{stdout}");
+    assert!(stdout.contains("\"kind\": \"symbol\""), "{stdout}");
     assert!(stdout.contains("\"kind\": \"copy\""), "{stdout}");
 }
 

@@ -1,9 +1,11 @@
 from calculator import PLUGIN
-from cmd_sdk import Copy, Item, Show
+from cmd_sdk import Copy, Item, Show, SymbolIcon
 
 
 def test_an_expression_becomes_one_item() -> None:
-    assert PLUGIN.query("6 * 7") == (Item(id="42", title="42", subtitle="Press Enter to copy"),)
+    assert PLUGIN.query("6 * 7") == (
+        Item(id="42", title="42", subtitle="Press Enter to copy", icon=SymbolIcon("equal")),
+    )
 
 
 def test_other_text_yields_nothing() -> None:

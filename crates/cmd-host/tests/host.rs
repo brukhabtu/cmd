@@ -5,7 +5,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use cmd_core::protocol::Effect;
+use cmd_core::protocol::{Effect, Icon};
 use cmd_host::{Host, HostEvent, Timeouts};
 
 fn host(plugins: &[(&str, bool)]) -> Host {
@@ -388,19 +388,41 @@ fn a_broken_manifest_is_reported_and_the_old_code_keeps_answering() {
 }
 
 #[test]
-fn a_plugin_speaking_the_next_protocol_loads_and_an_unknown_one_is_refused_by_name() {
+fn a_plugin_speaking_the_current_protocol_loads_and_an_unknown_one_is_refused_by_name() {
     let (host, errors) = Host::start(
-        vec![common::speaking("next", 1), common::speaking("future", 2)],
+        vec![
+            common::speaking("current", 1),
+            common::speaking("future", 2),
+        ],
         Timeouts::default(),
     );
     assert_eq!(host.descriptions().count(), 1);
-    assert_eq!(host.name(0).as_deref(), Some("next"));
+    assert_eq!(host.name(0).as_deref(), Some("current"));
     let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
     assert_eq!(
         messages,
         ["future speaks protocol 2, this host accepts 0 to 1"]
     );
-    assert_eq!(ask(&host, 1, "hello"), "next:hello");
+    assert_eq!(ask(&host, 1, "hello"), "current:hello");
+}
+
+#[test]
+fn an_item_s_icon_arrives_typed() {
+    let host = host(&[("a", false)]);
+    host.query(1, "icon");
+    match next(&host) {
+        HostEvent::Answered {
+            generation: 1,
+            result: Ok(items),
+            ..
+        } => assert_eq!(
+            items[0].icon,
+            Some(Icon::Path {
+                path: "/Applications/Safari.app".into()
+            })
+        ),
+        other => panic!("unexpected {other:?}"),
+    }
 }
 
 #[test]

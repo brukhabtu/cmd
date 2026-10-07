@@ -4,7 +4,10 @@
 //! [`cmd_core::state::Step`]; this file performs it. The global chord shows the window,
 //! Escape and losing focus hide it. That is the whole shell.
 
+mod icons;
+
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cmd_core::query::Hit;
@@ -15,8 +18,9 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
 use gpui::{
     App, Application, AsyncApp, Bounds, ClipboardItem, Context, Div, FocusHandle, KeyDownEvent,
-    Pixels, Render, Rgba, SharedString, Window, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowHandle, WindowKind, WindowOptions, div, point, px, rgb, rgba, size,
+    Pixels, Render, RenderImage, Rgba, SharedString, Window, WindowAppearance,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img,
+    point, px, rgb, rgba, size,
 };
 
 const WIDTH: f32 = 680.0;
@@ -327,10 +331,26 @@ fn status_line(message: Option<String>, waiting: Option<String>, palette: &Palet
         .children(line.map(|(text, colour)| div().truncate().text_color(colour).child(text)))
 }
 
-/// One result: title over subtitle, highlighted when selected, with the Cmd-number that
-/// runs it at the right. `position` counts from the first row on screen, which is what
-/// Cmd-number counts (decision 4).
-fn result_row(hit: &Hit, selected: bool, position: usize, palette: &Palette) -> Div {
+/// One result: an icon slot, title over subtitle, highlighted when selected, with the
+/// Cmd-number that runs it at the right. `position` counts from the first row on screen,
+/// which is what Cmd-number counts (decision 4). The slot is laid out only when some row
+/// on screen has an icon, so a list without icons looks as it did, and it stays empty
+/// while an icon loads or when nothing resolved, so the titles line up.
+fn result_row(
+    hit: &Hit,
+    selected: bool,
+    position: usize,
+    icon: Option<Arc<RenderImage>>,
+    slot: bool,
+    palette: &Palette,
+) -> Div {
+    let slot = slot.then(|| {
+        div()
+            .size(px(icons::SIZE))
+            .flex_shrink_0()
+            .mr(px(10.0))
+            .children(icon.map(|image| img(image).size(px(icons::SIZE))))
+    });
     let text = div()
         .flex_1()
         .flex()
@@ -359,6 +379,7 @@ fn result_row(hit: &Hit, selected: bool, position: usize, palette: &Palette) -> 
         .items_center()
         .rounded_lg()
         .when(selected, |row| row.bg(palette.selected))
+        .children(slot)
         .child(text)
         .children(shortcut)
 }
@@ -368,6 +389,8 @@ impl Render for LauncherView {
         let palette = palette(window.appearance());
         let selected = self.state.selected;
         let first_visible = self.state.first_visible;
+        let visible = self.state.visible();
+        let slot = visible.iter().any(|hit| hit.item.icon.is_some());
         div()
             .id("launcher")
             .track_focus(&self.focus)
@@ -385,20 +408,23 @@ impl Render for LauncherView {
                 self.waiting_on(),
                 &palette,
             ))
-            .children(
-                self.state
-                    .visible()
-                    .iter()
-                    .enumerate()
-                    .map(|(position, hit)| {
-                        result_row(
-                            hit,
-                            first_visible + position == selected,
-                            position,
-                            &palette,
-                        )
-                    }),
-            )
+            .children(visible.iter().enumerate().map(|(position, hit)| {
+                // The cache answers at once after the first draw; until then the slot is
+                // empty and the view is redrawn when the icon is ready.
+                let icon = hit.item.icon.as_ref().and_then(|icon| {
+                    window
+                        .use_asset::<icons::IconAsset>(&icons::Request::new(icon, palette.text), cx)
+                        .flatten()
+                });
+                result_row(
+                    hit,
+                    first_visible + position == selected,
+                    position,
+                    icon,
+                    slot,
+                    &palette,
+                )
+            }))
     }
 }
 

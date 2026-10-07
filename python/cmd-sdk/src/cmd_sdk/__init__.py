@@ -10,10 +10,13 @@ from cmd_sdk.protocol import (
     Copy,
     Description,
     Effect,
+    Icon,
     Item,
     Open,
+    PathIcon,
     Plugin,
     Show,
+    SymbolIcon,
 )
 from cmd_sdk.serve import serve
 
@@ -24,9 +27,12 @@ __all__ = [
     "Copy",
     "Description",
     "Effect",
+    "Icon",
     "Item",
     "Open",
+    "PathIcon",
     "Plugin",
     "Show",
+    "SymbolIcon",
     "serve",
 ]
