@@ -1,10 +1,10 @@
 ---
 id: TASK-1.32
 title: Start the host off the main path so the window opens before the first describe
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 05:20'
-updated_date: '2026-10-07 11:09'
+updated_date: '2026-10-07 11:13'
 labels:
   - size-2
 milestone: m-2
@@ -21,8 +21,8 @@ main() in crates/cmd-app/src/main.rs runs start_host before Application::new, an
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The window is on screen before any plugin has described itself, and says which plugins are still starting
-- [ ] #2 A plugin whose first start fails is reported in the window as 1.30 does, not only on stderr
+- [x] #1 The window is on screen before any plugin has described itself, and says which plugins are still starting
+- [x] #2 A plugin whose first start fails is reported in the window as 1.30 does, not only on stderr
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -48,4 +48,6 @@ Evidence (Linux): cargo test -p cmd-host --test host: 18 passed, including start
 
 Owed on a Mac (can share 1.30's sitting): launch with a cold plugin environment (delete plugins/*/.venv or point CMD_PLUGINS at copies outside the workspace, clear the uv cache) and see the window at once with "starting calculator, websearch" under the input, names dropping off as each comes up; type 2+2 while that line shows and see 4 once the calculator is up, without retyping; add a directory whose command is not on PATH and see its line at once, still there on the first chord press after a focus loss. CI's macOS build proves Host: Send with FsEventWatcher.
 Follow-up not filed here: handshakes are still serial, so on a cold launch plugins come up one after another.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit e715fb7, merged into the branch. Owed on a Mac, in one sitting with 1.30: a cold launch shows the window at once with 'starting calculator, websearch', names dropping off as each comes up; 2+2 typed meanwhile is answered without retyping; a plugin whose command is not on PATH shows its error at once and still on the first chord press after a focus loss. CI's macOS job proves Host: Send with the FSEvents watcher.
 <!-- SECTION:NOTES:END -->
