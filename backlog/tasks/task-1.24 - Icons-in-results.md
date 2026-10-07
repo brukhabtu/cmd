@@ -1,10 +1,10 @@
 ---
 id: TASK-1.24
 title: Icons in results
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 07:27'
+updated_date: '2026-10-07 07:44'
 labels:
   - size-3
 milestone: m-3
@@ -16,8 +16,8 @@ ordinal: 25000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Items may carry an icon (an app bundle path, a file path, or an SF Symbol name) and the view renders it
-- [ ] #2 The protocol document, the Rust side and the Python side change together
+- [x] #1 Items may carry an icon (an app bundle path, a file path, or an SF Symbol name) and the view renders it
+- [x] #2 The protocol document, the Rust side and the Python side change together
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,4 +38,6 @@ Protocol 1: one optional tagged icon on an item (path or symbol) in the three ho
 **Owed.** (1) The macOS CI run of `cargo test -p cmd-app`: the three `#[cfg(all(test, target_os = "macos"))]` tests in `icons.rs` (Calculator.app resolves to a PNG at least 48 px wide; `magnifyingglass` resolves to a glyph with an opaque pixel tinted `f2f2f7`; an unknown symbol and a missing path resolve to None) are the proof of the AppKit path, written against the objc2-app-kit 0.3.2 source, not run here. Budget a round trip or two: a wrong method name is a compile error there, and a headless runner may refuse `TIFFRepresentation` of a symbol image. (2) A person on a Mac: open the launcher, type `2+2` and `web rust`, see the equal and globe glyphs beside the rows; type `f readme` and see each file's own icon; type `sleep` and see the moon; point `CMD_PLUGINS` at a directory holding the fake plugin from `crates/cmd-host/tests/common/mod.rs` and query `icon` to see Safari's icon; record whether a list mixing rows with and without icons lines up, and whether the first batch of large app icons pauses visibly (TIFFRepresentation serialises every size up to 1024 px on the main thread, once per icon). (3) The symbol names `equal`, `globe`, `magnifyingglass`, `moon.zzz`, `lock`, `trash`, `circle.lefthalf.filled` are believed to be in the catalogue on current macOS; a missing one leaves its row without an icon rather than failing.
 
 **gpui 0.2.2 facts used, for the gpui-for-cmd skill (not edited here).** `gpui::Asset` has `type Source: Clone + Hash + Send`, `type Output: Clone + Send` and `fn load(source, cx: &mut App) -> impl Future<Output = Output> + Send + 'static`; `App::fetch_asset` calls `load` on the calling thread and spawns the returned future on the background executor; `Window::use_asset::<A>(&source, cx) -> Option<A::Output>` returns `None` while loading and notifies the current view on the next frame when the load finishes. `RenderImage::new(vec![image::Frame::new(rgba)])` takes BGRA straight-alpha frames (gpui swaps channels 0 and 2 after decoding); `img(Arc<RenderImage>)` is an `Img` that implements `Styled`, so `.size(px(..))` applies, and its default `ObjectFit::Contain` scales a larger bitmap down. `Rgba` has public `r`, `g`, `b`, `a` in `0.0..=1.0`. Clippy 1.99 denies `chunks_exact(4)` with a constant in favour of `as_chunks::<4>()`.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit 72a8df8, merged into the branch. Owed: the macOS CI run of the new cargo test -p cmd-app step (three AppKit tests written against the objc2-app-kit source and never compiled here) and clippy --all-targets there; on a Mac, the equal and globe glyphs beside calculator and websearch rows, each file's own icon under f, the moon under sleep, Safari's icon from the fake path-icon plugin, whether rows with and without icons line up, whether a batch of large app icons pauses visibly (then trim representations above 256 px), and that the seven symbol names exist in the catalogue.
 <!-- SECTION:NOTES:END -->
