@@ -72,8 +72,9 @@ up is dropped.
 `protocol` is the version the plugin speaks; the request carried the version the host
 speaks. This host loads a plugin that speaks 0 or 1 and refuses any other version with a
 message naming both. Version 1 adds only optional fields (decision 6), so a host that
-speaks 0 runs a version 1 plugin and does not read them. `keyword` is optional; see
-Routing.
+speaks 0 runs a version 1 plugin and does not read them. An effect kind can never be
+optional, since the host must decode every effect it is sent: a new kind needs a new
+protocol version. `keyword` is optional; see Routing.
 
 ### Item
 

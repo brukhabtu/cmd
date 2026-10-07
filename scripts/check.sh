@@ -39,6 +39,9 @@ uv run --group arch pypeeker index python/cmd-sdk/src >/dev/null
 uv run --group arch pypeeker index plugins/calculator/src >/dev/null
 uv run --group arch pypeeker check --strict
 
+step "python: no import crosses from the SDK to a plugin, or between plugins"
+uv run python scripts/import_boundaries.py python/cmd-sdk/src plugins/*/src
+
 if command -v npx >/dev/null; then
   step "architecture: the LikeC4 model parses and resolves"
   npx --yes likec4 validate docs/architecture

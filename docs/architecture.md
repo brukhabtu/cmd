@@ -52,7 +52,7 @@ to a manifest rather than a quiet import.
 | The core does no I/O | `crates/cmd-core/clippy.toml` disallows `std::process`, `std::fs`, `std::net`, stdin and `std::env::var`; clippy runs with warnings as errors |
 | The core does not know the host or the window | `cmd-core` depends on nothing of ours in its `Cargo.toml`; a cycle would not build |
 | The SDK's protocol module never imports its shell | `[tool.pypeeker.import-boundaries]` in `pyproject.toml`: `protocol` may import nothing of ours, `serve` may import `protocol`; `pypeeker check --strict` in `scripts/check.sh` |
-| The SDK knows no plugin | Declared, not yet mechanical: pypeeker's rule cannot see across the two source roots. Board task "Make the SDK/plugin and core/shell import boundaries mechanical" |
+| The SDK knows no plugin, and no plugin knows another | `scripts/import_boundaries.py` reads every absolute import under the source roots and fails on `cmd_sdk` importing a plugin package or a plugin importing a sibling; `scripts/check.sh` runs it |
 | The Rust and Python protocols agree | `crates/cmd-host/tests/calculator.rs` drives the real plugin through uv |
 | Plugins log to stderr, not stdout | The host rejects a non-protocol line and quotes it |
 | The model matches the syntax LikeC4 accepts | `npx likec4 validate` in `scripts/check.sh`; the C4 discipline itself (one level per view, titled edges) is reviewed, not linted, in this repository |

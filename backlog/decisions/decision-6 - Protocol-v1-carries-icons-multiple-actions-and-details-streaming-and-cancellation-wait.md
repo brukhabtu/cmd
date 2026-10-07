@@ -46,5 +46,7 @@ which fields a v0 plugin will not have read.
   `python/cmd-sdk/src/cmd_sdk/protocol.py`, `docs/plugin-protocol.md`, plus the adapter
   test. Task 1.24 (icons in results) is the first slice; details and Cmd-K follow.
 - Decision 4's reserved Cmd-K row gets its meaning.
+- A new effect kind is never optional: the host must decode every effect it is sent, so
+  one needs a new protocol version. Version 1 adds no effect.
 - The SDK's `Item` grows two optional fields and nothing else; a plugin author's loop is
   untouched, which is the point.
