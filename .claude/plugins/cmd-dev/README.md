@@ -7,9 +7,11 @@ anticipation. Candidates are proposed at milestone boundaries and sit on the boa
 drafts until the evidence exists; `docs/skills.md` has the process and the gate.
 
 One skill is written and not yet accepted: `gpui-for-cmd`, from milestone 1's two
-demonstrated misses in the GPUI window. Its eval cases are the next step; they run in CI
-on the first pull request that touches this plugin (`.github/workflows/skills.yml`), and
-its board draft is promoted only when the gate passes.
+demonstrated misses in the GPUI window. Its five cases under `evals/gpui-for-cmd-*` are
+questions answered from an empty directory (each run starts in one), graded by regex on
+the answer, with a `Skill` grader as the plugin-fired indicator. They run in CI on the
+first pull request that touches this plugin (`.github/workflows/skills.yml`), and the
+board draft is promoted only when the gate passes.
 
 ## Layout
 
