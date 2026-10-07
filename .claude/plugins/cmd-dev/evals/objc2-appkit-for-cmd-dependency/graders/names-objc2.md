@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '"escape"'
+pattern: 'objc2::MainThreadMarker'
 match: contains
 target: last_message
 ---

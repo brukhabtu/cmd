@@ -25,9 +25,23 @@ grep -rn "pub fn observe_window_activation" ~/.cargo/registry/src/*/gpui-0.2.2/s
 
 - **Keys.** `on_key_down(cx.listener(Self::on_key))` on the root element, with
   `.track_focus(&self.focus)`, delivers `&KeyDownEvent` whose `keystroke: Keystroke` has
-  `modifiers` (`.platform` is Cmd on macOS, `.control` is Ctrl), `key` (names such as
-  `"backspace"`, `"up"`, `"down"`, `"enter"`, `"escape"`, or the character) and
-  `key_char: Option<String>`, the text the key would insert.
+  `modifiers` (`.platform` is Cmd on macOS, `.control` is Ctrl, `.alt` is Option,
+  `.shift`), `key` (names such as `"backspace"`, `"left"`, `"right"`, `"up"`, `"down"`,
+  `"enter"`, `"escape"`, or the character) and `key_char: Option<String>`.
+- **Text goes through the input handler, not `key_char`.** Once a view installs an input
+  handler, macOS routes keys like this (read from `platform/mac/window.rs`,
+  `handle_key_event`): a key with a `key_char` reaches the key listeners first and, unless
+  one calls `cx.stop_propagation()`, goes on to the input context, which inserts it through
+  `replace_text_in_range`; a key without one (Backspace, the arrows, Escape, every Cmd
+  chord) goes to the input context first and comes back to the listeners once. So the key
+  listener must not insert `key_char` (every character would arrive twice) and must call
+  `cx.stop_propagation()` on every key it takes. Text, dead keys and input-method
+  composition arrive through `impl EntityInputHandler for View` (`replace_text_in_range`,
+  `replace_and_mark_text_in_range`, `unmark_text`, `selected_text_range`,
+  `text_for_range`, `bounds_for_range`, `character_index_for_point`, all in UTF-16
+  offsets); the element installs it in `paint` with
+  `window.handle_input(&focus, ElementInputHandler::new(bounds, view.clone()), cx)`. This
+  repository's input is `crates/cmd-app/src/input.rs`.
 - **Window activation.** `cx.observe_window_activation(window, |view, window, cx| ...)`
   lives on `Context<V>` and takes the `&mut Window`; inside, `window.is_window_active()`
   says which way it went. `App` has no such method.
@@ -48,8 +62,27 @@ grep -rn "pub fn observe_window_activation" ~/.cargo/registry/src/*/gpui-0.2.2/s
   is_minimizable: false, ..Default::default() }`, then
   `cx.open_window(options, |window, cx| cx.new(|cx| View::new(..., window, cx)))`, which
   returns a `Result<WindowHandle<V>>`.
-- **Displays.** `cx.primary_display()` is an `Option` of a display with `.bounds()`;
-  `Bounds::centered(None, size, cx)` centres on the primary display.
+- **Displays.** On macOS every display's `PlatformDisplay::bounds()` has origin `(0, 0)`:
+  only the size is real, so the arrangement of displays and the pointer come from
+  CoreGraphics (`crates/cmd-app/src/displays.rs`). `Window::bounds()` is relative to the
+  window's own screen. `WindowOptions { display_id, window_bounds: Windowed(bounds) }`
+  opens a window on that display with the origin relative to its top-left;
+  `u32::from(DisplayId)` is the `CGDirectDisplayID`. Nothing moves an open window
+  (the platform window has only `resize`), so changing display means `remove_window` then
+  `open_window`.
+- **Window look.** `WindowOptions.window_background: WindowBackgroundAppearance` (`Opaque`,
+  `Transparent`, `Blurred`); on macOS `Blurred` makes the window non-opaque and puts an
+  `NSVisualEffectView` under the content, so the root's background must be translucent
+  (`rgba(0xRRGGBBAA)`). `window.appearance()` is `Light`, `VibrantLight`, `Dark` or
+  `VibrantDark`; `cx.observe_window_appearance(window, |view, window, cx| ...)` on
+  `Context<V>` fires when it changes. `rounded_lg`, `rounded_xl`, `rounded_2xl` are 8, 12
+  and 16 px; `truncate()` is overflow hidden, no wrap, ellipsis.
+- **Images and assets.** `gpui::Asset` has `type Source: Clone + Hash + Send`,
+  `type Output: Clone + Send` and `fn load(source, cx: &mut App) -> impl Future`; `load`
+  runs on the calling thread and its future on the background executor.
+  `window.use_asset::<A>(&source, cx)` is `None` while loading and redraws the view when it
+  arrives. `RenderImage::new(vec![image::Frame::new(buffer)])` takes BGRA frames;
+  `img(Arc<RenderImage>)` is `Styled`, so `.size(px(..))` applies, and fits by `Contain`.
 - **Elements.** `div()` with the fluent builders; `.when(condition, |this| ...)` needs
   `gpui::prelude::FluentBuilder`; `.children(iterator)`; colours as `rgb(0x1c_1c_1e)`.
 - **Effects.** `cx.write_to_clipboard(ClipboardItem::new_string(text))`;
@@ -78,7 +111,10 @@ The scratch workspace and the patch are never committed; `cargo test --workspace
 
 The workspace lints with `clippy::pedantic` at `-D warnings`, and these bit in this crate:
 `needless_pass_by_value` (take `&[T]` or `&str` unless the value is consumed),
-`unreadable_literal` (colour literals need separators), `similar_names`,
-`redundant_closure`, `only_used_in_recursion`, `too_many_lines` (100 lines),
-`match_wildcard_for_single_variants`. Run the scratch clippy before pushing; CI's macOS
-job runs the same.
+`unreadable_literal` (colour literals need separators), `similar_names` (a `hint` beside a
+`hit`), `redundant_closure`, `only_used_in_recursion`, `too_many_lines` (100 lines),
+`match_wildcard_for_single_variants`, `cast_precision_loss` (a `usize as f32` in a const
+assert needs an allow), and on 1.99 `chunks_exact(4)` with a constant wants
+`as_chunks::<4>()`. Run the scratch clippy before pushing; CI's macOS job runs the same,
+and it is the only lint of code under `cfg(target_os = "macos")` (see the objc2 and AppKit
+skill).
