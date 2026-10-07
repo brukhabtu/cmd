@@ -17,8 +17,9 @@ cmd-sdk = { workspace = true }
 
 [dependency-groups]
 dev = ["pytest>=8.4", "mypy>=1.18", "ruff>=0.14"]
-# pypeeker is pre-1.0 and pinned to a commit on purpose. Bump deliberately.
-arch = ["pypeeker @ git+https://github.com/brukhabtu/pypeeker@26b272040dca10e5193aac24cded4f2e18364dfc"]
+# pypeeker is installed from its repository, pinned to a commit on main. It is pre-1.0, so
+# bump the commit deliberately and re-run the probe described under [tool.pypeeker].
+arch = ["pypeeker @ git+https://github.com/brukhabtu/pypeeker@cf4f1687568e4e00d1bc7a64e0e9e4a2d660ef55"]
 
 [tool.ruff]
 line-length = 100
@@ -53,6 +54,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "D", "ANN", "PLR2004", "INP001", "FBT", "E501"]
+"scripts/**" = ["T201", "INP001"] # a script's job is to print; scripts are not a package
 
 [tool.mypy]
 strict = true
@@ -75,10 +77,11 @@ rules = [
   "import-time-side-effects",
 ]
 
-# Units are the top-level packages under each source root. A plugin may import the SDK.
-# The SDK imports no plugin. Not yet gated in scripts/check.sh: at the pinned commit the rule
-# cannot see an import that crosses the two source roots (probed in the foundation session),
-# and the core/shell line inside cmd_sdk is below this granularity. The board has the task.
+# Units are the modules directly under each top-level package (the rule's per-file root).
+# The core/shell line inside the SDK: protocol takes data and returns data and imports no
+# shell; serve is the only module that may import protocol. In the calculator, arithmetic is
+# pure and imports nothing of ours. An import that crosses the two source roots (a plugin
+# importing the SDK, or the reverse) is invisible to this rule; the board has that task.
 [tool.pypeeker.import-boundaries]
-allow = { calculator = ["cmd_sdk"], cmd_sdk = [] }
+allow = { protocol = [], serve = ["protocol"], arithmetic = [] }
 report-unused-allowances = true

@@ -29,9 +29,13 @@ jobs:
           claude plugin eval .claude/plugins/cmd-dev \
             --trust-plugin \
             --threshold 1.0 \
+            --ablation with-without \
             --no-publish \
             --max-cost-usd 15 \
             --json eval-result.json
+      - name: Every case must score higher with the skill than without it
+        if: hashFiles('eval-result.json') != ''
+        run: python3 scripts/eval_gate.py eval-result.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

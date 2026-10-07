@@ -6,7 +6,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use cmd_core::protocol::{self, DecodeError, Method, Request};
+use cmd_core::protocol::{self, DecodeError, Method, Outcome, Request};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -87,7 +87,8 @@ impl PluginProcess {
     /// Send one request and wait for its answer.
     ///
     /// Answers to earlier requests that arrive late are dropped: by then the
-    /// launcher has moved on.
+    /// launcher has moved on. An error with id 0 is the SDK saying it could not
+    /// read the request at all, so it answers the request in flight.
     pub fn call<T: DeserializeOwned>(
         &mut self,
         method: Method,
@@ -118,7 +119,9 @@ impl PluginProcess {
                 }
                 Err(error) => return Err(error.into()),
             };
-            if response.id != id {
+            let unreadable_request =
+                response.id == 0 && matches!(response.outcome, Outcome::Error(_));
+            if response.id != id && !unreadable_request {
                 continue;
             }
             return Ok(protocol::result(response)?);

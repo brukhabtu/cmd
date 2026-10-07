@@ -5,11 +5,11 @@ from cmd_sdk import Action, Close, Copy, Description, Item, Open, Plugin, Show
 from cmd_sdk.protocol import (
     PROTOCOL,
     Describe,
-    Err,
+    Failure,
     MalformedRequestError,
-    Ok,
     Query,
     Run,
+    Success,
     decode_request,
     dispatch,
     encode_response,
@@ -53,13 +53,13 @@ def test_rejects_malformed_requests(line: str) -> None:
 
 
 def test_describe_adds_the_protocol_version() -> None:
-    assert dispatch(Describe(1, 0), PLUGIN) == Ok(
+    assert dispatch(Describe(1, 0), PLUGIN) == Success(
         1, {"name": "echo", "version": "1.0", "protocol": PROTOCOL, "keyword": "echo"}
     )
 
 
 def test_query_serialises_items_with_only_the_fields_that_are_set() -> None:
-    assert dispatch(Query(2, "hi"), PLUGIN) == Ok(
+    assert dispatch(Query(2, "hi"), PLUGIN) == Success(
         2,
         {
             "items": [
@@ -87,11 +87,11 @@ def test_query_serialises_items_with_only_the_fields_that_are_set() -> None:
 )
 def test_run_tags_effects_by_kind(effect: Close | Copy | Open | Show, wire: dict[str, str]) -> None:
     plugin = Plugin(Description("e", "0"), lambda _: (), lambda _i, _a: effect)
-    assert dispatch(Run(4, "i", "a"), plugin) == Ok(4, {"effect": wire})
+    assert dispatch(Run(4, "i", "a"), plugin) == Success(4, {"effect": wire})
 
 
 def test_responses_are_one_json_line() -> None:
-    assert encode_response(Ok(7, {"items": []})) == '{"id": 7, "result": {"items": []}}\n'
-    line = encode_response(Err(8, "bad_request", "why"))
+    assert encode_response(Success(7, {"items": []})) == '{"id": 7, "result": {"items": []}}\n'
+    line = encode_response(Failure(8, "bad_request", "why"))
     assert line.endswith("\n")
     assert json.loads(line) == {"id": 8, "error": {"code": "bad_request", "message": "why"}}

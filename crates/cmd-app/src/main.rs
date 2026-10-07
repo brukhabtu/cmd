@@ -32,7 +32,7 @@ impl LauncherView {
         }
     }
 
-    fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         let event = match keystroke.key.as_str() {
             "backspace" => Some(Event::Backspace),
@@ -44,17 +44,17 @@ impl LauncherView {
             _ => keystroke.key_char.clone().map(Event::Typed),
         };
         if let Some(event) = event {
-            self.handle(event, window, cx);
+            self.handle(event, cx);
         }
     }
 
-    fn handle(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+    fn handle(&mut self, event: Event, cx: &mut Context<Self>) {
         let step = self.state.apply(event);
-        self.perform(step, window, cx);
+        self.perform(step, cx);
         cx.notify();
     }
 
-    fn perform(&mut self, step: Step, window: &mut Window, cx: &mut Context<Self>) {
+    fn perform(&mut self, step: Step, cx: &mut Context<Self>) {
         match step {
             Step::Query { generation, text } => {
                 let (hits, errors) = self.host.query(&text);
@@ -73,7 +73,7 @@ impl LauncherView {
                     Err(error) => Event::Failed(error.to_string()),
                 };
                 let step = self.state.apply(event);
-                self.perform(step, window, cx);
+                self.perform(step, cx);
             }
             Step::Hide => cx.hide(),
             Step::CopyAndHide(text) => {
@@ -105,8 +105,8 @@ impl Render for LauncherView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0x1c1c1e))
-            .text_color(rgb(0xf2f2f7))
+            .bg(rgb(0x1c_1c_1e))
+            .text_color(rgb(0xf2_f2_f7))
             .rounded_xl()
             .overflow_hidden()
             .child(
@@ -116,7 +116,7 @@ impl Render for LauncherView {
                     .flex()
                     .items_center()
                     .text_xl()
-                    .when(empty, |input| input.text_color(rgb(0x8e8e93)))
+                    .when(empty, |input| input.text_color(rgb(0x8e_8e_93)))
                     .child(input),
             )
             .children(self.state.message.clone().map(|message| {
@@ -124,7 +124,7 @@ impl Render for LauncherView {
                     .px(px(18.0))
                     .pb(px(8.0))
                     .text_sm()
-                    .text_color(rgb(0xff9f0a))
+                    .text_color(rgb(0xff_9f_0a))
                     .child(message)
             }))
             .children(self.state.hits.iter().enumerate().map(|(index, hit)| {
@@ -133,13 +133,11 @@ impl Render for LauncherView {
                     .py(px(10.0))
                     .flex()
                     .flex_col()
-                    .when(index == selected, |row| row.bg(rgb(0x2c2c2e)))
+                    .when(index == selected, |row| row.bg(rgb(0x2c_2c_2e)))
                     .child(div().text_base().child(hit.item.title.clone()))
-                    .children(
-                        hit.item.subtitle.clone().map(|subtitle| {
-                            div().text_sm().text_color(rgb(0x8e8e93)).child(subtitle)
-                        }),
-                    )
+                    .children(hit.item.subtitle.clone().map(|subtitle| {
+                        div().text_sm().text_color(rgb(0x8e_8e_93)).child(subtitle)
+                    }))
             }))
     }
 }

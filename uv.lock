@@ -97,7 +97,7 @@ dev = [
 [package.metadata]
 
 [package.metadata.requires-dev]
-arch = [{ name = "pypeeker", git = "https://github.com/brukhabtu/pypeeker?rev=26b272040dca10e5193aac24cded4f2e18364dfc" }]
+arch = [{ name = "pypeeker", git = "https://github.com/brukhabtu/pypeeker?rev=cf4f1687568e4e00d1bc7a64e0e9e4a2d660ef55" }]
 dev = [
     { name = "mypy", specifier = ">=1.18" },
     { name = "pytest", specifier = ">=8.4" },
@@ -238,7 +238,7 @@ wheels = [
 [[package]]
 name = "pypeeker"
 version = "0.2.0"
-source = { git = "https://github.com/brukhabtu/pypeeker?rev=26b272040dca10e5193aac24cded4f2e18364dfc#26b272040dca10e5193aac24cded4f2e18364dfc" }
+source = { git = "https://github.com/brukhabtu/pypeeker?rev=cf4f1687568e4e00d1bc7a64e0e9e4a2d660ef55#cf4f1687568e4e00d1bc7a64e0e9e4a2d660ef55" }
 dependencies = [
     { name = "click" },
     { name = "pyyaml" },

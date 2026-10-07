@@ -2,7 +2,7 @@
 //!
 //! ```toml
 //! name = "calculator"
-//! command = ["uv", "run", "--quiet", "python", "-m", "calculator"]
+//! command = ["uv", "run", "--quiet", "calculator"]
 //! ```
 //!
 //! The command runs with the plugin directory as its working directory.

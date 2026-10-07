@@ -4,7 +4,7 @@ import sys
 from typing import TextIO
 
 from cmd_sdk.protocol import (
-    Err,
+    Failure,
     MalformedRequestError,
     Plugin,
     Response,
@@ -34,8 +34,8 @@ def _answer(line: str, plugin: Plugin) -> Response:
     try:
         request = decode_request(line)
     except MalformedRequestError as error:
-        return Err(0, "bad_request", str(error))
+        return Failure(0, "bad_request", str(error))
     try:
         return dispatch(request, plugin)
     except Exception as error:  # ruff: ignore[blind-except] - the plugin's failure must not end the session
-        return Err(request.id, "plugin_error", f"{type(error).__name__}: {error}")
+        return Failure(request.id, "plugin_error", f"{type(error).__name__}: {error}")

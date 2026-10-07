@@ -34,10 +34,17 @@ uv run pytest -q
 step "python: the functional suite twice in one process, to catch state leakage"
 uv run pytest -q --keep-duplicates python/cmd-sdk/tests/functional python/cmd-sdk/tests/functional
 
-# pypeeker is configured in pyproject.toml but not gated here: at the pinned commit its
-# import-boundaries rule cannot see an import that crosses the two source roots, so a passing
-# check would prove nothing. Board task "Make the SDK/plugin and core/shell import boundaries
-# mechanical" owns closing that gap.
+step "python: pypeeker, strict, for the core/shell line inside the SDK (see [tool.pypeeker])"
+uv run --group arch pypeeker index python/cmd-sdk/src >/dev/null
+uv run --group arch pypeeker index plugins/calculator/src >/dev/null
+uv run --group arch pypeeker check --strict
+
+if command -v npx >/dev/null; then
+  step "architecture: the LikeC4 model parses and resolves"
+  npx --yes likec4 validate docs/architecture
+else
+  step "architecture: skipped, no npx on this machine"
+fi
 
 step "claude code: plugin manifests"
 claude plugin validate --strict .claude/plugins/bruk-philosophy

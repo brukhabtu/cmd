@@ -37,15 +37,18 @@ assertion for it, write it as a deterministic grader; if you would need a rubric
 A skill is accepted, and its draft promoted, when all four hold:
 
 1. `claude plugin validate --strict .claude/plugins/cmd-dev` passes.
-2. `claude plugin eval .claude/plugins/cmd-dev --case '<name>-*' --threshold 1.0` passes at
-   the default three runs per case.
-3. The ablation delta is positive: the same cases score lower without the plugin. A skill
-   that changes nothing is not a skill.
-4. The eval result file is attached to the draft before promotion.
+2. `claude plugin eval .claude/plugins/cmd-dev --threshold 1.0 --ablation with-without`
+   passes at the default three runs per case. Locally, narrow it with `--case '<name>-*'`.
+3. Every case scores higher with the plugin than without it: `scripts/eval_gate.py` reads
+   the `--json` result and fails on a delta of zero or less. A skill that changes nothing
+   is not a skill.
+4. The eval result (the `eval-result` artifact from CI, or the local `--json` file) is
+   attached to the draft before promotion.
 
-The same command runs in CI (`.github/workflows/skills.yml`) whenever the plugin changes.
-Each run is a real agent session on the repository's `ANTHROPIC_API_KEY`, so the workflow
-carries a cost ceiling and runs only on changes under `.claude/plugins/cmd-dev/`.
+CI (`.github/workflows/skills.yml`) runs steps 1 to 3 over the whole suite whenever a
+change touches `.claude/plugins/cmd-dev/`, and uploads the result. With no cases in the
+plugin there is nothing to gate and the job passes. Each case is a real agent session on
+the repository's `ANTHROPIC_API_KEY`, so the job carries a cost ceiling.
 
 ## Retiring a skill
 

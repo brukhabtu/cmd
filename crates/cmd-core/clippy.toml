@@ -1,0 +1,17 @@
+# cmd-core is the functional core: it takes data and returns data. These are the doors to
+# the outside world, and clippy keeps them shut here so the claim in docs/architecture.md
+# stays true by a check rather than by inspection.
+disallowed-types = [
+  { path = "std::process::Command", reason = "cmd-core does no I/O; processes belong to cmd-host" },
+  { path = "std::process::Child", reason = "cmd-core does no I/O; processes belong to cmd-host" },
+  { path = "std::fs::File", reason = "cmd-core does no I/O; files belong to the shell" },
+  { path = "std::net::TcpStream", reason = "cmd-core does no I/O" },
+  { path = "std::io::Stdin", reason = "cmd-core does no I/O" },
+]
+disallowed-methods = [
+  { path = "std::fs::read_to_string", reason = "cmd-core does no I/O; files belong to the shell" },
+  { path = "std::fs::read", reason = "cmd-core does no I/O" },
+  { path = "std::fs::write", reason = "cmd-core does no I/O" },
+  { path = "std::io::stdin", reason = "cmd-core does no I/O" },
+  { path = "std::env::var", reason = "cmd-core does no I/O; the shell passes configuration in" },
+]

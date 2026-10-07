@@ -3,13 +3,13 @@
     "bruk-philosophy": {
       "source": {
         "source": "directory",
-        "path": "./plugins/bruk-philosophy"
+        "path": "./.claude/plugins/bruk-philosophy"
       }
     },
     "cmd-dev": {
       "source": {
         "source": "directory",
-        "path": "./plugins/cmd-dev"
+        "path": "./.claude/plugins/cmd-dev"
       }
     }
   },

@@ -137,7 +137,7 @@ type Request = Describe | Query | Run
 
 
 @dataclass(frozen=True)
-class Ok:
+class Success:
     """A result for the request with this id."""
 
     id: int
@@ -145,7 +145,7 @@ class Ok:
 
 
 @dataclass(frozen=True)
-class Err:
+class Failure:
     """A failure instead of a result."""
 
     id: int
@@ -153,7 +153,7 @@ class Err:
     message: str
 
 
-type Response = Ok | Err
+type Response = Success | Failure
 
 
 class MalformedRequestError(ValueError):
@@ -187,7 +187,7 @@ def decode_request(line: str) -> Request:
             raise MalformedRequestError(f"unknown method {other!r}")
 
 
-def dispatch(request: Request, plugin: Plugin) -> Ok:
+def dispatch(request: Request, plugin: Plugin) -> Success:
     """Answer one request with the plugin's functions.
 
     Whatever the plugin's own functions raise passes through; ``serve`` turns it into an
@@ -195,13 +195,13 @@ def dispatch(request: Request, plugin: Plugin) -> Ok:
     """
     match request:
         case Describe():
-            return Ok(request.id, _description_json(plugin.description))
+            return Success(request.id, _description_json(plugin.description))
         case Query():
             items = plugin.query(request.text)
-            return Ok(request.id, {"items": [_item_json(item) for item in items]})
+            return Success(request.id, {"items": [_item_json(item) for item in items]})
         case Run():
             effect = plugin.run(request.item, request.action)
-            return Ok(request.id, {"effect": _effect_json(effect)})
+            return Success(request.id, {"effect": _effect_json(effect)})
         case _ as unreachable:
             assert_never(unreachable)
 
@@ -209,9 +209,9 @@ def dispatch(request: Request, plugin: Plugin) -> Ok:
 def encode_response(response: Response) -> str:
     """Serialise a response as one line, newline included."""
     match response:
-        case Ok():
+        case Success():
             body: dict[str, Any] = {"id": response.id, "result": response.result}
-        case Err():
+        case Failure():
             body = {
                 "id": response.id,
                 "error": {"code": response.code, "message": response.message},
@@ -265,8 +265,3 @@ def _effect_json(effect: Effect) -> dict[str, str]:
             return {"kind": "show", "text": effect.text}
         case _ as unreachable:
             assert_never(unreachable)
-
-
-def items_of(sequence: Sequence[Item]) -> tuple[Item, ...]:
-    """Freeze a plugin's items. A convenience for plugins that build lists."""
-    return tuple(sequence)

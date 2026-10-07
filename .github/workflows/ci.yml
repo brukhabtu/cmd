@@ -2,7 +2,6 @@ name: ci
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -25,8 +24,6 @@ jobs:
           node-version: 22
       - name: Claude Code CLI, for plugin validation
         run: npm install --global @anthropic-ai/claude-code
-      - name: Install the pypeeker gate's build tools
-        run: sudo apt-get install -y --no-install-recommends git
       - run: scripts/check.sh
 
   app:

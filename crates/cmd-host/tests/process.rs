@@ -1,5 +1,5 @@
 //! Proves the process discipline against a fake plugin: a few lines of Python
-//! that answer the protocol, stall, or misbehave on request.
+//! that answer the protocol, stall, answer late, or misbehave on request.
 
 use std::path::Path;
 use std::time::Duration;
@@ -8,7 +8,7 @@ use cmd_core::protocol::{Description, Items, Method, VERSION};
 use cmd_host::{CallError, PluginProcess};
 
 const FAKE: &str = r#"
-import json, sys
+import json, sys, time
 for line in sys.stdin:
     request = json.loads(line)
     reply = lambda result: print(json.dumps({"id": request["id"], "result": result}), flush=True)
@@ -16,6 +16,11 @@ for line in sys.stdin:
         reply({"name": "fake", "version": "0", "protocol": 0})
     elif request["params"]["text"] == "stall":
         pass
+    elif request["params"]["text"] == "late":
+        time.sleep(0.3)
+        reply({"items": [{"id": "late", "title": "late"}]})
+    elif request["params"]["text"] == "unreadable":
+        print(json.dumps({"id": 0, "error": {"code": "bad_request", "message": "params.text must be a str"}}), flush=True)
     elif request["params"]["text"] == "chatter":
         print("debugging...", flush=True)
     elif request["params"]["text"] == "quit":
@@ -32,7 +37,15 @@ fn fake() -> PluginProcess {
 }
 
 fn query(process: &mut PluginProcess, text: &str) -> Result<Items, CallError> {
-    process.call(Method::Query { text: text.into() }, Duration::from_secs(5))
+    query_within(process, text, Duration::from_secs(5))
+}
+
+fn query_within(
+    process: &mut PluginProcess,
+    text: &str,
+    timeout: Duration,
+) -> Result<Items, CallError> {
+    process.call(Method::Query { text: text.into() }, timeout)
 }
 
 #[test]
@@ -54,29 +67,31 @@ fn a_plugin_answers_describe_and_query() {
 #[test]
 fn a_silent_plugin_times_out() {
     let mut process = fake();
-    let error = process
-        .call::<Items>(
-            Method::Query {
-                text: "stall".into(),
-            },
-            Duration::from_millis(200),
-        )
-        .unwrap_err();
+    let error = query_within(&mut process, "stall", Duration::from_millis(200)).unwrap_err();
     assert!(matches!(error, CallError::Timeout(_)), "{error}");
 }
 
 #[test]
 fn a_late_answer_is_dropped_and_the_next_call_still_works() {
     let mut process = fake();
-    let _ = process.call::<Items>(
-        Method::Query {
-            text: "stall".into(),
-        },
-        Duration::from_millis(100),
-    );
+    let timed_out = query_within(&mut process, "late", Duration::from_millis(50));
+    assert!(matches!(timed_out, Err(CallError::Timeout(_))));
+    // The answer to "late" arrives first, under the old id, and is skipped.
     assert_eq!(
         query(&mut process, "after").unwrap().items[0].title,
         "after"
+    );
+}
+
+#[test]
+fn an_error_with_id_zero_answers_the_request_in_flight() {
+    let mut process = fake();
+    let error = query(&mut process, "unreadable").unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("bad_request: params.text must be a str"),
+        "{error}"
     );
 }
 
@@ -92,11 +107,13 @@ fn stray_stdout_is_a_protocol_error_that_names_the_line() {
 }
 
 #[test]
-fn a_plugin_error_is_reported_as_one() {
+fn a_plugin_error_reaches_the_caller_with_its_message() {
     let mut process = fake();
     let error = query(&mut process, "fail").unwrap_err();
     assert!(
-        error.to_string().contains("plugin reported an error"),
+        error
+            .to_string()
+            .contains("the plugin reported an error: boom: no"),
         "{error}"
     );
 }

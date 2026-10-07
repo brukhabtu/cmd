@@ -123,7 +123,7 @@ pub enum Outcome {
 pub enum DecodeError {
     #[error("not a protocol message: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("plugin reported an error")]
+    #[error("the plugin reported an error: {0}")]
     Plugin(#[source] PluginError),
 }
 

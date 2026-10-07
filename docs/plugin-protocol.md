@@ -143,7 +143,8 @@ milestone 2 work and are on the board.
 | `bad_request` | SDK | The host sent a line the SDK could not read. `id` is 0 when the line had no id |
 | `plugin_error` | SDK | The plugin's own code raised. `message` names the exception |
 
-Plugins may invent further codes. The host shows `message` to the person.
+Plugins may invent further codes. The host shows `code: message` to the person. An error
+whose `id` is 0 answers the request in flight, since the host sends one request at a time.
 
 ## A full exchange
 
