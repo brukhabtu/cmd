@@ -726,10 +726,10 @@ fn launcher_bounds(cx: &App) -> Bounds<Pixels> {
     }
 }
 
-/// Make the app an accessory: no Dock icon and no menu bar. The bundle's LSUIElement says
+/// Make the app an accessory: no Dock icon and no menu bar. The bundle's `LSUIElement` says
 /// the same, but GPUI sets the regular policy as it finishes launching, just before it
 /// calls the `run` closure, which overrides the plist; so this runs first in that closure.
-/// The PopUp panel, a non-activating NSPanel, still takes the keyboard.
+/// The `PopUp` panel, a non-activating `NSPanel`, still takes the keyboard.
 #[cfg(target_os = "macos")]
 fn become_accessory() {
     use objc2::MainThreadMarker;
