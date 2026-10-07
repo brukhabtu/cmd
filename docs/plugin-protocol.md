@@ -133,9 +133,14 @@ and do slow work in `run`.
 
 ## Lifecycle
 
-Plugins start when the launcher starts and stay running until it exits. A plugin that exits
-is reported on the next call. Restarting a crashed plugin and reloading a changed one are
-milestone 2 work and are on the board.
+Plugins start when the launcher starts and stay running until it exits, each on its own
+worker thread, so a slow plugin delays only its own answers. A plugin whose process has
+gone (it exited, or its pipe broke) has the call in hand answered with that fact, is
+started again with back-off (2 s, doubling to 30 s, forgotten after a healthy call), and
+the window says "started again". A change to any file under the plugin's directory,
+other than hidden directories and `__pycache__`, starts it again on the new code and the
+window says "reloaded". A plugin that cannot be started again is reported in the window.
+A plugin that hangs is not restarted today; each call times out instead.
 
 ## Errors
 

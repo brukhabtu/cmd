@@ -10,10 +10,18 @@ performs. `serve(plugin)` speaks the protocol over stdin and stdout.
 ## A plugin in ten minutes
 
 The subject is `plugins/websearch` in this repository: type `web` and a question, press
-Enter, and the search opens in the browser. Three files.
+Enter, and the search opens in the browser. Three files in this layout:
 
-**1. The project.** `pyproject.toml` declares a package, a dependency on `cmd-sdk`, and a
-script the launcher will run:
+```
+websearch/
+  pyproject.toml
+  cmd-plugin.toml
+  src/websearch/__init__.py
+```
+
+**1. The project.** `pyproject.toml` declares a package, a dependency on `cmd-sdk`, where
+to get it, and a script the launcher will run. Outside this repository, take the SDK from
+the repository itself until it is published:
 
 ```toml
 [project]
@@ -25,13 +33,16 @@ dependencies = ["cmd-sdk"]
 [project.scripts]
 websearch = "websearch:main"
 
+[tool.uv.sources]
+cmd-sdk = { git = "https://github.com/brukhabtu/cmd", subdirectory = "python/cmd-sdk" }
+
 [build-system]
 requires = ["uv_build>=0.9,<1"]
 build-backend = "uv_build"
 ```
 
-(Inside this repository `cmd-sdk` comes from the workspace; outside it, from the package
-index once it is published.)
+Inside this repository the line reads `cmd-sdk = { workspace = true }` instead, as in the
+checked-in `plugins/websearch/pyproject.toml`.
 
 **2. The manifest.** `cmd-plugin.toml` tells the launcher what to run, with the plugin's
 directory as the working directory:
@@ -99,7 +110,7 @@ What each part declares:
 - Log to stderr. Stdout belongs to the protocol, and the host rejects anything else on it.
 
 **4. Try it without the app.** `cmd-doctor` runs a plugin directory the way the launcher
-does and prints what comes back:
+does and prints what comes back. It needs a Rust toolchain, like the app itself:
 
 ```sh
 cargo run -p cmd-host --bin cmd-doctor -- plugins/websearch --query "rust gpui" --run "https://duckduckgo.com/?q=rust+gpui" --action copy
@@ -107,7 +118,9 @@ cargo run -p cmd-host --bin cmd-doctor -- plugins/websearch --query "rust gpui" 
 
 **5. Install it.** Copy the directory into `~/Library/Application Support/cmd/plugins/`,
 or run the app with `CMD_PLUGINS=/path/to/your/plugins`. The launcher starts every plugin
-it finds and shows a line under the input if one fails to start.
+it finds. A plugin that fails to start is reported in the terminal the app was started
+from; once running, its errors appear as a line under the input, and editing its files
+reloads it.
 
 ## Testing a plugin
 

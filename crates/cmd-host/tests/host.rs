@@ -38,7 +38,7 @@ fn next_within(host: &Host, limit: Duration) -> HostEvent {
 fn generation_of(event: &HostEvent) -> u64 {
     match event {
         HostEvent::Answered { generation, .. } | HostEvent::Ran { generation, .. } => *generation,
-        HostEvent::Restarted { .. } | HostEvent::Reloaded { .. } => {
+        HostEvent::Restarted { .. } | HostEvent::Reloaded { .. } | HostEvent::Trouble { .. } => {
             panic!("no restart was expected")
         }
     }
@@ -53,7 +53,8 @@ fn answers_arrive_as_events_with_their_generation_and_plugin() {
         HostEvent::Answered { plugin, .. }
         | HostEvent::Ran { plugin, .. }
         | HostEvent::Restarted { plugin, .. }
-        | HostEvent::Reloaded { plugin, .. } => *plugin,
+        | HostEvent::Reloaded { plugin, .. }
+        | HostEvent::Trouble { plugin, .. } => *plugin,
     });
     let titles: Vec<String> = answers
         .into_iter()

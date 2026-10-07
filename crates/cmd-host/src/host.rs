@@ -89,6 +89,8 @@ pub enum HostEvent {
     Restarted { plugin: usize, attempt: u32 },
     /// A file in the plugin's directory changed and a fresh process runs the new code.
     Reloaded { plugin: usize },
+    /// The plugin could not be started again; the window should say so.
+    Trouble { plugin: usize, message: String },
 }
 
 enum Command {
@@ -358,10 +360,15 @@ fn serve(
                             return;
                         }
                     }
-                    Err(error) => eprintln!(
-                        "cmd-host: {} did not come back after a change: {error}",
-                        home.manifest.name
-                    ),
+                    Err(error) => {
+                        let message = format!("did not come back after a change: {error}");
+                        if reports
+                            .send_blocking(HostEvent::Trouble { plugin, message })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
                 }
                 continue;
             }
@@ -385,10 +392,15 @@ fn serve(
                             return;
                         }
                     }
-                    Err(error) => eprintln!(
-                        "cmd-host: {} did not come back: {error}",
-                        home.manifest.name
-                    ),
+                    Err(error) => {
+                        let message = format!("did not come back after it died: {error}");
+                        if reports
+                            .send_blocking(HostEvent::Trouble { plugin, message })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
                 }
             }
         }
@@ -507,6 +519,34 @@ fn is_source(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restarts_wait_longer_each_time_and_forget_after_a_healthy_call() {
+        let mut restarts = Restarts::default();
+        assert_eq!(restarts.delay(), Duration::ZERO);
+        assert_eq!(restarts.record(), 1);
+        let first = restarts.delay();
+        assert!(
+            first > Duration::from_millis(1900) && first <= FIRST_RESTART_DELAY,
+            "{first:?}"
+        );
+        restarts.record();
+        assert!(
+            restarts.delay() > Duration::from_millis(3900),
+            "{:?}",
+            restarts.delay()
+        );
+        for _ in 0..10 {
+            restarts.record();
+        }
+        assert!(restarts.delay() <= LONGEST_RESTART_DELAY);
+        restarts.healthy();
+        restarts.record();
+        assert!(
+            restarts.delay() <= FIRST_RESTART_DELAY,
+            "the count starts over after a healthy call"
+        );
+    }
 
     #[test]
     fn files_python_and_uv_write_while_running_are_not_source() {
