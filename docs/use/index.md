@@ -7,6 +7,10 @@ on.
 
 ![The launcher, just opened](../assets/screenshots/launcher-empty.png){ width="640" }
 
+!!! note "About the screenshots"
+    They come from a Linux build of the app. On a Mac the window is translucent, the text
+    is in the system font, and each row has an icon.
+
 - [Install](install.md) cmd and open it for the first time.
 - [Everyday use](everyday.md): the keys, the rows, and the line under the input.
 - [Plugins](plugins.md): add, update and remove them; see

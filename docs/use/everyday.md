@@ -33,6 +33,8 @@ understand: the calculator answers arithmetic, the system plugin answers `sleep`
 A single line under the input says what is going on: a plugin's error, which plugins are
 still answering, or which are still starting.
 
+![The line under the input while the plugins start](../assets/screenshots/launcher-starting.png){ width="640" }
+
 !!! abstract "To be written"
     Every key, mouse use, and what each message means. Tracked by the documentation epic
     (TASK-1.43).

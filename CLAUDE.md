@@ -20,3 +20,5 @@ A launcher for macOS in the place of Spotlight. Rust core, GPUI window, plugins 
   `.claude/plugins/` (Claude Code plugins).
 - **Linux cannot build `cmd-app`**: a `libc`/`xattr` clash below GPUI. Use
   `cargo test --workspace --exclude cmd-app` there; CI builds the app on macOS.
+  `scripts/linux-app-workspace.sh` makes a scratch workspace outside the repository where
+  it does build; `scripts/screenshots.sh` runs the window from it for the docs.

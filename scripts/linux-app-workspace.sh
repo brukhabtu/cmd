@@ -54,8 +54,8 @@ echo "scratch workspace for cmd-app on Linux: $dir"
 # The repository's manifest without [profile.dev.package."*"], so dependencies build at
 # cargo's plain debug settings: quicker to compile, and an app run under a virtual display
 # or a clippy run has no need of optimised dependencies. Then the patch that swaps in the
-# vendored xattr. The file is only rewritten when it would change, so cargo is not made to
-# look again for nothing.
+# vendored xattr. The file is only rewritten when it would change, so a second run says
+# so.
 manifest="$(
   awk '/^\[/ { dropping = ($0 == "[profile.dev.package.\"*\"]") } !dropping' "$repo/Cargo.toml"
   printf '\n[patch.crates-io]\n%s\n' "$patch_line"

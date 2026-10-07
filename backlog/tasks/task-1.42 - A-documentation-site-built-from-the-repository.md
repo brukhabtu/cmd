@@ -4,7 +4,7 @@ title: A documentation site built from the repository
 status: In Progress
 assignee: []
 created_date: '2026-10-07 12:14'
-updated_date: '2026-10-07 12:14'
+updated_date: '2026-10-07 12:47'
 labels:
   - size-3
 milestone: m-2
@@ -37,3 +37,14 @@ MkDocs (Material) at the repository root, built by scripts/docs.sh and checked b
 ### Proof
 scripts/check.sh green with the docs step; the built site browsed locally.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Progress, 2026-10-07:
+- The site builds strict and scripts/check.sh runs it. CI uploads site/ as the docs-site artifact, built with MKDOCS_DIRECTORY_URLS=false so the download browses from disk.
+- Screenshots: launcher-empty, calculator, websearch and system, plus launcher-starting under Everyday use's line under the input. scripts/screenshots.sh takes them from cmd-app's Linux build under Xvfb, in the workspace scripts/linux-app-workspace.sh makes; two runs gave byte-identical files. They are Linux renderings (a flat grey for the translucent tint, DejaVu Sans, the light palette, no icons since those come from AppKit), and Using cmd says so in a note.
+- Found while publishing a private preview: rustdoc's crate list and search index named cmd_plugin (cmd-host's binary), whose pages the site leaves out, and rustdoc merges those files into whatever an earlier run left in target/doc. docs.sh now runs cargo clean --doc and cargo doc --lib; docs_gen warns, which fails --strict, when crates.js lists another crate.
+- Found by check.sh: ruff format now formats the Python in Markdown code blocks. The example on plugins/index.md failed it, which turned CI red on 1ee27f9 and ba80666.
+- The preview left out what its host does not serve or an English site never loads: objects.inv, sitemap.xml.gz, the source maps and lunr's other-language packs. TASK-1.44 picks the real host.
+<!-- SECTION:NOTES:END -->
