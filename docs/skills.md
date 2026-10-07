@@ -48,7 +48,9 @@ A skill is accepted, and its draft promoted, when all four hold:
 CI (`.github/workflows/skills.yml`) runs steps 1 to 3 over the whole suite whenever a
 change touches `.claude/plugins/cmd-dev/`, and uploads the result. With no cases in the
 plugin there is nothing to gate and the job passes. Each case is a real agent session on
-the repository's `ANTHROPIC_API_KEY`, so the job carries a cost ceiling.
+the credential the GitHub App setup stored as a repository secret, `CLAUDE_CODE_OAUTH_TOKEN`
+for a subscription or `ANTHROPIC_API_KEY` for a Console key, so the job carries a cost
+ceiling. No further secret is needed.
 
 ## Retiring a skill
 

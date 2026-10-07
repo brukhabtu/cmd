@@ -1,8 +1,9 @@
 name: skills
 
 # The gate from docs/skills.md: a change to the cmd-dev plugin must leave every eval case
-# passing. Each case is a real agent session on the repository's ANTHROPIC_API_KEY, so this
-# runs only when the plugin changes, carries a cost ceiling, and keeps the report local.
+# passing and scoring higher with the skill than without it. Each case is a real agent
+# session on the repository's Claude credential, so this runs only when the plugin changes,
+# carries a cost ceiling, and keeps the report local.
 on:
   pull_request:
     paths: [".claude/plugins/cmd-dev/**"]
@@ -18,14 +19,32 @@ jobs:
           node-version: 22
       - run: npm install --global @anthropic-ai/claude-code
       - run: claude plugin validate --strict .claude/plugins/cmd-dev
-      - name: Run the eval suite, if there is one
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Are there eval cases to gate?
+        id: cases
         run: |
-          if ! ls .claude/plugins/cmd-dev/evals/*/prompt.md >/dev/null 2>&1; then
+          if ls .claude/plugins/cmd-dev/evals/*/prompt.md >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
             echo "no eval cases yet; nothing to gate"
-            exit 0
+            echo "present=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: The credential the GitHub App setup stored, whichever kind it is
+        if: steps.cases.outputs.present == 'true'
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$OAUTH_TOKEN" ]; then
+            echo "CLAUDE_CODE_OAUTH_TOKEN=$OAUTH_TOKEN" >> "$GITHUB_ENV"
+          elif [ -n "$API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY=$API_KEY" >> "$GITHUB_ENV"
+          else
+            echo "::error::No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY repository secret. /install-github-app stores one of them; the eval cannot run without it."
+            exit 1
+          fi
+      - name: Run the eval suite
+        if: steps.cases.outputs.present == 'true'
+        run: |
           claude plugin eval .claude/plugins/cmd-dev \
             --trust-plugin \
             --threshold 1.0 \
@@ -34,11 +53,10 @@ jobs:
             --max-cost-usd 15 \
             --json eval-result.json
       - name: Every case must score higher with the skill than without it
-        if: hashFiles('eval-result.json') != ''
+        if: steps.cases.outputs.present == 'true'
         run: python3 scripts/eval_gate.py eval-result.json
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && hashFiles('eval-result.json') != ''
         with:
           name: eval-result
           path: eval-result.json
-          if-no-files-found: ignore
