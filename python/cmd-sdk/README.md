@@ -119,19 +119,25 @@ What each part declares:
   (toggle a setting, say) and then return `Close`.
 - Log to stderr. Stdout belongs to the protocol, and the host rejects anything else on it.
 
-**4. Try it without the app.** `cmd-doctor` runs a plugin directory the way the launcher
-does and prints what comes back. It needs a Rust toolchain, like the app itself, so run it
-from a clone of this repository, with the path to your plugin:
+**4. Try it without the app.** `cmd plugin doctor` runs a plugin directory the way the
+launcher does and prints what comes back:
 
 ```sh
-cargo run -p cmd-host --bin cmd-doctor -- /path/to/your/plugin --query "rust gpui" --run "https://duckduckgo.com/?q=rust+gpui" --action copy
+cmd plugin doctor /path/to/your/plugin --query "rust gpui" --run "https://duckduckgo.com/?q=rust+gpui" --action copy
 ```
 
-**5. Install it.** Copy the directory into `~/Library/Application Support/cmd/plugins/`,
-or run the app with `CMD_PLUGINS=/path/to/your/plugins`. The launcher starts every plugin
-it finds. A plugin that fails to start is named in a line under the input when the window
-first opens, and in the terminal the app was started from. Once running, its errors appear
-in that line, and editing its files reloads it.
+From a clone of this repository without the app, the same command is
+`cargo run -p cmd-host --bin cmd-plugin -- doctor /path/to/your/plugin ...`.
+
+**5. Install it.** `cmd plugin install /path/to/your/plugin` copies the directory into
+`~/Library/Application Support/cmd/plugins/`. Push it to a repository and anyone can run
+`cmd plugin install owner/name` (or a git URL); `cmd plugin list` shows what is installed
+and from where, `cmd plugin update` moves a cloned plugin forward, and `cmd plugin remove`
+deletes it. Copying the directory there by hand still works, as does running the app with
+`CMD_PLUGINS=/path/to/your/plugins`. A newly installed plugin is seen the next time the
+launcher opens. A plugin that fails to start is named in a line under the input when the
+window first opens, and in the terminal the app was started from. Once running, its errors
+appear in that line, and editing its files reloads it.
 
 ## Testing a plugin
 

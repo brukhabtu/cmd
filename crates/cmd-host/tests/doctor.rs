@@ -1,4 +1,5 @@
-//! Proves cmd-doctor against the real calculator and against a plugin that misbehaves.
+//! Proves `cmd plugin doctor` against the real calculator and against a plugin that
+//! misbehaves, through the `cmd-plugin` binary that `cmd plugin` shares its code with.
 
 mod common;
 
@@ -6,11 +7,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn doctor(dir: &Path, extra: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_cmd-doctor"))
+    Command::new(env!("CARGO_BIN_EXE_cmd-plugin"))
+        .arg("doctor")
         .arg(dir)
         .args(extra)
         .output()
-        .expect("cmd-doctor runs")
+        .expect("cmd-plugin runs")
 }
 
 fn text(bytes: &[u8]) -> String {

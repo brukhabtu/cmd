@@ -1,7 +1,8 @@
-//! `cmd-doctor`: run a plugin directory the way the launcher does, and show what comes back.
+//! `cmd plugin doctor`: run a plugin directory the way the launcher does, and show what
+//! comes back.
 //!
 //! ```text
-//! cmd-doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]
+//! cmd plugin doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]
 //! ```
 //!
 //! Prints the manifest, the description from the handshake, then the items for the query
@@ -14,21 +15,22 @@ use std::time::Duration;
 
 use cmd_core::protocol::{ACCEPTED, Description, Items, Method, Ran, VERSION};
 use cmd_core::state::DEFAULT_ACTION;
-use cmd_host::{PluginProcess, Timeouts, manifest};
 
-const USAGE: &str = "usage: cmd-doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]\n\
+use crate::{PluginProcess, Timeouts, manifest};
+
+const USAGE: &str = "usage: cmd plugin doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]\n\
   The query text is sent as given: the launcher would first strip the plugin's keyword.";
 
 /// What the person asked for, read from the arguments. Pure: a list of strings in, this out.
 #[derive(Debug, PartialEq, Eq)]
-struct Request {
-    dir: PathBuf,
-    query: Option<String>,
-    run: Option<String>,
-    action: String,
+pub struct Request {
+    pub dir: PathBuf,
+    pub query: Option<String>,
+    pub run: Option<String>,
+    pub action: String,
 }
 
-fn parse_args(args: &[String]) -> Result<Request, String> {
+pub fn parse_args(args: &[String]) -> Result<Request, String> {
     let mut words = args.iter();
     let dir = words.next().ok_or_else(|| USAGE.to_string())?;
     let mut request = Request {
@@ -51,7 +53,7 @@ fn parse_args(args: &[String]) -> Result<Request, String> {
     Ok(request)
 }
 
-fn examine(request: &Request, timeouts: Timeouts) -> Result<(), String> {
+pub fn examine(request: &Request, timeouts: Timeouts) -> Result<(), String> {
     let located = manifest::load(&request.dir).map_err(|error| error.to_string())?;
     println!(
         "manifest: {} runs {:?}",
@@ -96,15 +98,17 @@ fn pretty<T: serde::Serialize>(value: &T) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|error| format!("<unprintable: {error}>"))
 }
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let request = match parse_args(&args) {
+/// The whole command: the words after `doctor` in, the exit code out.
+pub fn run(args: &[String]) -> ExitCode {
+    let request = match parse_args(args) {
         Ok(request) => request,
         Err(message) => {
             eprintln!("{message}");
             return ExitCode::from(2);
         }
     };
+    // The first run of a plugin builds its environment through uv, which takes longer
+    // than a handshake the launcher would wait for.
     let timeouts = Timeouts {
         describe: Duration::from_secs(60),
         ..Timeouts::default()
@@ -112,7 +116,7 @@ fn main() -> ExitCode {
     match examine(&request, timeouts) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("cmd-doctor: {message}");
+            eprintln!("cmd plugin doctor: {message}");
             ExitCode::from(1)
         }
     }
