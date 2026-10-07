@@ -61,7 +61,7 @@ convention = "google"
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:scripts"
+mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:plugins/applications/src:scripts"
 files = ["python", "plugins", "scripts"]
 
 [tool.pytest.ini_options]
@@ -73,6 +73,7 @@ testpaths = [
   "plugins/websearch/tests",
   "plugins/files/tests",
   "plugins/system/tests",
+  "plugins/applications/tests",
   "scripts/tests",
 ]
 
@@ -83,6 +84,7 @@ src = [
   "plugins/websearch/src",
   "plugins/files/src",
   "plugins/system/src",
+  "plugins/applications/src",
 ]
 rules = [
   "import-boundaries",
@@ -95,11 +97,11 @@ rules = [
 # Units are the modules directly under each top-level package (the rule's per-file root).
 # The core/shell line inside the SDK: protocol takes data and returns data and imports no
 # shell; serve is the only module that may import protocol. In the calculator, arithmetic is
-# pure and imports nothing of ours, and so are search in the files plugin and commands in
-# the system plugin. An import that
+# pure and imports nothing of ours, and so are search in the files plugin, commands in
+# the system plugin, and scan and matching in the applications plugin. An import that
 # crosses source roots (the SDK importing a plugin, or a plugin another plugin) is invisible
 # to this rule; scripts/import_boundaries.py gates those, right after this check in
 # scripts/check.sh.
 [tool.pypeeker.import-boundaries]
-allow = { protocol = [], serve = ["protocol"], arithmetic = [], search = [], commands = [] }
+allow = { protocol = [], serve = ["protocol"], arithmetic = [], search = [], commands = [], scan = [], matching = [] }
 report-unused-allowances = true

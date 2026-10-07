@@ -4,6 +4,7 @@ requires-python = ">=3.15"
 
 [manifest]
 members = [
+    "applications",
     "calculator",
     "cmd-sdk",
     "cmd-workspace",
@@ -11,6 +12,17 @@ members = [
     "system",
     "websearch",
 ]
+
+[[package]]
+name = "applications"
+version = "0.1.0"
+source = { editable = "plugins/applications" }
+dependencies = [
+    { name = "cmd-sdk" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "cmd-sdk", editable = "python/cmd-sdk" }]
 
 [[package]]
 name = "ast-serialize"

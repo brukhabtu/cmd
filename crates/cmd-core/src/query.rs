@@ -67,24 +67,22 @@ pub fn route(input: &str, scopes: &[Scope]) -> Vec<Route> {
         .collect()
 }
 
-/// The score an item has when its plugin gave none: a definite answer outranks every fuzzy match.
-const DEFINITE: f64 = 1.0;
-
 /// Merge the answers of several plugins into one list, best first.
 ///
-/// Items are ordered by score, highest first. The sort is stable, so ties keep
-/// plugin order and then the plugin's own order.
+/// Items without a score come first of all: a definite answer outranks every
+/// fuzzy match, even one scored a full 1.0, so a calculator's `2` sits above
+/// an application named `1+1`. Then items by score, highest first. The sort is
+/// stable, so ties keep plugin order and then the plugin's own order.
 pub fn merge(batches: impl IntoIterator<Item = (usize, Vec<Item>)>) -> Vec<Hit> {
     let mut hits: Vec<Hit> = batches
         .into_iter()
         .flat_map(|(plugin, items)| items.into_iter().map(move |item| Hit { plugin, item }))
         .collect();
-    hits.sort_by(|a, b| {
-        let (a, b) = (
-            a.item.score.unwrap_or(DEFINITE),
-            b.item.score.unwrap_or(DEFINITE),
-        );
-        b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal)
+    hits.sort_by(|a, b| match (a.item.score, b.item.score) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (Some(a), Some(b)) => b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal),
     });
     hits
 }
@@ -190,5 +188,17 @@ mod tests {
         let hits = merge(vec![(2, vec![item("b", None)]), (0, vec![item("a", None)])]);
         let plugins: Vec<usize> = hits.iter().map(|h| h.plugin).collect();
         assert_eq!(plugins, vec![2, 0]);
+    }
+
+    #[test]
+    fn a_perfect_fuzzy_score_still_sits_below_a_definite_answer() {
+        // The scored item comes from the earlier plugin, so a tie-break on plugin
+        // order would put it first; only a rank of its own keeps the definite one on top.
+        let hits = merge(vec![
+            (0, vec![item("1+1 app", Some(1.0))]),
+            (1, vec![item("2", None)]),
+        ]);
+        let titles: Vec<&str> = hits.iter().map(|h| h.item.title.as_str()).collect();
+        assert_eq!(titles, vec!["2", "1+1 app"]);
     }
 }

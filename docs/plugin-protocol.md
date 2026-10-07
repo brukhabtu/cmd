@@ -131,6 +131,10 @@ What the host does after `run`. The plugin returns it, the host performs it.
 A plugin may also do its own work inside `run`, such as toggling a setting, and then return
 `close`.
 
+The host hands an `open` target to the system as given, so a file or an application is sent
+as a `file://` URL (`Path.as_uri()` in Python), with its scheme and percent-encoding; a bare
+path has no scheme for the system to dispatch on.
+
 ## Routing
 
 The host trims the typed text and looks at its first word.
