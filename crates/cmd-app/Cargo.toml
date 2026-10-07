@@ -19,6 +19,30 @@ gpui = "0.2"
 global-hotkey = "0.8"
 # Carries the chord's Send + Sync callback into GPUI's foreground executor.
 async-channel = "2"
+# Decodes the PNGs AppKit hands back for icons. The same major as GPUI's, so the frame
+# type is GPUI's own.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# AppKit resolves icons: NSWorkspace for a path, NSImage for a symbol. These crates are
+# already in the tree below global-hotkey; only features are added.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSData",
+  "NSDictionary",
+  "NSEnumerator",
+  "NSString",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSBitmapImageRep",
+  "NSFontDescriptor",
+  "NSImage",
+  "NSImageRep",
+  "NSWorkspace",
+  "objc2-core-foundation",
+] }
 
 [lints]
 workspace = true

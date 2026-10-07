@@ -33,5 +33,7 @@ jobs:
       - name: The Rust toolchain rust-toolchain.toml pins, with its components
         run: rustup show
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p cmd-app -- -D warnings
+      - run: cargo clippy -p cmd-app --all-targets -- -D warnings
       - run: cargo build -p cmd-app
+      - name: The AppKit path for icons, against a system application and a symbol
+        run: cargo test -p cmd-app

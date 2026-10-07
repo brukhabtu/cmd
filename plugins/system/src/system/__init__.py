@@ -10,7 +10,7 @@ import sys
 import threading
 from collections.abc import Callable, Sequence
 
-from cmd_sdk import Close, Description, Effect, Item, Plugin, Show, serve
+from cmd_sdk import Close, Description, Effect, Item, Plugin, Show, SymbolIcon, serve
 from cmd_sdk.protocol import DEFAULT_ACTION
 
 from system.commands import by_id, matching
@@ -67,7 +67,12 @@ def plugin(execute: Executor = execute, platform: str = sys.platform) -> Plugin:
 
     def _query(text: str) -> tuple[Item, ...]:
         return tuple(
-            Item(id=command.id, title=command.title, subtitle=command.subtitle)
+            Item(
+                id=command.id,
+                title=command.title,
+                subtitle=command.subtitle,
+                icon=SymbolIcon(command.symbol),
+            )
             for command in matching(text)
         )
 

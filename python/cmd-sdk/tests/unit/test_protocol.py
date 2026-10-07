@@ -1,7 +1,19 @@
 import json
 
 import pytest
-from cmd_sdk import Action, Close, Copy, Description, Item, Open, Plugin, Show
+from cmd_sdk import (
+    Action,
+    Close,
+    Copy,
+    Description,
+    Icon,
+    Item,
+    Open,
+    PathIcon,
+    Plugin,
+    Show,
+    SymbolIcon,
+)
 from cmd_sdk.protocol import (
     PROTOCOL,
     Describe,
@@ -25,7 +37,7 @@ PLUGIN = Plugin(
 @pytest.mark.parametrize(
     ("line", "expected"),
     [
-        ('{"id": 1, "method": "describe", "params": {"protocol": 0}}', Describe(1, 0)),
+        ('{"id": 1, "method": "describe", "params": {"protocol": 1}}', Describe(1, 1)),
         ('{"id": 2, "method": "query", "params": {"text": "hi"}}', Query(2, "hi")),
         ('{"id": 3, "method": "run", "params": {"item": "a", "action": "b"}}', Run(3, "a", "b")),
     ],
@@ -53,7 +65,8 @@ def test_rejects_malformed_requests(line: str) -> None:
 
 
 def test_describe_adds_the_protocol_version() -> None:
-    assert dispatch(Describe(1, 0), PLUGIN) == Success(
+    assert PROTOCOL == 1
+    assert dispatch(Describe(1, 1), PLUGIN) == Success(
         1, {"name": "echo", "version": "1.0", "protocol": PROTOCOL, "keyword": "echo"}
     )
 
@@ -74,6 +87,25 @@ def test_query_serialises_items_with_only_the_fields_that_are_set() -> None:
     )
     bare = Plugin(Description("b", "0"), lambda _: (Item("x", "X"),), lambda _i, _a: Close())
     assert dispatch(Query(3, "x"), bare).result == {"items": [{"id": "x", "title": "X"}]}
+
+
+@pytest.mark.parametrize(
+    ("icon", "wire"),
+    [
+        (
+            PathIcon("/Applications/Safari.app"),
+            {"kind": "path", "path": "/Applications/Safari.app"},
+        ),
+        (SymbolIcon("globe"), {"kind": "symbol", "name": "globe"}),
+    ],
+)
+def test_icons_are_tagged_by_kind(icon: Icon, wire: dict[str, str]) -> None:
+    plugin = Plugin(
+        Description("i", "0"), lambda _: (Item("x", "X", icon=icon),), lambda _i, _a: Close()
+    )
+    assert dispatch(Query(5, "x"), plugin).result == {
+        "items": [{"id": "x", "title": "X", "icon": wire}]
+    }
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from cmd_sdk import Close, Item, Show, serve
+from cmd_sdk import Close, Item, Show, SymbolIcon, serve
 from system import PLUGIN, plugin
 from system.commands import DARK_MODE, SLEEP
 
@@ -22,7 +22,9 @@ class Recorder:
 
 def test_a_command_is_one_definite_item_with_no_score_and_no_actions() -> None:
     (item,) = PLUGIN.query("lo")
-    assert item == Item(id="lock", title="Lock screen", subtitle="Locks the screen")
+    assert item == Item(
+        id="lock", title="Lock screen", subtitle="Locks the screen", icon=SymbolIcon("lock")
+    )
     assert item.score is None
     assert item.actions == ()
 
@@ -68,10 +70,17 @@ def _serve(*lines: str) -> list[dict[str, Any]]:
 
 def test_on_the_wire_the_plugin_has_no_keyword_and_its_items_carry_no_score() -> None:
     answers = _serve(
-        '{"id": 1, "method": "describe", "params": {"protocol": 0}}',
+        '{"id": 1, "method": "describe", "params": {"protocol": 1}}',
         '{"id": 2, "method": "query", "params": {"text": "sle"}}',
     )
-    assert answers[0]["result"] == {"name": "system", "version": "0.1.0", "protocol": 0}
+    assert answers[0]["result"] == {"name": "system", "version": "0.1.0", "protocol": 1}
     assert answers[1]["result"] == {
-        "items": [{"id": "sleep", "title": "Sleep", "subtitle": "Puts the Mac to sleep"}]
+        "items": [
+            {
+                "id": "sleep",
+                "title": "Sleep",
+                "subtitle": "Puts the Mac to sleep",
+                "icon": {"kind": "symbol", "name": "moon.zzz"},
+            }
+        ]
     }

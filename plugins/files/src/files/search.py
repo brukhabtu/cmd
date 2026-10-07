@@ -9,7 +9,7 @@ home directory beats one buried in a build tree.
 from collections.abc import Sequence
 from pathlib import Path
 
-from cmd_sdk import Action, Item
+from cmd_sdk import Action, Item, PathIcon
 
 LIMIT = 20
 """How many rows to show. mdfind can answer with thousands; the window shows a handful."""
@@ -76,6 +76,7 @@ def rank(paths: Sequence[str], text: str, home: Path) -> tuple[Item, ...]:
             subtitle=parent_folder(path, home),
             score=score(Path(path).name, text),
             actions=_ACTIONS,
+            icon=PathIcon(path),
         )
         for path in sorted(paths, key=order)[:LIMIT]
     )

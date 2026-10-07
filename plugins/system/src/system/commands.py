@@ -17,13 +17,17 @@ A definite item outranks every fuzzy one, so a single letter would put Sleep abo
 
 @dataclass(frozen=True)
 class Command:
-    """One thing the plugin can do: how it is listed, what names it, what performs it."""
+    """One thing the plugin can do: how it is listed, what names it, what performs it.
+
+    ``symbol`` is the system symbol shown beside the row.
+    """
 
     id: str
     title: str
     subtitle: str
     names: tuple[str, ...]
     argv: tuple[str, ...]
+    symbol: str
 
 
 SLEEP = Command(
@@ -32,6 +36,7 @@ SLEEP = Command(
     "Puts the Mac to sleep",
     ("sleep",),
     ("/usr/bin/pmset", "sleepnow"),
+    "moon.zzz",
 )
 
 LOCK = Command(
@@ -40,6 +45,7 @@ LOCK = Command(
     "Locks the screen",
     ("lock", "lock screen", "screen"),
     ("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", "-suspend"),
+    "lock",
 )
 
 EMPTY_TRASH = Command(
@@ -48,6 +54,7 @@ EMPTY_TRASH = Command(
     "Empties the Trash in Finder",
     ("empty trash", "trash", "empty"),
     ("/usr/bin/osascript", "-e", 'tell application "Finder" to empty trash'),
+    "trash",
 )
 
 DARK_MODE = Command(
@@ -63,6 +70,7 @@ DARK_MODE = Command(
             " to set dark mode to not dark mode"
         ),
     ),
+    "circle.lefthalf.filled",
 )
 
 COMMANDS = (SLEEP, LOCK, EMPTY_TRASH, DARK_MODE)

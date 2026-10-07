@@ -6,7 +6,7 @@ from pathlib import Path
 
 import files
 import pytest
-from cmd_sdk import Close, Open, Show
+from cmd_sdk import Close, Open, Show, SymbolIcon
 from files import PLUGIN
 
 
@@ -52,6 +52,7 @@ def fakes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fakes:
 def test_the_keyword_alone_offers_a_hint_and_enter_explains(fakes: Fakes) -> None:
     (item,) = PLUGIN.query("  ")
     assert not item.id
+    assert item.icon == SymbolIcon("magnifyingglass")
     assert isinstance(PLUGIN.run("", "default"), Show)
     assert not fakes.mdfind_log.exists()
 

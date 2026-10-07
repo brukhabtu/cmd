@@ -24,7 +24,7 @@ def test_answers_each_request_in_order_and_stops_at_end_of_input() -> None:
     )
     answers = run(
         plugin,
-        '{"id": 1, "method": "describe", "params": {"protocol": 0}}',
+        '{"id": 1, "method": "describe", "params": {"protocol": 1}}',
         "",
         '{"id": 2, "method": "query", "params": {"text": "hi"}}',
         '{"id": 3, "method": "run", "params": {"item": "HI", "action": "default"}}',

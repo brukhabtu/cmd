@@ -1,4 +1,4 @@
-//! Plugin protocol v0: newline-delimited JSON over a plugin's stdin and stdout.
+//! Plugin protocol v1: newline-delimited JSON over a plugin's stdin and stdout.
 //!
 //! The host writes one [`Request`] per line and the plugin answers with one
 //! [`Response`] per line carrying the same `id`. The specification is
@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The protocol version this crate speaks: what the host sends in `describe`.
-pub const VERSION: u32 = 0;
+pub const VERSION: u32 = 1;
 
 /// The versions a plugin may answer `describe` with and still be loaded. Version 1 only
-/// adds optional fields to what version 0 carries (decision 6), so a host that speaks 0
-/// runs a plugin that speaks 1 and simply does not read them.
+/// adds optional fields to what version 0 carries (decision 6), so a plugin that speaks
+/// 0 answers with items that simply have none of them.
 pub const ACCEPTED: RangeInclusive<u32> = 0..=1;
 
 /// One call from the host to a plugin.
@@ -52,6 +52,18 @@ pub struct Description {
     pub keyword: Option<String>,
 }
 
+/// What a row shows beside its text. The window resolves it; a plugin only names it.
+/// Hash because the window caches a resolved icon by this value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Icon {
+    /// The icon the system shows for whatever sits at an absolute path: an application
+    /// bundle, a document, a folder.
+    Path { path: String },
+    /// A system symbol by name, drawn in the row's text colour.
+    Symbol { name: String },
+}
+
 /// One row in the result list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Item {
@@ -66,6 +78,9 @@ pub struct Item {
     /// [`crate::state::DEFAULT_ACTION`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<Action>,
+    /// Since version 1. A plugin that speaks version 0 never sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
 }
 
 /// Something that can be done with an item.
@@ -187,7 +202,7 @@ mod tests {
         });
         assert_eq!(
             line,
-            "{\"id\":1,\"method\":\"describe\",\"params\":{\"protocol\":0}}\n"
+            "{\"id\":1,\"method\":\"describe\",\"params\":{\"protocol\":1}}\n"
         );
     }
 
@@ -200,6 +215,46 @@ mod tests {
         assert_eq!(items.items[0].title, "4");
         assert_eq!(items.items[0].actions, vec![]);
         assert_eq!(items.items[0].score, None);
+        assert_eq!(items.items[0].icon, None);
+    }
+
+    #[test]
+    fn an_item_may_carry_a_path_or_a_symbol_icon() {
+        let line = r#"{"items": [
+            {"id": "a", "title": "a", "icon": {"kind": "path", "path": "/Applications/Safari.app"}},
+            {"id": "b", "title": "b", "icon": {"kind": "symbol", "name": "globe"}},
+            {"id": "c", "title": "c"}
+        ]}"#;
+        let items: Items = serde_json::from_str(line).unwrap();
+        assert_eq!(
+            items.items[0].icon,
+            Some(Icon::Path {
+                path: "/Applications/Safari.app".into()
+            })
+        );
+        assert_eq!(
+            items.items[1].icon,
+            Some(Icon::Symbol {
+                name: "globe".into()
+            })
+        );
+        assert_eq!(items.items[2].icon, None);
+        assert_eq!(
+            serde_json::to_string(&items.items[1].icon).unwrap(),
+            r#"{"kind":"symbol","name":"globe"}"#
+        );
+        assert!(
+            !serde_json::to_string(&items.items[2])
+                .unwrap()
+                .contains("icon")
+        );
+    }
+
+    #[test]
+    fn an_icon_of_an_unknown_kind_is_a_decode_error() {
+        let line = r#"{"id": 1, "result": {"items": [{"id": "a", "title": "a", "icon": {"kind": "emoji", "text": "x"}}]}}"#;
+        let err = result::<Items>(decode_response(line).unwrap()).unwrap_err();
+        assert!(matches!(err, DecodeError::Json(_)), "{err}");
     }
 
     #[test]

@@ -18,7 +18,8 @@ cargo test --workspace --exclude cmd-app
 
 if [[ "$(uname)" == "Darwin" ]]; then
   step "rust: the GPUI app (macOS only; Linux hits an xattr/libc clash below GPUI)"
-  cargo clippy -p cmd-app -- -D warnings
+  cargo clippy -p cmd-app --all-targets -- -D warnings
+  cargo test -p cmd-app
 fi
 
 step "python: ruff format and lint"

@@ -851,6 +851,9 @@ dependencies = [
  "cmd-host",
  "global-hotkey",
  "gpui",
+ "image",
+ "objc2-app-kit",
+ "objc2-foundation",
 ]
 
 [[package]]

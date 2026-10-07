@@ -1,4 +1,4 @@
-from cmd_sdk import Copy, Open, Show
+from cmd_sdk import Copy, Open, Show, SymbolIcon
 from websearch import PLUGIN, search_url
 
 
@@ -6,6 +6,7 @@ def test_a_question_becomes_one_item_whose_id_is_the_search_url() -> None:
     (item,) = PLUGIN.query("rust gpui")
     assert item.id == "https://duckduckgo.com/?q=rust+gpui"
     assert [action.id for action in item.actions] == ["open", "copy"]
+    assert item.icon == SymbolIcon("globe")
 
 
 def test_the_question_is_made_safe_for_a_url() -> None:
@@ -15,6 +16,7 @@ def test_the_question_is_made_safe_for_a_url() -> None:
 def test_the_keyword_alone_offers_a_hint_and_enter_explains() -> None:
     (item,) = PLUGIN.query("   ")
     assert not item.id
+    assert item.icon == SymbolIcon("globe")
     assert isinstance(PLUGIN.run("", "default"), Show)
 
 

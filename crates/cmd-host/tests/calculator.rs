@@ -1,12 +1,13 @@
-//! Proves the host against the real calculator plugin, run through uv exactly
-//! as the app runs it. Needs `uv` on PATH; CI runs `uv sync` first so the
+//! Proves the host against the real calculator and websearch plugins, run through uv
+//! exactly as the app runs them, so the Python wire shape and the Rust types are seen
+//! to agree through a real process. Needs `uv` on PATH; CI runs `uv sync` first so the
 //! handshake does not pay for building the environment.
 
 mod common;
 
 use std::path::PathBuf;
 
-use cmd_core::protocol::Effect;
+use cmd_core::protocol::{Effect, Icon};
 use cmd_core::state::DEFAULT_ACTION;
 use cmd_host::{Host, Timeouts, manifest};
 use common::{answer_from, effect_from};
@@ -39,6 +40,12 @@ fn the_calculator_answers_through_the_real_process() {
     assert!(host.query(1, "2 + 2 * 3").contains(&calculator));
     let items = answer_from(&events, calculator, 1);
     assert_eq!(items[0].title, "8");
+    assert_eq!(
+        items[0].icon,
+        Some(Icon::Symbol {
+            name: "equal".into()
+        })
+    );
 
     host.run(1, calculator, &items[0].id, DEFAULT_ACTION)
         .unwrap();
@@ -71,6 +78,12 @@ fn a_keyword_plugin_sees_only_its_keyword_and_can_ask_the_host_to_open_something
     let items = answer_from(&events, websearch, 1);
     assert_eq!(items[0].id, "https://duckduckgo.com/?q=rust+gpui");
     assert_eq!(items[0].actions.len(), 2);
+    assert_eq!(
+        items[0].icon,
+        Some(Icon::Symbol {
+            name: "globe".into()
+        })
+    );
 
     // The second action copies; the first (Enter) opens.
     host.run(1, websearch, &items[0].id, &items[0].actions[1].id)

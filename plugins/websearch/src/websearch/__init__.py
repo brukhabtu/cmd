@@ -6,12 +6,24 @@ keyword, offer more than one action, and ask the host to open something.
 
 from urllib.parse import quote_plus
 
-from cmd_sdk import Action, Copy, Description, Effect, Item, Open, Plugin, Show, serve
+from cmd_sdk import (
+    Action,
+    Copy,
+    Description,
+    Effect,
+    Item,
+    Open,
+    Plugin,
+    Show,
+    SymbolIcon,
+    serve,
+)
 from cmd_sdk.protocol import DEFAULT_ACTION
 
 _ENGINE = "https://duckduckgo.com/?q="
 _OPEN = "open"
 _COPY = "copy"
+_ICON = SymbolIcon("globe")
 
 
 def search_url(question: str) -> str:
@@ -22,13 +34,16 @@ def search_url(question: str) -> str:
 def _query(text: str) -> tuple[Item, ...]:
     question = text.strip()
     if not question:
-        return (Item(id="", title="Search the web", subtitle="Type a question after 'web'"),)
+        return (
+            Item(id="", title="Search the web", subtitle="Type a question after 'web'", icon=_ICON),
+        )
     return (
         Item(
             id=search_url(question),
             title=f"Search the web for {question!r}",
             subtitle="Enter opens the search, the second action copies its address",
             actions=(Action(_OPEN, "Open the search"), Action(_COPY, "Copy the address")),
+            icon=_ICON,
         ),
     )
 

@@ -1,9 +1,9 @@
-# Plugin protocol, version 0
+# Plugin protocol, version 1
 
 How the launcher talks to a plugin. The Rust side is `crates/cmd-core/src/protocol.rs`, the
 Python side is `python/cmd-sdk/src/cmd_sdk/protocol.py`, and
 `crates/cmd-host/tests/calculator.rs` proves the two agree by driving the real calculator
-plugin. A change to the protocol changes all three in one commit.
+and websearch plugins. A change to the protocol changes all three in one commit.
 
 ## A plugin is a directory
 
@@ -61,22 +61,25 @@ up is dropped.
 
 | Method | Params | Result | When |
 |---|---|---|---|
-| `describe` | `{"protocol": 0}` | Description | Once, right after the process starts |
+| `describe` | `{"protocol": 1}` | Description | Once, right after the process starts |
 | `query` | `{"text": "..."}` | `{"items": [Item]}` | On every change to the typed text that reaches this plugin |
 | `run` | `{"item": "...", "action": "..."}` | `{"effect": Effect}` | When the person presses Enter on one of this plugin's items |
 
 ### Description
 
 ```json
-{"name": "calculator", "version": "0.1.0", "protocol": 0, "keyword": "calc"}
+{"name": "calculator", "version": "0.1.0", "protocol": 1, "keyword": "calc"}
 ```
 
 `protocol` is the version the plugin speaks; the request carried the version the host
 speaks. This host loads a plugin that speaks 0 or 1 and refuses any other version with a
-message naming both. Version 1 adds only optional fields (decision 6), so a host that
-speaks 0 runs a version 1 plugin and does not read them. An effect kind can never be
-optional, since the host must decode every effect it is sent: a new kind needs a new
-protocol version. `keyword` is optional; see Routing.
+message naming both. `keyword` is optional; see Routing.
+
+Versions: version 1 adds one optional field to version 0, `icon` on an item (decision 6).
+A version 0 plugin has none, and this host loads it as it always did. A version 1 plugin
+runs under a version 0 host too, which simply does not read the field. An effect kind, or
+an icon kind, can never be optional, since the host must decode every one it is sent: a
+new kind needs a new protocol version.
 
 ### Item
 
@@ -86,11 +89,12 @@ protocol version. `keyword` is optional; see Routing.
   "title": "4",
   "subtitle": "Press Enter to copy",
   "score": 0.8,
-  "actions": [{"id": "copy", "title": "Copy"}]
+  "actions": [{"id": "copy", "title": "Copy"}],
+  "icon": {"kind": "symbol", "name": "equal"}
 }
 ```
 
-`id` is what comes back in `run`. `subtitle`, `score` and `actions` are optional.
+`id` is what comes back in `run`. `subtitle`, `score`, `actions` and `icon` are optional.
 
 `score` is a confidence between 0 and 1 for a fuzzy match. Leave it out for a definite
 answer: the host ranks an item without a score above every item with one, so a calculator's
@@ -98,6 +102,20 @@ answer: the host ranks an item without a score above every item with one, so a c
 
 `actions` are what Enter can do. The first is the default. With no actions the host sends
 `run` with action `"default"`.
+
+`icon` is what the row shows beside its text, in one of two kinds:
+
+| Icon | Shape | The window shows |
+|---|---|---|
+| path | `{"kind": "path", "path": "/Applications/Safari.app"}` | the icon the system shows for whatever sits at that absolute path: an application bundle's own icon, a document's type icon, a folder |
+| symbol | `{"kind": "symbol", "name": "globe"}` | the system symbol of that name, drawn in the row's text colour |
+
+A path must be absolute. A path that does not exist, or a symbol name the system does not
+know, leaves the row without an icon and is never an error, so a plugin may name an icon
+without checking first. The host may keep a resolved icon for its own lifetime, so an
+application whose icon changed shows the new one after the launcher restarts. An unknown
+`kind` is a decode error, like an unknown effect kind: the whole answer is reported as
+not a protocol message.
 
 ### Effect
 
@@ -165,10 +183,10 @@ whose `id` is 0 answers the request in flight, since the host sends one request 
 ## A full exchange
 
 ```
-→ {"id": 1, "method": "describe", "params": {"protocol": 0}}
-← {"id": 1, "result": {"name": "calculator", "version": "0.1.0", "protocol": 0}}
+→ {"id": 1, "method": "describe", "params": {"protocol": 1}}
+← {"id": 1, "result": {"name": "calculator", "version": "0.1.0", "protocol": 1}}
 → {"id": 2, "method": "query", "params": {"text": "2 + 2 * 3"}}
-← {"id": 2, "result": {"items": [{"id": "8", "title": "8", "subtitle": "Press Enter to copy"}]}}
+← {"id": 2, "result": {"items": [{"id": "8", "title": "8", "subtitle": "Press Enter to copy", "icon": {"kind": "symbol", "name": "equal"}}]}}
 → {"id": 3, "method": "run", "params": {"item": "8", "action": "default"}}
 ← {"id": 3, "result": {"effect": {"kind": "copy", "text": "8"}}}
 ```

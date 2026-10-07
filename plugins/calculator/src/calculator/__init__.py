@@ -1,11 +1,12 @@
 """Arithmetic in the launcher. No keyword: it answers whenever the text is an expression."""
 
-from cmd_sdk import Copy, Description, Effect, Item, Plugin, Show, serve
+from cmd_sdk import Copy, Description, Effect, Item, Plugin, Show, SymbolIcon, serve
 from cmd_sdk.protocol import DEFAULT_ACTION
 
 from calculator.arithmetic import evaluate, render
 
 _COPY = "copy"
+_ICON = SymbolIcon("equal")
 
 
 def _query(text: str) -> tuple[Item, ...]:
@@ -13,7 +14,7 @@ def _query(text: str) -> tuple[Item, ...]:
     if value is None:
         return ()
     shown = render(value)
-    return (Item(id=shown, title=shown, subtitle="Press Enter to copy"),)
+    return (Item(id=shown, title=shown, subtitle="Press Enter to copy", icon=_ICON),)
 
 
 def _run(item: str, action: str) -> Effect:

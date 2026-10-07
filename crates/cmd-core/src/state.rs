@@ -338,6 +338,7 @@ mod tests {
                 subtitle: None,
                 score: None,
                 actions,
+                icon: None,
             },
         }
     }

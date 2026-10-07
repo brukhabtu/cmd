@@ -19,6 +19,7 @@ def test_every_command_is_listed_once_with_a_title_a_subtitle_and_an_absolute_ar
         assert command.subtitle
         assert command.names
         assert command.argv[0].startswith("/")
+        assert command.symbol
 
 
 @pytest.mark.parametrize(

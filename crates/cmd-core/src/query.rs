@@ -104,6 +104,7 @@ mod tests {
             subtitle: None,
             score,
             actions: Vec::new(),
+            icon: None,
         }
     }
 
