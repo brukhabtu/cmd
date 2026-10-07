@@ -4,7 +4,7 @@ title: Icons in results
 status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 07:44'
+updated_date: '2026-10-07 10:56'
 labels:
   - size-3
 milestone: m-3
@@ -40,4 +40,6 @@ Protocol 1: one optional tagged icon on an item (path or symbol) in the three ho
 **gpui 0.2.2 facts used, for the gpui-for-cmd skill (not edited here).** `gpui::Asset` has `type Source: Clone + Hash + Send`, `type Output: Clone + Send` and `fn load(source, cx: &mut App) -> impl Future<Output = Output> + Send + 'static`; `App::fetch_asset` calls `load` on the calling thread and spawns the returned future on the background executor; `Window::use_asset::<A>(&source, cx) -> Option<A::Output>` returns `None` while loading and notifies the current view on the next frame when the load finishes. `RenderImage::new(vec![image::Frame::new(rgba)])` takes BGRA straight-alpha frames (gpui swaps channels 0 and 2 after decoding); `img(Arc<RenderImage>)` is an `Img` that implements `Styled`, so `.size(px(..))` applies, and its default `ObjectFit::Contain` scales a larger bitmap down. `Rgba` has public `r`, `g`, `b`, `a` in `0.0..=1.0`. Clippy 1.99 denies `chunks_exact(4)` with a constant in favour of `as_chunks::<4>()`.
 
 Closed on the reviewer's verdict (CLOSE) against worktree commit 72a8df8, merged into the branch. Owed: the macOS CI run of the new cargo test -p cmd-app step (three AppKit tests written against the objc2-app-kit source and never compiled here) and clippy --all-targets there; on a Mac, the equal and globe glyphs beside calculator and websearch rows, each file's own icon under f, the moon under sleep, Safari's icon from the fake path-icon plugin, whether rows with and without icons line up, whether a batch of large app icons pauses visibly (then trim representations above 256 px), and that the seven symbol names exist in the catalogue.
+
+AppKit proof: CI run 37609886763 (commit 6b3f8e6) on macos-latest passed cargo clippy -p cmd-app --all-targets and cargo test -p cmd-app with 10 passed, including the three macOS tests: an application bundle resolves to a bitmap at least the wanted size, a symbol resolves to a glyph drawn in the tint, an unknown symbol and a missing path resolve to nothing. It took two fixes after the merge (bfb6a05, 6b3f8e6), recorded as evidence on draft 3. Still owed on a Mac: seeing the icons beside the rows.
 <!-- SECTION:NOTES:END -->
