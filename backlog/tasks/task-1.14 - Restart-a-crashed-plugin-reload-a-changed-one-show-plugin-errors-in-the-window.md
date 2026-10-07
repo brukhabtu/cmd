@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 04:36'
+updated_date: '2026-10-07 04:44'
 labels:
   - size-3
 milestone: m-2
@@ -41,4 +41,6 @@ cargo test -p cmd-host --test host.
 
 <!-- SECTION:NOTES:BEGIN -->
 First slice landed: a plugin whose process has gone (exited, broken pipe) gets its command answered with that fact, is started again with back-off (2 s doubling to 30 s, reset after a healthy call), and the window shows '<plugin> started again (restart n)'. Test a_plugin_that_exits_is_started_again_for_the_next_query. Not done: reload when a plugin's files change (the second criterion). The third criterion (errors as a line under the input, cleared when the text changes) is how Unanswered and Failed already render.
+
+Second slice: a change to any file under the plugin's directory (hidden directories and __pycache__ excepted) reloads it on the new code, with a 200 ms settle and collapsing of bursts; test a_changed_file_reloads_the_plugin_onto_the_new_code rewrites the fake and sees the new name answer. From the review: a failed restart or reload is now reported in the window (HostEvent::Trouble); Restarts::delay has a unit test; the Lifecycle section of docs/plugin-protocol.md is current. Not done, as tasks: a hung plugin counting as dead; start failures in the window. Awaiting review.
 <!-- SECTION:NOTES:END -->

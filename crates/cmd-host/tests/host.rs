@@ -22,10 +22,25 @@ fn next(host: &Host) -> HostEvent {
     host.events().recv_blocking().expect("the host is alive")
 }
 
+/// The next event, or a panic naming the wait: a test must never hang on a silent host.
+fn next_within(host: &Host, limit: Duration) -> HostEvent {
+    let events = host.events();
+    let started = Instant::now();
+    loop {
+        if let Ok(event) = events.try_recv() {
+            return event;
+        }
+        assert!(started.elapsed() < limit, "no event within {limit:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn generation_of(event: &HostEvent) -> u64 {
     match event {
         HostEvent::Answered { generation, .. } | HostEvent::Ran { generation, .. } => *generation,
-        HostEvent::Restarted { .. } => panic!("no restart was expected"),
+        HostEvent::Restarted { .. } | HostEvent::Reloaded { .. } => {
+            panic!("no restart was expected")
+        }
     }
 }
 
@@ -37,7 +52,8 @@ fn answers_arrive_as_events_with_their_generation_and_plugin() {
     answers.sort_by_key(|event| match event {
         HostEvent::Answered { plugin, .. }
         | HostEvent::Ran { plugin, .. }
-        | HostEvent::Restarted { plugin, .. } => *plugin,
+        | HostEvent::Restarted { plugin, .. }
+        | HostEvent::Reloaded { plugin, .. } => *plugin,
     });
     let titles: Vec<String> = answers
         .into_iter()
@@ -174,6 +190,37 @@ fn a_plugin_that_exits_is_started_again_for_the_next_query() {
             result: Ok(items),
             ..
         } => assert_eq!(items[0].title, "a:hello"),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn a_changed_file_reloads_the_plugin_onto_the_new_code() {
+    let dir = std::env::temp_dir().join(format!("cmd-host-reload-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("fake.py");
+    std::fs::write(&script, format!("NAME = \"before\"\n{}", common::FAKE)).unwrap();
+    let located = cmd_host::Located {
+        dir: dir.clone(),
+        manifest: cmd_host::Manifest {
+            name: "editable".into(),
+            command: vec!["python3".into(), "fake.py".into()],
+        },
+    };
+    let (host, errors) = Host::start(vec![located], Timeouts::default());
+    assert!(errors.is_empty(), "{errors:?}");
+
+    std::fs::write(&script, format!("NAME = \"after\"\n{}", common::FAKE)).unwrap();
+    assert_eq!(
+        next_within(&host, Duration::from_secs(10)),
+        HostEvent::Reloaded { plugin: 0 }
+    );
+    host.query(1, "hello");
+    match next_within(&host, Duration::from_secs(10)) {
+        HostEvent::Answered {
+            result: Ok(items), ..
+        } => assert_eq!(items[0].title, "after:hello"),
         other => panic!("unexpected {other:?}"),
     }
 }

@@ -92,6 +92,9 @@ impl LauncherView {
                 "{} started again (restart {attempt})",
                 self.plugin_name(plugin)
             )),
+            HostEvent::Reloaded { plugin } => {
+                Event::Noted(format!("{} reloaded", self.plugin_name(plugin)))
+            }
         };
         self.handle(event, cx);
     }

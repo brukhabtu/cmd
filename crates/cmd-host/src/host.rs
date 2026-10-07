@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 
 use cmd_core::protocol::{Description, Effect, Item, Items, Method, Ran, VERSION};
 use cmd_core::query::{self, Scope};
+use notify::{RecursiveMode, Watcher};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::manifest::Located;
@@ -85,6 +87,8 @@ pub enum HostEvent {
     /// The plugin's process had gone and a fresh one is up; `attempt` counts restarts
     /// since the last healthy call.
     Restarted { plugin: usize, attempt: u32 },
+    /// A file in the plugin's directory changed and a fresh process runs the new code.
+    Reloaded { plugin: usize },
 }
 
 enum Command {
@@ -97,6 +101,8 @@ enum Command {
         item: String,
         action: String,
     },
+    /// A file under the plugin's directory changed: start it again on the new code.
+    Reload,
 }
 
 struct Plugin {
@@ -104,6 +110,9 @@ struct Plugin {
     description: Description,
     commands: mpsc::Sender<Command>,
 }
+
+/// How long to wait after a file changed before starting the plugin on the new code.
+const RELOAD_SETTLE: Duration = Duration::from_millis(200);
 
 /// The shortest and longest waits before a plugin is started again after it died.
 const FIRST_RESTART_DELAY: Duration = Duration::from_secs(2);
@@ -144,6 +153,8 @@ pub struct Host {
     plugins: Vec<Plugin>,
     events: async_channel::Sender<HostEvent>,
     inbox: async_channel::Receiver<HostEvent>,
+    /// Watches every plugin directory for the life of the host. `None` when watching failed.
+    _watcher: Option<notify::RecommendedWatcher>,
 }
 
 impl Host {
@@ -178,11 +189,13 @@ impl Host {
                 Err(error) => errors.push(error),
             }
         }
+        let watcher = watch_plugins(&started);
         (
             Host {
                 plugins: started,
                 events,
                 inbox,
+                _watcher: watcher,
             },
             errors,
         )
@@ -318,8 +331,38 @@ fn serve(
         let newest_query = batch
             .iter()
             .rposition(|command| matches!(command, Command::Query { .. }));
+        let mut reloads_pending = batch
+            .iter()
+            .filter(|command| matches!(command, Command::Reload))
+            .count();
         for (position, command) in batch.into_iter().enumerate() {
             if matches!(command, Command::Query { .. }) && Some(position) != newest_query {
+                continue;
+            }
+            if matches!(command, Command::Reload) {
+                if reloads_pending > 1 {
+                    reloads_pending -= 1;
+                    continue;
+                }
+                reloads_pending = 0;
+                // Let the editor finish writing before the new code is read.
+                thread::sleep(RELOAD_SETTLE);
+                match start_again(home, timeouts.describe) {
+                    Ok(fresh) => {
+                        process = fresh;
+                        restarts.healthy();
+                        if reports
+                            .send_blocking(HostEvent::Reloaded { plugin })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Err(error) => eprintln!(
+                        "cmd-host: {} did not come back after a change: {error}",
+                        home.manifest.name
+                    ),
+                }
                 continue;
             }
             let (event, gone) = answer(plugin, &mut process, command, timeouts);
@@ -360,6 +403,7 @@ fn answer(
     timeouts: Timeouts,
 ) -> (HostEvent, bool) {
     match command {
+        Command::Reload => unreachable!("reloads are handled before answering"),
         Command::Query { generation, text } => {
             let result = process.call::<Items>(Method::Query { text }, timeouts.query);
             let gone = is_gone(&result);
@@ -411,4 +455,69 @@ fn describe_failure(error: CallError) -> String {
 
 fn start_again(home: &Located, timeout: Duration) -> Result<PluginProcess, StartError> {
     handshake(home.clone(), timeout).map(|(_, _, process)| process)
+}
+
+/// Watch every plugin directory and tell the owning worker when a file changes.
+///
+/// Paths under hidden directories and `__pycache__` are ignored: Python and uv write
+/// there when the plugin starts, and following them would reload forever.
+fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
+    let homes: Vec<(PathBuf, mpsc::Sender<Command>)> = plugins
+        .iter()
+        .map(|plugin| {
+            let dir = plugin
+                .located
+                .dir
+                .canonicalize()
+                .unwrap_or_else(|_| plugin.located.dir.clone());
+            (dir, plugin.commands.clone())
+        })
+        .collect();
+    let dirs: Vec<PathBuf> = homes.iter().map(|(dir, _)| dir.clone()).collect();
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        let Ok(event) = event else { return };
+        if !event.kind.is_modify() && !event.kind.is_create() && !event.kind.is_remove() {
+            return;
+        }
+        for path in event.paths.iter().filter(|path| is_source(path)) {
+            for (dir, commands) in &homes {
+                if path.starts_with(dir) {
+                    let _ = commands.send(Command::Reload);
+                }
+            }
+        }
+    })
+    .ok()?;
+    for dir in &dirs {
+        if let Err(error) = watcher.watch(dir, RecursiveMode::Recursive) {
+            eprintln!("cmd-host: not watching {}: {error}", dir.display());
+        }
+    }
+    Some(watcher)
+}
+
+/// A path a plugin author would edit, as opposed to one Python or uv writes while running.
+fn is_source(path: &Path) -> bool {
+    !path.components().any(|component| {
+        let name = component.as_os_str().to_string_lossy();
+        name == "__pycache__" || (name.starts_with('.') && name != "." && name != "..")
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn files_python_and_uv_write_while_running_are_not_source() {
+        assert!(is_source(Path::new("/p/src/calculator/arithmetic.py")));
+        assert!(is_source(Path::new("/p/cmd-plugin.toml")));
+        assert!(!is_source(Path::new(
+            "/p/src/calculator/__pycache__/arithmetic.cpython-315.pyc"
+        )));
+        assert!(!is_source(Path::new(
+            "/p/.venv/lib/python3.15/site-packages/x.py"
+        )));
+        assert!(!is_source(Path::new("/p/.pytest_cache/v/cache/nodeids")));
+    }
 }

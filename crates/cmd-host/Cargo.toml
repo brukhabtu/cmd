@@ -15,6 +15,8 @@ toml.workspace = true
 thiserror.workspace = true
 # Host events travel on a channel the window's executor can await and a test can block on.
 async-channel = "2"
+# A plugin whose files change is started again, so authors see edits without restarting the app.
+notify = "8"
 
 [lints]
 workspace = true
