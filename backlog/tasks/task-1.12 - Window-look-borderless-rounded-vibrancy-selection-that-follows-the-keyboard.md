@@ -3,10 +3,10 @@ id: TASK-1.12
 title: >-
   Window look: borderless, rounded, vibrancy, selection that follows the
   keyboard
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 06:58'
+updated_date: '2026-10-07 07:22'
 labels:
   - size-3
 milestone: m-1
@@ -18,9 +18,9 @@ ordinal: 13000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 No title bar, rounded corners, a translucent material behind the list
-- [ ] #2 Rows show title and subtitle; the selected row is visible and scrolls into view when the list is long
-- [ ] #3 Looks right in light and dark appearance
+- [x] #1 No title bar, rounded corners, a translucent material behind the list
+- [x] #2 Rows show title and subtitle; the selected row is visible and scrolls into view when the list is long
+- [x] #3 Looks right in light and dark appearance
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,4 +44,6 @@ gpui 0.2.2 facts verified from the registry source, for the next gpui-for-cmd sk
 Owed to a person on a Mac (CI builds the app; none of this is seen on Linux): 1) press the chord and see no title bar, 16px rounded corners with the shadow following them, and the blur showing through the tint; 2) switch System Settings between light and dark with the window up and see the palette flip; 3) with a plugin that answers more than seven rows (a ten-line SDK plugin returning twenty items in a CMD_PLUGINS directory), press Down past the seventh row and see the list shift with the highlight on screen, and Cmd-3 run the third row on screen rather than the third in the list; 4) judge whether gpui's Selection material reads flat beside Spotlight; the fallback is WindowBackgroundAppearance::Transparent with a more opaque tint, one line in main().
 
 Not done, on purpose: no scroll container, so the mouse wheel does nothing (the criterion is keyboard-driven); the window stays a fixed 420px, so a short list leaves an empty translucent area (Window::resize is a follow-up); no plugins/index.toml entry, nothing new belongs there.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit 915ec3a, merged as 27b4644. Owed on a Mac, in one sitting: press the chord and see no title bar, 16 px rounded corners with the shadow following them and the blur through the tint; switch System Settings between light and dark and see the palette flip; with a plugin answering twenty items press Down past the seventh row and see the list shift, Up at the top scroll back, and Cmd-3 run the third row on screen; judge the Selection material against Spotlight (fallback: WindowBackgroundAppearance::Transparent with a more opaque tint). Left out on purpose: no scroll container (mouse wheel does nothing) and the fixed 420 px window (a short list leaves an empty translucent area; TASK-1.37).
 <!-- SECTION:NOTES:END -->

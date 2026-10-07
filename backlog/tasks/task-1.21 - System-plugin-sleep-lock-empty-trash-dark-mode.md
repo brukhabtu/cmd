@@ -1,10 +1,10 @@
 ---
 id: TASK-1.21
 title: 'System plugin: sleep, lock, empty trash, dark mode'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 07:11'
+updated_date: '2026-10-07 07:22'
 labels:
   - size-2
 milestone: m-3
@@ -16,7 +16,7 @@ ordinal: 22000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each command is an item with a definite answer; Enter performs it and hides
+- [x] #1 Each command is an item with a definite answer; Enter performs it and hides
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -35,4 +35,6 @@ Where the code contradicted the plan: a second keywordless plugin makes a query 
 Evidence: scripts/check.sh all checks passed (exit 0); pytest 100 passed (29 of them the system plugin's); cargo test -p cmd-host --test calculator --test system six times, ok each; clippy -D warnings clean; mutation MIN_PREFIX=1 fails 2 tests, restored passes 29; cmd-doctor plugins/system --query lock --run sleep prints the one Lock screen item and {kind: show, text: Sleep needs macOS}.
 
 Owed: plugins/index.toml entry for system pinned to this commit once it is pushed (CI's check_index fetches the manifest at the ref). On a Mac: ls the CGSession path; cmd-doctor --query lock --run lock prints {kind: close} and the screen locks; in the app dark, trash and sleep each perform on Enter and hide, allowing the Automation prompt the first time. If CGSession is gone, LOCK's argv becomes (/usr/bin/pmset, displaysleepnow). Note for 1.23: the bundle's Info.plist needs NSAppleEventsUsageDescription or Finder and System Events refuse without a prompt.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit 4c8bb3b, merged as d45115c; the index entry is pinned to that merge. Owed on a Mac: confirm CGSession exists at its path (else LOCK becomes pmset displaysleepnow), lock through cmd-doctor, then dark, trash and sleep from the app, allowing the Automation prompt once. Noted by the reviewer: the slow-command test's 0.8 s wall-clock bound; effect_from in the adapter test panics on an earlier-generation answer from the named plugin.
 <!-- SECTION:NOTES:END -->

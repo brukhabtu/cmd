@@ -1,10 +1,10 @@
 ---
 id: TASK-1.20
 title: Files plugin over mdfind
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 07:03'
+updated_date: '2026-10-07 07:22'
 labels:
   - size-3
 milestone: m-3
@@ -16,8 +16,8 @@ ordinal: 21000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Keyword 'f' searches with mdfind and returns paths with their parent folder as subtitle
-- [ ] #2 Enter reveals in Finder; a second action opens the file
+- [x] #1 Keyword 'f' searches with mdfind and returns paths with their parent folder as subtitle
+- [x] #2 Enter reveals in Finder; a second action opens the file
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -30,4 +30,6 @@ A keyword plugin (f) in the websearch shape. plugins/files/src/files/search.py i
 
 <!-- SECTION:NOTES:BEGIN -->
 Landed: plugins/files (cmd-plugin.toml, pyproject.toml, src/files/search.py pure, src/files/__init__.py shell), unit tests for the pure module, functional tests with fake mdfind and open sh scripts on PATH, crates/cmd-host/tests/files.rs through the real uv-run process with the fakes on a PATH prefix via env, root pyproject.toml entries (mypy_path, testpaths, pypeeker src and allow, a per-file ignore for subprocess), uv.lock regenerated. No protocol change, no cmd-app change. Enter runs open -R itself and answers close; the second action answers open with a file:// URL (Path.as_uri), since cmd-app hands the target to GPUI open_url, which needs a scheme on macOS. Evidence on Linux: uv run pytest -q plugins/files/tests -> 27 passed; cargo test -p cmd-host --test files -> 1 passed; clippy pedantic clean; scripts/check.sh -> all checks passed (98 pytest, index check against the network). Owed to a person on a Mac: run the app, type f readme, see rows with their folders, press Enter and watch Finder reveal; then cmd-doctor on plugins/files with --query readme --run <a path> --action open and confirm the file opens; judge whether a one-letter query lags (a two-character minimum is a one-line change). Also owed: the plugins/index.toml entry for files pinned to this change once the branch is on GitHub (the check fetches the ref); the README plugin row; and a size-1 follow-up so cmd-app converts a bare path to a file URL, which 1.19 needs too.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit 6880a2c, merged as b0fe068; the index entry is pinned to the merge d45115c6ad2432bc0aa2fe1676f79fb35463b7d8. Owed on a Mac: type 'f readme', see rows with their folders, Enter reveals in Finder; cmd-doctor --run with --action open opens the file; judge whether a one-letter query lags (then a two-character minimum) and whether a non-zero mdfind exit should surface as an error rather than an empty list. Follow-up filed: icons on file rows once protocol 1 lands (TASK-1.38).
 <!-- SECTION:NOTES:END -->

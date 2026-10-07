@@ -20,3 +20,17 @@ summary = "Type web and a question; Enter searches the web for it."
 source = "https://github.com/brukhabtu/cmd"
 ref = "1159f73f7c9cc1248abe259a3a2de8592cfa7a67"
 subdirectory = "plugins/websearch"
+
+[[plugin]]
+name = "files"
+summary = "Type f and part of a file name; Enter reveals it in Finder, the second action opens it."
+source = "https://github.com/brukhabtu/cmd"
+ref = "d45115c6ad2432bc0aa2fe1676f79fb35463b7d8"
+subdirectory = "plugins/files"
+
+[[plugin]]
+name = "system"
+summary = "sleep, lock, trash and dark: one command each, performed on Enter."
+source = "https://github.com/brukhabtu/cmd"
+ref = "d45115c6ad2432bc0aa2fe1676f79fb35463b7d8"
+subdirectory = "plugins/system"
