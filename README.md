@@ -5,7 +5,7 @@ type, see results, press Enter. The core is Rust on [GPUI](https://www.gpui.rs);
 Python, so anyone can extend it without touching the Rust.
 
 Status: milestone 0, foundation. The pieces exist and talk to each other; there is no
-hotkey, no app launcher plugin, and no bundle yet. The board in `backlog/` has the plan.
+hotkey and no bundle yet. The board in `backlog/` has the plan.
 
 ## Layout
 
@@ -15,7 +15,7 @@ hotkey, no app launcher plugin, and no bundle yet. The board in `backlog/` has t
 | `crates/cmd-host` | Finds plugins, runs each as a process, speaks the protocol over stdin and stdout. |
 | `crates/cmd-app` | The window. GPUI, keys in, steps out. |
 | `python/cmd-sdk` | Write a plugin in Python: the types and `serve()`. |
-| `plugins/` | Plugins: `calculator`, `websearch` and `system` (sleep, lock, empty Trash, dark mode). |
+| `plugins/` | Plugins: `applications` (find and open apps), `calculator`, `websearch`, `files` and `system` (sleep, lock, empty Trash, dark mode). |
 | `docs/` | `architecture.md` (C4, in LikeC4), `plugin-protocol.md`, `skills.md`. |
 | `backlog/` | The board: intent, milestones, tasks, decisions. |
 | `.claude/` | Claude Code settings and plugins, including how this repository is worked on. |
