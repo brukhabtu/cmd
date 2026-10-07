@@ -16,6 +16,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
 thiserror = "2"
+# Grapheme and word boundaries for the text input; already in the tree below gpui.
+unicode-segmentation = "1"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

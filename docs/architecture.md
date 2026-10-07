@@ -63,10 +63,13 @@ to a manifest rather than a quiet import.
 
 ## Not yet
 
-A global hotkey, hiding on focus loss, a real text input, plugin calls off the UI thread,
-and plugin restarts. Each is a task on the board under its milestone.
+Built and tested on Linux, and compiled on macOS by CI, but not yet seen on a Mac by a
+person: the global hotkey, hiding on focus loss, the real text input with the input
+method, the window's look, icons, and starting the host beside an open window. Each such
+task records the check it owes.
 
 The application bundle exists: `scripts/bundle.sh` builds `cmd.app` and the macOS CI job
 publishes it. By decision 7 it carries `uv` in `Contents/MacOS` beside the binary and
 nothing else; the plugins' Python is fetched by that uv on first launch once the runtime
 wiring lands (its own task), and until then plugins resolve uv from the inherited PATH.
+Signing, notarisation and a Homebrew cask wait for credentials.

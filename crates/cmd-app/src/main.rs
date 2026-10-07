@@ -1,10 +1,13 @@
 //! The launcher window.
 //!
-//! Every key becomes a [`cmd_core::state::Event`]; the state machine answers with a
-//! [`cmd_core::state::Step`]; this file performs it. The global chord shows the window,
-//! Escape and losing focus hide it. That is the whole shell.
+//! Every key the launcher owns becomes a [`cmd_core::state::Event`]; the state machine
+//! answers with a [`cmd_core::state::Step`]; this file performs it. Text does not come
+//! from the key handler: typing, dead keys and input-method composition reach the state
+//! machine through GPUI's input handler, installed by the query line in `input.rs`. The
+//! global chord shows the window, Escape and losing focus hide it. That is the whole shell.
 
 mod icons;
+mod input;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -12,6 +15,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use cmd_core::input::Motion;
 use cmd_core::query::Hit;
 use cmd_core::state::{Event, Launcher, Step};
 use cmd_host::{Host, HostEvent, Located, Startup, Timeouts, manifest};
@@ -19,11 +23,12 @@ use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
 use gpui::{
-    App, Application, AsyncApp, Bounds, ClipboardItem, Context, Div, FocusHandle, KeyDownEvent,
-    Pixels, Render, RenderImage, Rgba, SharedString, Window, WindowAppearance,
-    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img,
-    point, px, rgb, rgba, size,
+    App, Application, AsyncApp, Bounds, ClipboardItem, Context, Div, Entity, FocusHandle,
+    KeyDownEvent, Keystroke, Pixels, Render, RenderImage, Rgba, ShapedLine, Window,
+    WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind,
+    WindowOptions, div, img, point, px, rgb, rgba, size,
 };
+use input::InputElement;
 
 const WIDTH: f32 = 680.0;
 const HEIGHT: f32 = 420.0;
@@ -97,6 +102,10 @@ struct LauncherView {
     /// What went wrong finding and starting plugins, shown under the input on every show
     /// until the person has pressed a key at the window.
     start_trouble: Option<String>,
+    /// The query line as last drawn and where, for the input method to place its
+    /// candidates. The text itself is the state machine's.
+    last_line: Option<ShapedLine>,
+    last_bounds: Option<Bounds<Pixels>>,
 }
 
 impl LauncherView {
@@ -133,6 +142,8 @@ impl LauncherView {
             shown: true,
             asked_at: Instant::now(),
             start_trouble,
+            last_line: None,
+            last_bounds: None,
         }
     }
 
@@ -151,8 +162,8 @@ impl LauncherView {
                 self.host = Some(host);
                 // Every plugin has been reported by now; nothing is left starting.
                 self.starting.clear();
-                if !self.state.text.trim().is_empty() {
-                    let text = self.state.text.clone();
+                if !self.state.text().trim().is_empty() {
+                    let text = self.state.text().to_string();
                     self.ask(self.state.generation, &text, cx);
                 }
             }
@@ -302,23 +313,22 @@ impl LauncherView {
         cx.notify();
     }
 
-    /// The keyboard model (decision 4): a few keys are the launcher's, the rest is text.
+    /// The keyboard model (decision 4), as [`key`] reads it. Text is not read here: a key
+    /// left alone goes on to the input method, which delivers its character through the
+    /// input handler. Every key taken here stops propagation, or macOS would hand it to
+    /// the input method as well.
     fn on_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let keystroke = &event.keystroke;
-        let command = keystroke.modifiers.platform;
-        let event = match keystroke.key.as_str() {
-            "backspace" if command => Some(Event::Clear),
-            "backspace" => Some(Event::Backspace),
-            "up" => Some(Event::Up),
-            "down" => Some(Event::Down),
-            "enter" => Some(Event::Submit),
-            "escape" => Some(Event::Escape),
-            digit @ ("1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9") if command => {
-                digit.parse::<usize>().ok().map(|n| Event::Pick(n - 1))
-            }
-            _ if command || keystroke.modifiers.control => None,
-            _ => keystroke.key_char.clone().map(Event::Typed),
+        let event = match key(&event.keystroke) {
+            Key::Text => return,
+            Key::Dropped => None,
+            // A pasteboard without text (an image, say) pastes nothing.
+            Key::Paste => cx
+                .read_from_clipboard()
+                .and_then(|item| item.text())
+                .map(Event::Paste),
+            Key::Owned(event) => Some(event),
         };
+        cx.stop_propagation();
         if let Some(event) = event {
             // A key pressed here means the person has seen what was under the input.
             self.start_trouble = None;
@@ -358,6 +368,7 @@ impl LauncherView {
                 }
             }
             Step::Hide => self.put_away(cx),
+            Step::Copy(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
             Step::CopyAndHide(text) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
                 self.put_away(cx);
@@ -377,22 +388,74 @@ impl LauncherView {
     }
 }
 
-/// The text typed so far, or the placeholder in the muted colour while there is none.
-fn input_row(text: &str, palette: &Palette) -> Div {
-    let empty = text.is_empty();
-    let shown: SharedString = if empty {
-        PLACEHOLDER.into()
-    } else {
-        text.to_string().into()
+/// What the launcher does with a key.
+#[derive(Debug, PartialEq)]
+enum Key {
+    /// One of the launcher's own keys.
+    Owned(Event),
+    /// Cmd-V: the pasteboard's text, which only the caller can read.
+    Paste,
+    /// A Cmd or Control chord the launcher does not own: taken, and not typed.
+    Dropped,
+    /// Text, left for the input method to deliver through the input handler.
+    Text,
+}
+
+/// The keyboard model (decision 4): a few keys are the launcher's, the rest is text.
+/// Option is text except with Backspace and the arrows, where it means a word.
+fn key(keystroke: &Keystroke) -> Key {
+    let command = keystroke.modifiers.platform;
+    let option = keystroke.modifiers.alt;
+    let shift = keystroke.modifiers.shift;
+    let event = match keystroke.key.as_str() {
+        "backspace" if command => Event::Delete(Motion::LineStart),
+        "backspace" if option => Event::Delete(Motion::PreviousWord),
+        "backspace" => Event::Delete(Motion::PreviousGrapheme),
+        "left" | "right" => {
+            let motion = match (keystroke.key == "left", command, option) {
+                (true, true, _) => Motion::LineStart,
+                (false, true, _) => Motion::LineEnd,
+                (true, false, true) => Motion::PreviousWord,
+                (false, false, true) => Motion::NextWord,
+                (true, false, false) => Motion::PreviousGrapheme,
+                (false, false, false) => Motion::NextGrapheme,
+            };
+            Event::Move {
+                motion,
+                extend: shift,
+            }
+        }
+        "a" if command => Event::SelectAll,
+        "c" if command => Event::Copy,
+        "v" if command => return Key::Paste,
+        "up" => Event::Up,
+        "down" => Event::Down,
+        "enter" => Event::Submit,
+        "escape" => Event::Escape,
+        digit @ ("1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9") if command => {
+            match digit.parse::<usize>() {
+                Ok(n) => Event::Pick(n - 1),
+                Err(_) => return Key::Dropped,
+            }
+        }
+        _ if command || keystroke.modifiers.control => return Key::Dropped,
+        _ => return Key::Text,
     };
+    Key::Owned(event)
+}
+
+/// The query line. What it shows is the state machine's; see `input.rs`.
+fn input_row(view: Entity<LauncherView>, palette: &Palette) -> Div {
     div()
         .h(px(INPUT_HEIGHT))
         .px(px(18.0))
         .flex()
         .items_center()
         .text_xl()
-        .when(empty, |input| input.text_color(palette.muted))
-        .child(shown)
+        .child(InputElement {
+            view,
+            muted: palette.muted.into(),
+        })
 }
 
 /// A message from a plugin or the host wins over the waiting line; both are under the
@@ -483,7 +546,7 @@ impl Render for LauncherView {
             .text_color(palette.text)
             .rounded_2xl()
             .overflow_hidden()
-            .child(input_row(&self.state.text, &palette))
+            .child(input_row(cx.entity(), &palette))
             .child(status_line(
                 self.state.message.clone(),
                 self.waiting_on(),
@@ -732,4 +795,70 @@ fn main() -> ExitCode {
         cx.activate(true);
     });
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pressed(source: &str) -> Key {
+        key(&Keystroke::parse(source).expect("a keystroke"))
+    }
+
+    fn moved(motion: Motion, extend: bool) -> Key {
+        Key::Owned(Event::Move { motion, extend })
+    }
+
+    #[test]
+    fn backspace_deletes_a_grapheme_a_word_or_to_the_start() {
+        assert_eq!(
+            pressed("backspace"),
+            Key::Owned(Event::Delete(Motion::PreviousGrapheme))
+        );
+        assert_eq!(
+            pressed("alt-backspace"),
+            Key::Owned(Event::Delete(Motion::PreviousWord))
+        );
+        assert_eq!(
+            pressed("cmd-backspace"),
+            Key::Owned(Event::Delete(Motion::LineStart))
+        );
+    }
+
+    #[test]
+    fn the_arrows_move_by_grapheme_word_or_line_and_shift_extends() {
+        assert_eq!(pressed("left"), moved(Motion::PreviousGrapheme, false));
+        assert_eq!(pressed("right"), moved(Motion::NextGrapheme, false));
+        assert_eq!(pressed("shift-left"), moved(Motion::PreviousGrapheme, true));
+        assert_eq!(pressed("alt-left"), moved(Motion::PreviousWord, false));
+        assert_eq!(pressed("alt-shift-right"), moved(Motion::NextWord, true));
+        assert_eq!(pressed("cmd-left"), moved(Motion::LineStart, false));
+        assert_eq!(pressed("cmd-shift-right"), moved(Motion::LineEnd, true));
+    }
+
+    #[test]
+    fn the_editing_chords_select_copy_and_paste() {
+        assert_eq!(pressed("cmd-a"), Key::Owned(Event::SelectAll));
+        assert_eq!(pressed("cmd-c"), Key::Owned(Event::Copy));
+        assert_eq!(pressed("cmd-v"), Key::Paste);
+    }
+
+    #[test]
+    fn the_launcher_keys_are_unchanged() {
+        assert_eq!(pressed("up"), Key::Owned(Event::Up));
+        assert_eq!(pressed("cmd-down"), Key::Owned(Event::Down));
+        assert_eq!(pressed("enter"), Key::Owned(Event::Submit));
+        assert_eq!(pressed("escape"), Key::Owned(Event::Escape));
+        assert_eq!(pressed("cmd-3"), Key::Owned(Event::Pick(2)));
+    }
+
+    #[test]
+    fn characters_are_left_for_the_input_method_and_other_chords_are_dropped() {
+        assert_eq!(pressed("a"), Key::Text);
+        assert_eq!(pressed("shift-a"), Key::Text);
+        assert_eq!(pressed("alt-e"), Key::Text, "Option-E starts a dead key");
+        assert_eq!(pressed("3"), Key::Text);
+        assert_eq!(pressed("cmd-k"), Key::Dropped);
+        assert_eq!(pressed("ctrl-a"), Key::Dropped);
+    }
 }

@@ -13,7 +13,7 @@ model {
       technology 'JSON lines over stdin and stdout'
     }
 
-    app.ui -> macos 'writes the pasteboard, opens targets and hides the window through' {
+    app.ui -> macos 'reads and writes the pasteboard, takes typed and composed text from the input method, opens targets and hides the window through' {
       technology 'AppKit via GPUI'
     }
     plugin -> macos 'reads from and acts on, as its author chooses' {
