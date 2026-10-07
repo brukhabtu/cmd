@@ -23,8 +23,9 @@ per plugin and a round trip per keystroke, which is why the protocol is one line
 and the host keeps the processes alive. Decision 1 on the board has the alternatives.
 
 **The core is pure.** `cmd-core` has no I/O. It knows the protocol's shapes, decides which
-plugins see a query, merges answers as they arrive, and runs the launcher's state machine:
-an event in, a step out. `cmd-host` and `cmd-app` are the shell that performs the steps.
+plugins see a query, merges answers as they arrive, runs the launcher's state machine (an
+event in, a step out) and decides which display the window goes on and where. `cmd-host` and
+`cmd-app` are the shell that performs the steps and reports what the system shows it.
 The pure part is where the tests are, and the shell is thin enough to read in one sitting.
 
 **The window never waits on a plugin.** Each plugin has a worker thread in `cmd-host` that
