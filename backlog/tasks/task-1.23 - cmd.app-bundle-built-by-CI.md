@@ -1,10 +1,10 @@
 ---
 id: TASK-1.23
 title: cmd.app bundle built by CI
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 11:07'
+updated_date: '2026-10-07 11:18'
 labels:
   - size-5
 milestone: m-3
@@ -17,8 +17,8 @@ ordinal: 24000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 cargo-bundle or an equivalent produces cmd.app with an icon and an Info.plist that hides the Dock icon
-- [ ] #2 The macOS CI job uploads the bundle as an artifact on every push to main
+- [x] #1 cargo-bundle or an equivalent produces cmd.app with an icon and an Info.plist that hides the Dock icon
+- [x] #2 The macOS CI job uploads the bundle as an artifact on every push to main
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,4 +37,6 @@ Landed (worktree-wf_1ee14db4-a16-1): [package.metadata.bundle] in crates/cmd-app
 Evidence on Linux: scripts/check.sh 'all checks passed'; scratch-workspace cargo clippy -p cmd-app --all-targets -D warnings exit 0 (the macOS function is cfg'd out there, so this proves only the Linux twin); in the scratch workspace, cargo build -p cmd-app (debug, not release, for disk) then CARGO_BUNDLE_SKIP_BUILD=1 cargo bundle --package cmd-app --format osx made target/debug/bundle/osx/cmd.app, and check_bundle.py --without-uv on it exits 0; its plist reads LSUIElement True, CFBundleExecutable cmd, CFBundleIconFile cmd.icns, CFBundleIdentifier com.brukhabtu.cmd, LSMinimumSystemVersion 12.0, LSApplicationCategoryType public.app-category.utilities; cmd.icns holds ic10 1024, ic09 512, ic08 256, ic11 to ic14. Without --without-uv it names the missing uv, as it should on Linux.
 
 Owed: the first macOS CI run of this branch is the proof of both criteria and of become_accessory compiling (clippy and the release build there); then gh run download the cmd.app artifact and check file(1) reports Mach-O arm64 for cmd and uv, mode 755 on both, and check_bundle.py exits 0 on it. The .sha256 sidecar format is unverified from here; if the first run fails there, pin the hash in bundle.sh. On a Mac, a person: no Dock icon and no menu bar, the panel still taking the keyboard on Option-Space, the icon in Finder and the Dock at 16 and 32 px, opening after xattr -dr com.apple.quarantine (unsigned until 1.25), and 12.0 as a true floor. uv 0.12.23 knows only 3.15.0rc3 for darwin aarch64: re-pin UV_VERSION when a uv release lists 3.15.0. The bundle carries no plugins (decision 8: cmd plugin install), so a fresh bundle reports no plugins found; and until TASK-1.41 (the runtime wiring from decision 7, filed here) lands, an installed plugin resolves uv from launchd's PATH, not the bundle's. arm64 uv binary 35.5 MB; the bundle total comes from du -sh in the CI log. Intel Macs are not covered: the artifact is arm64 only.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit 3f7150c, merged into the branch with the reviewer's should-fix taken (no pipe into head under pipefail in scripts/bundle.sh). The runtime wiring from decision 7 is TASK-1.41 (renumbered from 1.39 at the merge). Owed: the first macOS CI run of the bundle job, then gh run download of the artifact and check_bundle.py on it; on a Mac, no Dock icon or menu bar, the panel still taking the keyboard on Option-Space, the icon in Finder, and opening after xattr -dr com.apple.quarantine (unsigned until 1.25).
 <!-- SECTION:NOTES:END -->

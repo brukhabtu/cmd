@@ -4,7 +4,7 @@ title: 'A real text input: cursor, selection, paste, word deletion'
 status: In Progress
 assignee: []
 created_date: '2026-10-07 02:40'
-updated_date: '2026-10-07 11:00'
+updated_date: '2026-10-07 11:19'
 labels:
   - size-5
 milestone: m-1
@@ -17,9 +17,9 @@ ordinal: 11000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Left and right move the cursor; Shift extends a selection; Cmd-A, Cmd-C, Cmd-V and Cmd-Backspace do what macOS does
+- [x] #1 Left and right move the cursor; Shift extends a selection; Cmd-A, Cmd-C, Cmd-V and Cmd-Backspace do what macOS does
 - [ ] #2 IME composition (for example Japanese input) works, verified by hand on macOS
-- [ ] #3 The state machine in cmd-core stays the only owner of the text; the view renders it
+- [x] #3 The state machine in cmd-core stays the only owner of the text; the view renders it
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -43,4 +43,8 @@ Landed (worktree-wf_1af770a2-fcd-1, merged forward onto ccr-16512bde-x72oqp 6b3f
 Evidence: cargo test -p cmd-core 64 passed; scratch workspace cargo clippy -p cmd-app --all-targets -D warnings clean and cargo test -p cmd-app 12 passed; scripts/check.sh: all checks passed.
 Owed on a Mac (AC #2 and the look of AC #1): Japanese Romaji input, a i gives underlined あい, Enter commits and the list refreshes; gpui's a i left down up enter enter gives 愛; Option-E then E gives é; Ctrl-Cmd-Space emoji palette inserts; Escape mid-composition cancels the composition, not the window; no doubled characters; key repeat; cursor, selection and underline drawn in both appearances; Shift, Option and Cmd with the arrows; Cmd-V from the real pasteboard; Cmd-Backspace with a selection against a Cocoa field. Tab no longer types a tab character.
 Follow-ups filed as TASK-1.40 (Cmd-X, forward Delete, Home and End, mouse, blinking cursor).
+
+Closed for the Linux criteria on the reviewer's verdict (CLOSE) against worktree commit 126f3ee, merged as f4b3155 (with the one semantic conflict against 1.32 fixed: text is a method now). AC #2 stays unticked: it is a hand check on a Mac with the Japanese (Romaji) input source, and no person has run it. Owed with it: no character typed twice, key repeat, the cursor, selection and underline visible in both appearances, Cmd-C and Cmd-V against the real pasteboard, and Escape during a composition cancelling the composition, not the window. Follow-ups are TASK-1.40 (renumbered from 1.39 at the merge).
+
+Status kept In Progress rather than Done: criteria 1 and 3 are met and ticked; criterion 2 is the hand check on a Mac and closes when a person records it here.
 <!-- SECTION:NOTES:END -->

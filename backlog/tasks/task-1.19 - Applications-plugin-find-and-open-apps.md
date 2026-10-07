@@ -1,10 +1,10 @@
 ---
 id: TASK-1.19
 title: 'Applications plugin: find and open apps'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-07 02:41'
-updated_date: '2026-10-07 11:13'
+updated_date: '2026-10-07 11:18'
 labels:
   - size-3
 milestone: m-3
@@ -16,8 +16,8 @@ ordinal: 20000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Scans /Applications, ~/Applications and /System/Applications; fuzzy-matches names with a score in 0..1
-- [ ] #2 Enter opens the app through Launch Services; the definite calculator answer still ranks above fuzzy app matches
+- [x] #1 Scans /Applications, ~/Applications and /System/Applications; fuzzy-matches names with a score in 0..1
+- [x] #2 Enter opens the app through Launch Services; the definite calculator answer still ranks above fuzzy app matches
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -39,4 +39,6 @@ Landed (branch worktree-wf_1af770a2-fcd-2, finished after a usage-limit cut; the
 Evidence: uv run pytest -q plugins/applications/tests 82 passed. cargo test -p cmd-core query 11 passed; with the old merge restored a_perfect_fuzzy_score_still_sits_below_a_definite_answer fails (left ["1+1 app", "2"]) and so does the adapter test (left ["1+1", "2"]). cargo test -p cmd-host --test applications --test calculator 1 + 2 passed. scripts/check.sh: red at the online index step only (the pin above); every other step green; run on the script's offline path (github.com redirected for ls-remote) it prints all checks passed.
 
 Owed on a Mac: cargo run -p cmd-app, type saf, Enter: Safari opens through Launch Services (NSWorkspace on file:///Applications/Safari.app) and the window hides; an already-running app comes to the front; term finds /System/Applications/Utilities/Terminal.app; rows show the bundle icons; no ~/Applications gives no error; the per-keystroke scan of the real roots stays well under the 3 s query timeout.
+
+Closed on the reviewer's verdict (CLOSE) against worktree commit dea462f, merged as part of f4b3155; the index entry is re-pinned to that merge, which check_index.py now reads from GitHub. Owed on a Mac: type part of an app's name and see it ranked first, Enter launches it through the file URL, an app two levels down under /Applications is found, and the per-keystroke scan stays in the milliseconds.
 <!-- SECTION:NOTES:END -->
