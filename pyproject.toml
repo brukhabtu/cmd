@@ -55,20 +55,27 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "D", "ANN", "PLR2004", "INP001", "FBT", "E501"]
 "scripts/**" = ["T201", "INP001", "S404", "S603"] # scripts print, are not a package, and check_index.py runs git
+"plugins/system/src/system/__init__.py" = ["S404", "S603"] # runs fixed macOS commands by absolute path
 
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:scripts"
+mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/system/src:scripts"
 files = ["python", "plugins", "scripts"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
 consider_namespace_packages = true
-testpaths = ["python/cmd-sdk/tests", "plugins/calculator/tests", "plugins/websearch/tests", "scripts/tests"]
+testpaths = [
+  "python/cmd-sdk/tests",
+  "plugins/calculator/tests",
+  "plugins/websearch/tests",
+  "plugins/system/tests",
+  "scripts/tests",
+]
 
 [tool.pypeeker]
-src = ["python/cmd-sdk/src", "plugins/calculator/src", "plugins/websearch/src"]
+src = ["python/cmd-sdk/src", "plugins/calculator/src", "plugins/websearch/src", "plugins/system/src"]
 rules = [
   "import-boundaries",
   "no-import-cycles",
@@ -80,9 +87,10 @@ rules = [
 # Units are the modules directly under each top-level package (the rule's per-file root).
 # The core/shell line inside the SDK: protocol takes data and returns data and imports no
 # shell; serve is the only module that may import protocol. In the calculator, arithmetic is
-# pure and imports nothing of ours. An import that crosses source roots (the SDK importing
-# a plugin, or a plugin another plugin) is invisible to this rule; scripts/import_boundaries.py
-# gates those, right after this check in scripts/check.sh.
+# pure and imports nothing of ours, and so is commands in the system plugin. An import that
+# crosses source roots (the SDK importing a plugin, or a plugin another plugin) is invisible
+# to this rule; scripts/import_boundaries.py gates those, right after this check in
+# scripts/check.sh.
 [tool.pypeeker.import-boundaries]
-allow = { protocol = [], serve = ["protocol"], arithmetic = [] }
+allow = { protocol = [], serve = ["protocol"], arithmetic = [], commands = [] }
 report-unused-allowances = true

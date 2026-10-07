@@ -1,0 +1,17 @@
+[project]
+name = "system"
+version = "0.1.0"
+description = "A cmd plugin: type sleep, lock, trash or dark; Enter does it and the launcher hides."
+requires-python = ">=3.15"
+license = "MIT"
+dependencies = ["cmd-sdk"]
+
+[project.scripts]
+system = "system:main"
+
+[tool.uv.sources]
+cmd-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9,<1"]
+build-backend = "uv_build"
