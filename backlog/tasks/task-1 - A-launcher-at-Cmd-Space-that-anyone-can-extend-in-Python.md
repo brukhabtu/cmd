@@ -20,7 +20,7 @@ Spotlight is the fastest way to reach anything on a Mac and it is not extensible
 
 ## Open questions
 - [ ] Does the launcher replace Spotlight's hotkey, or sit beside it on another one?
-- [ ] Is the first distribution a plain binary for people who have uv, or a bundle that carries Python?
+- [x] Is the first distribution a plain binary for people who have uv, or a bundle that carries Python? Decision 7: a bundle that carries uv, which fetches one Python on first launch.
 - [ ] Which three plugins would make it the daily driver on day one?
 <!-- SECTION:DESCRIPTION:END -->
 
