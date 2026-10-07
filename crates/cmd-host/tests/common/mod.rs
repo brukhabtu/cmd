@@ -79,6 +79,23 @@ pub fn speaking(name: &str, protocol: u32) -> Located {
     located
 }
 
+/// A fake that takes 300 ms to describe itself, as a plugin whose environment uv is
+/// still building does, so a test can see what happens before its handshake ends.
+pub fn describing_slowly(name: &str) -> Located {
+    let mut located = located(name, false);
+    let script = &mut located.manifest.command[2];
+    let anchor = "    request = json.loads(line)\n";
+    assert!(
+        script.contains(anchor),
+        "the fake reads one request per line"
+    );
+    *script = script.replace(
+        anchor,
+        "    request = json.loads(line)\n    if request[\"method\"] == \"describe\":\n        time.sleep(0.3)\n",
+    );
+    located
+}
+
 /// The items `plugin` answered for `generation`. A query without a keyword reaches
 /// every keywordless plugin, so the other plugins' answers to the same query arrive in
 /// any order around this one and are skipped.

@@ -9,11 +9,12 @@ mod icons;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use cmd_core::query::Hit;
 use cmd_core::state::{Event, Launcher, Step};
-use cmd_host::{Host, HostEvent, Timeouts, manifest};
+use cmd_host::{Host, HostEvent, Located, Startup, Timeouts, manifest};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::prelude::*;
@@ -74,9 +75,20 @@ fn palette(appearance: WindowAppearance) -> Palette {
     }
 }
 
+/// What the start-up thread tells the window: a report as each plugin comes up or fails,
+/// then the host itself, last.
+enum Starting {
+    Report(Startup),
+    Ready(Host),
+}
+
 struct LauncherView {
     state: Launcher,
-    host: Host,
+    /// `None` until the start-up thread hands the host over; the window is up long before.
+    host: Option<Host>,
+    /// The plugins found but not yet up or refused, by manifest name, for the line under
+    /// the input on a first launch, when uv may still be fetching Python.
+    starting: Vec<String>,
     focus: FocusHandle,
     /// Whether the window is meant to be on screen. Losing focus while shown hides it.
     shown: bool,
@@ -88,11 +100,16 @@ struct LauncherView {
 }
 
 impl LauncherView {
-    /// `trouble` is what went wrong while finding and starting plugins. It is shown under
-    /// the input until the person has pressed a key here, so a plugin that is missing is
-    /// not simply silent, even when a focus loss at launch hid the window before anyone
-    /// looked.
-    fn new(host: Host, trouble: &[String], window: &mut Window, cx: &mut Context<Self>) -> Self {
+    /// `starting` names the plugins found, which come up later on the start-up thread.
+    /// `trouble` is what went wrong while finding them. It is shown under the input until
+    /// the person has pressed a key here, so a plugin that is missing is not simply
+    /// silent, even when a focus loss at launch hid the window before anyone looked.
+    fn new(
+        starting: Vec<String>,
+        trouble: &[String],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.observe_window_activation(window, |view, window, cx| {
             if view.shown && !window.is_window_active() {
                 view.hide(cx);
@@ -110,12 +127,74 @@ impl LauncherView {
         }
         Self {
             state,
-            host,
+            host: None,
+            starting,
             focus: cx.focus_handle(),
             shown: true,
             asked_at: Instant::now(),
             start_trouble,
         }
+    }
+
+    /// The start-up thread said something. A plugin that could not be started joins the
+    /// start trouble, so it is shown at once and again on every show until a key is
+    /// pressed, as one missing at discovery is. Text typed while the plugins were starting
+    /// is asked once the host is here, so nobody has to type it again.
+    fn on_startup(&mut self, starting: Starting, cx: &mut Context<Self>) {
+        match starting {
+            Starting::Report(Startup::Up { name, .. }) => self.started(&name),
+            Starting::Report(Startup::Failed(error)) => {
+                self.started(error.name());
+                self.note_trouble(error.to_string());
+            }
+            Starting::Ready(host) => {
+                self.host = Some(host);
+                // Every plugin has been reported by now; nothing is left starting.
+                self.starting.clear();
+                if !self.state.text.trim().is_empty() {
+                    let text = self.state.text.clone();
+                    self.ask(self.state.generation, &text, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Strike one plugin off the starting line. Only the first entry goes, so a second
+    /// directory declaring the same name stays listed until its own report.
+    fn started(&mut self, name: &str) {
+        if let Some(position) = self.starting.iter().position(|starting| starting == name) {
+            self.starting.remove(position);
+        }
+    }
+
+    fn note_trouble(&mut self, message: String) {
+        let trouble = match self.start_trouble.take() {
+            Some(earlier) => format!("{earlier}; {message}"),
+            None => message,
+        };
+        self.state.apply(Event::Noted(trouble.clone()));
+        self.start_trouble = Some(trouble);
+    }
+
+    /// Hand the text to the plugins it reaches, and redraw once they have had their
+    /// chance, so the waiting line can appear.
+    fn ask(&mut self, generation: u64, text: &str, cx: &mut Context<Self>) {
+        let plugins = self
+            .host
+            .as_ref()
+            .map(|host| host.query(generation, text))
+            .unwrap_or_default();
+        self.asked_at = Instant::now();
+        self.state.apply(Event::Asked {
+            generation,
+            plugins,
+        });
+        cx.spawn(async move |view, cx| {
+            cx.background_executor().timer(PATIENCE).await;
+            let _ = view.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
     }
 
     /// A worker answered or ran something; the state machine decides what it means.
@@ -169,12 +248,17 @@ impl LauncherView {
 
     fn plugin_name(&self, plugin: usize) -> String {
         self.host
-            .name(plugin)
+            .as_ref()
+            .and_then(|host| host.name(plugin))
             .unwrap_or_else(|| "a plugin".to_string())
     }
 
-    /// The plugins still owed an answer, by name, once they have kept the person waiting.
+    /// The plugins still starting, or else those still owed an answer once they have kept
+    /// the person waiting, by name.
     fn waiting_on(&self) -> Option<String> {
+        if !self.starting.is_empty() {
+            return Some(format!("starting {}", self.starting.join(", ")));
+        }
         if self.state.pending.is_empty() || self.asked_at.elapsed() < PATIENCE {
             return None;
         }
@@ -250,30 +334,26 @@ impl LauncherView {
 
     fn perform(&mut self, step: Step, cx: &mut Context<Self>) {
         match step {
-            Step::Query { generation, text } => {
-                let plugins = self.host.query(generation, &text);
-                self.asked_at = Instant::now();
-                self.state.apply(Event::Asked {
-                    generation,
-                    plugins,
-                });
-                // Redraw once the plugins have had their chance, so the waiting line can appear.
-                cx.spawn(async move |view, cx| {
-                    cx.background_executor().timer(PATIENCE).await;
-                    let _ = view.update(cx, |_, cx| cx.notify());
-                })
-                .detach();
-            }
+            // Before the host is here nobody is asked, and the text is asked again when it
+            // arrives (see `on_startup`).
+            Step::Query { generation, text } => self.ask(generation, &text, cx),
             Step::Run {
                 generation,
                 plugin,
                 item,
                 action,
             } => {
-                if let Err(error) = self.host.run(generation, plugin, &item, &action) {
+                // Without a host there are no hits to run, so this keeps the match total.
+                let ran = match &self.host {
+                    Some(host) => host
+                        .run(generation, plugin, &item, &action)
+                        .map_err(|error| error.to_string()),
+                    None => Err("the plugins are still starting".to_string()),
+                };
+                if let Err(message) = ran {
                     self.state.apply(Event::Failed {
                         generation,
-                        message: error.to_string(),
+                        message,
                     });
                 }
             }
@@ -429,10 +509,11 @@ impl Render for LauncherView {
     }
 }
 
-/// Find and start the plugins. Where to look is `manifest::plugin_dirs`'s decision; this
-/// only reads the environment. What went wrong comes back beside the host, for the
-/// window to show, and goes to stderr for whoever started the app from a terminal.
-fn start_host() -> (Host, Vec<String>) {
+/// Find the plugins, which only reads directories and is quick enough for the main thread.
+/// Where to look is `manifest::plugin_dirs`'s decision; this only reads the environment.
+/// What went wrong comes back beside them, for the window to show, and goes to stderr for
+/// whoever started the app from a terminal.
+fn locate_plugins() -> (Vec<Located>, Vec<String>) {
     let env = std::env::var("CMD_PLUGINS").ok();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -447,12 +528,32 @@ fn start_host() -> (Host, Vec<String>) {
             .join(", ");
         trouble.push(format!("no plugins found in {looked}"));
     }
-    let (host, start_errors) = Host::start(located, Timeouts::default());
-    trouble.extend(start_errors.iter().map(ToString::to_string));
     for message in &trouble {
         eprintln!("cmd: {message}");
     }
-    (host, trouble)
+    (located, trouble)
+}
+
+/// Start the plugins on a thread of their own, beside the window: each handshake can
+/// take up to the describe timeout, and on a first launch uv may be fetching Python
+/// (decision 7). Each plugin is reported as it comes up or fails, and the host follows
+/// last. A plain thread rather than the background executor, whose shared pool should
+/// not be held for a minute by blocking calls.
+fn start_host_beside(located: Vec<Located>, reports: async_channel::Sender<Starting>) {
+    let started = thread::Builder::new()
+        .name("cmd-startup".to_string())
+        .spawn(move || {
+            let host = Host::start_reporting(located, Timeouts::default(), |report| {
+                if let Startup::Failed(error) = &report {
+                    eprintln!("cmd: {error}");
+                }
+                let _ = reports.send_blocking(Starting::Report(report));
+            });
+            let _ = reports.send_blocking(Starting::Ready(host));
+        });
+    // Without this thread the window would say "starting" forever; like a window that
+    // will not open, there is nothing to carry on with.
+    started.expect("the start-up thread starts");
 }
 
 /// Register the chord and hand each press to `presses`. Returns the manager, which must
@@ -502,6 +603,33 @@ async fn relay_host_events(
     }
 }
 
+/// Hand each start-up report to the view and, once the host arrives, relay its events
+/// for as long as both last.
+async fn bring_up_host(
+    progress: async_channel::Receiver<Starting>,
+    window: WindowHandle<LauncherView>,
+    cx: &mut AsyncApp,
+) {
+    while let Ok(starting) = progress.recv().await {
+        // The receiver is taken before the host moves into the view; a clone of it
+        // hears every worker.
+        let events = match &starting {
+            Starting::Ready(host) => Some(host.events()),
+            Starting::Report(_) => None,
+        };
+        if window
+            .update(cx, |view, _, cx| view.on_startup(starting, cx))
+            .is_err()
+        {
+            return;
+        }
+        if let Some(events) = events {
+            relay_host_events(events, window, cx).await;
+            return;
+        }
+    }
+}
+
 /// Toggle the window on every press until the channel or the window goes away.
 async fn show_on_press(
     presses: async_channel::Receiver<()>,
@@ -542,8 +670,11 @@ fn main() -> ExitCode {
     if args.first().map(String::as_str) == Some("plugin") {
         return cmd_host::cli::run(&args[1..], &cmd_host::cli::Env::from_process());
     }
-    let (host, trouble) = start_host();
-    let events = host.events();
+    let (located, trouble) = locate_plugins();
+    let names: Vec<String> = located
+        .iter()
+        .map(|located| located.manifest.name.clone())
+        .collect();
     let (notify, presses) = async_channel::bounded(1);
     let _hotkey = register_hotkey(notify);
     Application::new().run(move |cx: &mut App| {
@@ -562,15 +693,18 @@ fn main() -> ExitCode {
         };
         let window = cx
             .open_window(options, |window, cx| {
-                let view = cx.new(|cx| LauncherView::new(host, &trouble, window, cx));
+                let view = cx.new(|cx| LauncherView::new(names, &trouble, window, cx));
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus);
                 view
             })
             .expect("the launcher window opens");
+        // Only now, with the window open, does the first handshake begin.
+        let (reports, progress) = async_channel::unbounded();
+        start_host_beside(located, reports);
         cx.spawn(async move |cx| show_on_press(presses, window, cx).await)
             .detach();
-        cx.spawn(async move |cx| relay_host_events(events, window, cx).await)
+        cx.spawn(async move |cx| bring_up_host(progress, window, cx).await)
             .detach();
         cx.activate(true);
     });

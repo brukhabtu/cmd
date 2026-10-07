@@ -31,7 +31,10 @@ The pure part is where the tests are, and the shell is thin enough to read in on
 owns its process. A query goes to the workers as a command and returns at once; answers
 come back as events on a channel the window's executor awaits, each tagged with the
 generation of the text it answers, so a late answer to an older query is dropped and a
-slow plugin delays only its own rows. A plugin whose process dies or hangs is started
+slow plugin delays only its own rows. Nor does it wait at start-up: the plugins are found
+on the main thread, the window opens, and only then are they started on a thread beside
+it, each reported as it comes up, so a first launch says which plugins it is still
+waiting on. A plugin whose process dies or hangs is started
 again with back-off, a plugin whose files change is started again on the new code, and
 the window says so each time. `cmd plugin doctor` runs the same process layer from the
 command line for plugin authors, and `cmd plugin install`, `update`, `remove` and `list`

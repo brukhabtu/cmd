@@ -159,7 +159,9 @@ Return quickly and do slow work in `run`.
 ## Lifecycle
 
 Plugins start when the launcher starts and stay running until it exits, each on its own
-worker thread, so a slow plugin delays only its own answers. A plugin whose process has
+worker thread, so a slow plugin delays only its own answers. The window is on screen
+before the first `describe` and says which plugins are still starting; one that cannot be
+started is reported there as soon as its handshake fails. A plugin whose process has
 gone (it exited, or its pipe broke) has the call in hand answered with that fact, is
 started again with back-off (2 s, doubling to 30 s, forgotten after a healthy call), and
 the window says "started again". A plugin that hangs, timing out three calls in a row,
