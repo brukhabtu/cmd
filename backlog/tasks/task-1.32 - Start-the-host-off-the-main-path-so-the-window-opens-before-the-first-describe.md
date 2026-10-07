@@ -50,4 +50,6 @@ Owed on a Mac (can share 1.30's sitting): launch with a cold plugin environment 
 Follow-up not filed here: handshakes are still serial, so on a cold launch plugins come up one after another.
 
 Closed on the reviewer's verdict (CLOSE) against worktree commit e715fb7, merged into the branch. Owed on a Mac, in one sitting with 1.30: a cold launch shows the window at once with 'starting calculator, websearch', names dropping off as each comes up; 2+2 typed meanwhile is answered without retyping; a plugin whose command is not on PATH shows its error at once and still on the first chord press after a focus loss. CI's macOS job proves Host: Send with the FSEvents watcher.
+
+Correction to the owed Mac check, from the review: the host reaches the view only after every plugin has been reported, so 2+2 typed during a cold start shows 4 once all plugins are up, not once the calculator alone is. Should-fix from the review filed as TASK-1.39 (start trouble hides the starting line).
 <!-- SECTION:NOTES:END -->
