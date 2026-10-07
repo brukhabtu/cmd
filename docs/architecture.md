@@ -70,6 +70,11 @@ task records the check it owes.
 
 The application bundle exists: `scripts/bundle.sh` builds `cmd.app` and the macOS CI job
 publishes it. By decision 7 it carries `uv` in `Contents/MacOS` beside the binary and
-nothing else; the plugins' Python is fetched by that uv on first launch once the runtime
-wiring lands (its own task), and until then plugins resolve uv from the inherited PATH.
+nothing else. When the binary's canonical path is inside a bundle, `cmd-host`'s `bundle`
+module runs `uv python install 3.15 --no-bin` with that uv before the first plugin starts,
+while the window says Python is being fetched, and starts every plugin with the bundle
+first on PATH and uv kept to the Python it manages under `~/Library/Application
+Support/cmd`. Outside a bundle nothing is set, so `cargo run` and `cmd plugin doctor` use
+the developer's own uv. That a real first launch from the Dock fetches Python and runs the
+plugins on it is owed on a Mac.
 Signing, notarisation and a Homebrew cask wait for credentials.

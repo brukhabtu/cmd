@@ -6,6 +6,7 @@
 //! One worker per plugin means a slow plugin delays only its own answers, and the
 //! one-request-in-flight rule the process layer relies on still holds.
 
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError, RwLock, mpsc};
@@ -97,6 +98,12 @@ pub enum Startup {
     Up { plugin: usize, name: String },
     /// The plugin was not started.
     Failed(StartError),
+    /// Inside cmd.app, before any plugin starts: uv is fetching the Python they run on,
+    /// which on a first launch takes a while (decision 7).
+    FetchingPython,
+    /// The fetch is over; an error says why there is no Python. Plugins are started
+    /// anyway, so each says for itself what it lacks.
+    FetchedPython(Result<(), String>),
 }
 
 /// Why an action could not even be asked for.
@@ -204,8 +211,17 @@ impl Host {
     /// Failures come back beside the host, so one broken plugin does not take
     /// the rest down. Plugin indices in events refer to the plugins that started.
     pub fn start(plugins: Vec<Located>, timeouts: Timeouts) -> (Host, Vec<StartError>) {
+        Self::start_in(plugins, timeouts, &[])
+    }
+
+    /// [`Host::start`] with `env` set for every plugin process, now and on every restart.
+    pub fn start_in(
+        plugins: Vec<Located>,
+        timeouts: Timeouts,
+        env: &[(OsString, OsString)],
+    ) -> (Host, Vec<StartError>) {
         let mut errors = Vec::new();
-        let host = Self::start_reporting(plugins, timeouts, |report| {
+        let host = Self::start_reporting_in(plugins, timeouts, env, |report| {
             if let Startup::Failed(error) = report {
                 errors.push(error);
             }
@@ -222,6 +238,17 @@ impl Host {
     pub fn start_reporting(
         plugins: Vec<Located>,
         timeouts: Timeouts,
+        report: impl FnMut(Startup),
+    ) -> Host {
+        Self::start_reporting_in(plugins, timeouts, &[], report)
+    }
+
+    /// [`Host::start_reporting`] with `env` set for every plugin process, now and on
+    /// every restart: inside cmd.app it points them at the bundle's uv and its Python.
+    pub fn start_reporting_in(
+        plugins: Vec<Located>,
+        timeouts: Timeouts,
+        env: &[(OsString, OsString)],
         mut report: impl FnMut(Startup),
     ) -> Host {
         let (events, inbox) = async_channel::unbounded();
@@ -237,7 +264,7 @@ impl Host {
                 }));
                 continue;
             }
-            match handshake(located, timeouts.describe) {
+            match handshake(located, env, timeouts.describe) {
                 Ok((located, description, process)) => {
                     let (commands, work) = mpsc::channel();
                     let reports = events.clone();
@@ -249,6 +276,7 @@ impl Host {
                         home: located.clone(),
                         description: Arc::clone(&description),
                         process,
+                        env: env.to_vec(),
                         timeouts,
                         restarts: Restarts::default(),
                         timeouts_in_a_row: 0,
@@ -365,15 +393,14 @@ impl Host {
 
 fn handshake(
     located: Located,
+    env: &[(OsString, OsString)],
     timeout: Duration,
 ) -> Result<(Located, Description, PluginProcess), StartError> {
     let name = located.manifest.name.clone();
-    let mut process =
-        PluginProcess::spawn(&located.manifest.command, &located.dir).map_err(|source| {
-            StartError::Spawn {
-                name: name.clone(),
-                source,
-            }
+    let mut process = PluginProcess::spawn_in(&located.manifest.command, &located.dir, env)
+        .map_err(|source| StartError::Spawn {
+            name: name.clone(),
+            source,
         })?;
     let description: Description = process
         .call(Method::Describe { protocol: VERSION }, timeout)
@@ -417,6 +444,8 @@ struct Worker {
     home: Located,
     description: Arc<RwLock<Description>>,
     process: PluginProcess,
+    /// Set on every start of the process, so a restart runs on the same uv and Python.
+    env: Vec<(OsString, OsString)>,
     timeouts: Timeouts,
     restarts: Restarts,
     timeouts_in_a_row: u32,
@@ -594,7 +623,8 @@ impl Worker {
             .manifest_now()
             .map_err(|error| error.to_string())
             .and_then(|located| {
-                handshake(located, self.timeouts.describe).map_err(|error| error.to_string())
+                handshake(located, &self.env, self.timeouts.describe)
+                    .map_err(|error| error.to_string())
             });
         match started {
             Ok((located, description, process)) => {

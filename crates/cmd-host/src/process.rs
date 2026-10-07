@@ -1,5 +1,6 @@
 //! One plugin process and the request/response discipline over its pipes.
 
+use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -42,12 +43,24 @@ impl PluginProcess {
     /// Start `command` in `cwd` with stdin and stdout piped. Stderr is inherited, so a
     /// plugin's logs reach the host's stderr.
     pub fn spawn(command: &[String], cwd: &Path) -> io::Result<Self> {
+        Self::spawn_in(command, cwd, &[])
+    }
+
+    /// [`PluginProcess::spawn`] with `env` set on top of the host's own environment, as
+    /// inside cmd.app, where plugins must find the bundle's uv before any other. A `PATH`
+    /// in `env` is also where the command itself is looked up.
+    pub fn spawn_in(
+        command: &[String],
+        cwd: &Path,
+        env: &[(OsString, OsString)],
+    ) -> io::Result<Self> {
         let (program, args) = command
             .split_first()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "empty command"))?;
         let mut child = Command::new(program)
             .args(args)
             .current_dir(cwd)
+            .envs(env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
