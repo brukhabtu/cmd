@@ -16,7 +16,8 @@ use cmd_core::protocol::{Description, Items, Method, Ran, VERSION};
 use cmd_core::state::DEFAULT_ACTION;
 use cmd_host::{PluginProcess, Timeouts, manifest};
 
-const USAGE: &str = "usage: cmd-doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]";
+const USAGE: &str = "usage: cmd-doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]\n\
+  The query text is sent as given: the launcher would first strip the plugin's keyword.";
 
 /// What the person asked for, read from the arguments. Pure: a list of strings in, this out.
 #[derive(Debug, PartialEq, Eq)]

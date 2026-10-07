@@ -9,14 +9,14 @@
 use std::io;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cmd_core::protocol::{Description, Effect, Item, Items, Method, Ran, VERSION};
 use cmd_core::query::{self, Scope};
 use thiserror::Error;
 
 use crate::manifest::Located;
-use crate::process::PluginProcess;
+use crate::process::{CallError, PluginProcess};
 
 /// How long a worker waits on each kind of call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +82,9 @@ pub enum HostEvent {
         plugin: usize,
         result: Result<Effect, String>,
     },
+    /// The plugin's process had gone and a fresh one is up; `attempt` counts restarts
+    /// since the last healthy call.
+    Restarted { plugin: usize, attempt: u32 },
 }
 
 enum Command {
@@ -100,6 +103,40 @@ struct Plugin {
     located: Located,
     description: Description,
     commands: mpsc::Sender<Command>,
+}
+
+/// The shortest and longest waits before a plugin is started again after it died.
+const FIRST_RESTART_DELAY: Duration = Duration::from_secs(2);
+const LONGEST_RESTART_DELAY: Duration = Duration::from_secs(30);
+
+/// How often a plugin has died lately, so restarts slow down instead of spinning.
+#[derive(Debug, Default)]
+struct Restarts {
+    attempt: u32,
+    last: Option<Instant>,
+}
+
+impl Restarts {
+    /// How long to wait before the next restart: nothing the first time, then doubling.
+    fn delay(&self) -> Duration {
+        let Some(last) = self.last else {
+            return Duration::ZERO;
+        };
+        let wanted = FIRST_RESTART_DELAY
+            .saturating_mul(2u32.saturating_pow(self.attempt.saturating_sub(1)))
+            .min(LONGEST_RESTART_DELAY);
+        wanted.saturating_sub(last.elapsed())
+    }
+
+    fn record(&mut self) -> u32 {
+        self.attempt += 1;
+        self.last = Some(Instant::now());
+        self.attempt
+    }
+
+    fn healthy(&mut self) {
+        self.attempt = 0;
+    }
 }
 
 /// The plugins that started, in the order they were given, each behind a worker thread.
@@ -125,9 +162,10 @@ impl Host {
                     let index = started.len();
                     let reports = events.clone();
                     let name = format!("plugin:{}", description.name);
+                    let home = located.clone();
                     let spawned = thread::Builder::new()
                         .name(name.clone())
-                        .spawn(move || serve(index, process, &work, &reports, timeouts));
+                        .spawn(move || serve(index, &home, process, &work, &reports, timeouts));
                     match spawned {
                         Ok(_handle) => started.push(Plugin {
                             located,
@@ -260,14 +298,18 @@ fn handshake(
 ///
 /// Commands that piled up while a call was in flight are taken together, and only the
 /// newest query among them is asked: the window has already moved past the others.
-/// A run is never skipped.
+/// A run is never skipped. When the process has died, the command in hand is answered
+/// with that fact, the plugin is started again with back-off, and the next command runs
+/// on the fresh process.
 fn serve(
     plugin: usize,
+    home: &Located,
     mut process: PluginProcess,
     work: &mpsc::Receiver<Command>,
     reports: &async_channel::Sender<HostEvent>,
     timeouts: Timeouts,
 ) {
+    let mut restarts = Restarts::default();
     while let Ok(first) = work.recv() {
         let mut batch = vec![first];
         while let Ok(more) = work.try_recv() {
@@ -277,32 +319,96 @@ fn serve(
             .iter()
             .rposition(|command| matches!(command, Command::Query { .. }));
         for (position, command) in batch.into_iter().enumerate() {
-            let event = match command {
-                Command::Query { .. } if Some(position) != newest_query => continue,
-                Command::Query { generation, text } => HostEvent::Answered {
-                    generation,
-                    plugin,
-                    result: process
-                        .call::<Items>(Method::Query { text }, timeouts.query)
-                        .map(|items| items.items)
-                        .map_err(|error| error.to_string()),
-                },
-                Command::Run {
-                    generation,
-                    item,
-                    action,
-                } => HostEvent::Ran {
-                    generation,
-                    plugin,
-                    result: process
-                        .call::<Ran>(Method::Run { item, action }, timeouts.run)
-                        .map(|ran| ran.effect)
-                        .map_err(|error| error.to_string()),
-                },
-            };
+            if matches!(command, Command::Query { .. }) && Some(position) != newest_query {
+                continue;
+            }
+            let (event, gone) = answer(plugin, &mut process, command, timeouts);
+            if !gone {
+                restarts.healthy();
+            }
             if reports.send_blocking(event).is_err() {
                 return;
             }
+            if gone {
+                thread::sleep(restarts.delay());
+                let attempt = restarts.record();
+                match start_again(home, timeouts.describe) {
+                    Ok(fresh) => {
+                        process = fresh;
+                        if reports
+                            .send_blocking(HostEvent::Restarted { plugin, attempt })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Err(error) => eprintln!(
+                        "cmd-host: {} did not come back: {error}",
+                        home.manifest.name
+                    ),
+                }
+            }
         }
     }
+}
+
+/// Run one command and say whether the process turned out to be gone.
+fn answer(
+    plugin: usize,
+    process: &mut PluginProcess,
+    command: Command,
+    timeouts: Timeouts,
+) -> (HostEvent, bool) {
+    match command {
+        Command::Query { generation, text } => {
+            let result = process.call::<Items>(Method::Query { text }, timeouts.query);
+            let gone = is_gone(&result);
+            let result = result.map(|items| items.items).map_err(describe_failure);
+            (
+                HostEvent::Answered {
+                    generation,
+                    plugin,
+                    result,
+                },
+                gone,
+            )
+        }
+        Command::Run {
+            generation,
+            item,
+            action,
+        } => {
+            let result = process.call::<Ran>(Method::Run { item, action }, timeouts.run);
+            let gone = is_gone(&result);
+            let result = result.map(|ran| ran.effect).map_err(describe_failure);
+            (
+                HostEvent::Ran {
+                    generation,
+                    plugin,
+                    result,
+                },
+                gone,
+            )
+        }
+    }
+}
+
+fn is_gone<T>(result: &Result<T, CallError>) -> bool {
+    matches!(
+        result,
+        Err(CallError::Exited | CallError::Write(_) | CallError::Read(_))
+    )
+}
+
+fn describe_failure(error: CallError) -> String {
+    match error {
+        CallError::Exited | CallError::Write(_) | CallError::Read(_) => {
+            format!("{error}; starting it again")
+        }
+        other => other.to_string(),
+    }
+}
+
+fn start_again(home: &Located, timeout: Duration) -> Result<PluginProcess, StartError> {
+    handshake(home.clone(), timeout).map(|(_, _, process)| process)
 }

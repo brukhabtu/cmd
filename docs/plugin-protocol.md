@@ -25,8 +25,9 @@ The host runs `command` with the plugin directory as the working directory, stdi
 piped, and stderr inherited. A plugin logs to stderr. Stdout belongs to the protocol: any
 line on it that is not a protocol message is reported as an error that quotes the line.
 
-Where the host looks for plugin directories is the host's business. In development it is
-`./plugins`, or `CMD_PLUGINS`.
+Where the host looks for plugin directories is the host's business: the per-user directory
+(`~/Library/Application Support/cmd/plugins` on macOS), `./plugins` under the working
+directory when it exists, or the directories in `CMD_PLUGINS` when that is set.
 
 ## Transport
 

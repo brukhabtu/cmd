@@ -71,6 +71,8 @@ pub enum Event {
         generation: u64,
         message: String,
     },
+    /// Something the host wants shown whatever the generation: a plugin restarted, say.
+    Noted(String),
 }
 
 /// What the shell must do next.
@@ -181,6 +183,10 @@ impl Launcher {
                     self.busy = false;
                     self.message = Some(message);
                 }
+                Step::Nothing
+            }
+            Event::Noted(message) => {
+                self.message = Some(message);
                 Step::Nothing
             }
         }
@@ -616,6 +622,17 @@ mod tests {
         );
         assert_eq!(launcher.message.as_deref(), Some("hi"));
         assert_eq!(launcher.text, "x");
+    }
+
+    #[test]
+    fn a_note_is_shown_whatever_the_generation() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "x");
+        assert_eq!(
+            launcher.apply(Event::Noted("calc restarted".into())),
+            Step::Nothing
+        );
+        assert_eq!(launcher.message.as_deref(), Some("calc restarted"));
     }
 
     #[test]

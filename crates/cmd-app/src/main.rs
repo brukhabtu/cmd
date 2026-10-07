@@ -88,6 +88,10 @@ impl LauncherView {
                 generation,
                 message: format!("{}: {error}", self.plugin_name(plugin)),
             },
+            HostEvent::Restarted { plugin, attempt } => Event::Noted(format!(
+                "{} started again (restart {attempt})",
+                self.plugin_name(plugin)
+            )),
         };
         self.handle(event, cx);
     }

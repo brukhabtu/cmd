@@ -25,6 +25,7 @@ fn next(host: &Host) -> HostEvent {
 fn generation_of(event: &HostEvent) -> u64 {
     match event {
         HostEvent::Answered { generation, .. } | HostEvent::Ran { generation, .. } => *generation,
+        HostEvent::Restarted { .. } => panic!("no restart was expected"),
     }
 }
 
@@ -34,7 +35,9 @@ fn answers_arrive_as_events_with_their_generation_and_plugin() {
     assert_eq!(host.query(7, "hello"), vec![0, 1]);
     let mut answers = vec![next(&host), next(&host)];
     answers.sort_by_key(|event| match event {
-        HostEvent::Answered { plugin, .. } | HostEvent::Ran { plugin, .. } => *plugin,
+        HostEvent::Answered { plugin, .. }
+        | HostEvent::Ran { plugin, .. }
+        | HostEvent::Restarted { plugin, .. } => *plugin,
     });
     let titles: Vec<String> = answers
         .into_iter()
@@ -44,7 +47,7 @@ fn answers_arrive_as_events_with_their_generation_and_plugin() {
                 result: Ok(items),
                 ..
             } => items[0].title.clone(),
-            other @ (HostEvent::Answered { .. } | HostEvent::Ran { .. }) => {
+            other => {
                 panic!("unexpected {other:?}")
             }
         })
@@ -136,9 +139,42 @@ fn a_plugin_that_fails_to_answer_says_so_in_the_event() {
         HostEvent::Answered {
             result: Err(error), ..
         } => assert!(error.contains("boom: no"), "{error}"),
-        other @ (HostEvent::Answered { .. } | HostEvent::Ran { .. }) => {
+        other => {
             panic!("unexpected {other:?}")
         }
+    }
+}
+
+#[test]
+fn a_plugin_that_exits_is_started_again_for_the_next_query() {
+    let host = host(&[("a", false)]);
+    host.query(1, "quit");
+    match next(&host) {
+        HostEvent::Answered {
+            generation: 1,
+            result: Err(error),
+            ..
+        } => assert!(
+            error.contains("exited") && error.contains("starting it again"),
+            "{error}"
+        ),
+        other => panic!("unexpected {other:?}"),
+    }
+    assert_eq!(
+        next(&host),
+        HostEvent::Restarted {
+            plugin: 0,
+            attempt: 1
+        }
+    );
+    host.query(2, "hello");
+    match next(&host) {
+        HostEvent::Answered {
+            generation: 2,
+            result: Ok(items),
+            ..
+        } => assert_eq!(items[0].title, "a:hello"),
+        other => panic!("unexpected {other:?}"),
     }
 }
 
