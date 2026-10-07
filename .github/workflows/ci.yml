@@ -10,9 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: The Rust toolchain rust-toolchain.toml pins, with its components
+        run: rustup show
       - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v6
         with:
@@ -31,9 +30,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - name: The Rust toolchain rust-toolchain.toml pins, with its components
+        run: rustup show
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p cmd-app -- -D warnings
       - run: cargo build -p cmd-app
