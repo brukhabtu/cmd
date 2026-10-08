@@ -21,7 +21,7 @@ ordinal: 52000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A new plugin under plugins/vault. Captures `todo` and `note` from config, written through the obsidian CLI in `run` only, with an outbox in the data directory so a capture made while Obsidian is closed or past the 10 s limit is kept and retried. `search` through the CLI with a 2 s deadline, only when Obsidian is running. Tested against a fake obsidian executable whose path is configurable. The real CLI check is owed on a Mac.
+A new plugin under plugins/vault. Captures `todo` and `note` from config, written through the obsidian CLI in `run` only, with an outbox in the data directory so a capture made while Obsidian is closed or past the 10 s limit is kept and retried. `search` through the CLI with the configured query deadline (1.5 s by default, decision 10), only when Obsidian is running. Tested against a fake obsidian executable whose path is configurable. The real CLI check is owed on a Mac.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
