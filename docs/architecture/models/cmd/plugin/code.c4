@@ -1,0 +1,8 @@
+model {
+  extend cmd.plugin {
+    code = component 'Plugin code' {
+      technology 'Python package, one per plugin'
+      description 'A description, a query function and a run function: what the plugin finds and does, its own config and state, and the outside tools it calls, each under its own deadline.'
+    }
+  }
+}

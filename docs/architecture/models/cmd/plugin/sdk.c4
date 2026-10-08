@@ -1,0 +1,8 @@
+model {
+  extend cmd.plugin {
+    sdk = component 'SDK' {
+      technology 'Python library, package cmd-sdk'
+      description 'Speaks the protocol for the plugin: reads requests, calls its functions, writes the answers, and turns its failures into errors. Holds what every plugin would otherwise write for itself (decision 9).'
+    }
+  }
+}

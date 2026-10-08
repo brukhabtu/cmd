@@ -2,7 +2,7 @@ model {
   extend cmd.app {
     host = component 'Plugin host' {
       technology 'Rust library, crate cmd-host'
-      description 'Finds plugin manifests, runs each plugin as a child process on its own worker thread, exchanges protocol lines with it under timeouts, starts it again when it dies, and reports answers as events.'
+      description 'Finds plugin manifests, runs each plugin as a child process on its own worker thread, loads it only at a protocol version it accepts, exchanges protocol lines with it under timeouts, starts it again when it dies, and reports answers as events.'
     }
   }
 }

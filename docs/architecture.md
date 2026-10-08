@@ -1,18 +1,20 @@
 # Architecture
 
 The model is LikeC4 in `docs/architecture/`, orthodox C4: a context view, a container view,
-one component view, and one scenario. `npx likec4 start docs/architecture` opens it;
-`npx likec4 validate docs/architecture` checks it.
+two component views (the app's and a plugin's), and one scenario.
+`npx likec4 start docs/architecture` opens it; `npx likec4 validate docs/architecture`
+checks it.
 
 ## In one paragraph
 
 cmd is one software system with two kinds of container. The **launcher app** is a Rust
 process with a GPUI window. A **plugin process** is a Python program, one per installed
-plugin, that the app starts and talks to over its stdin and stdout in newline-delimited
-JSON. The app routes what the person types to the plugins that should see it, merges their
-answers into one ranked list, and when the person presses Enter asks the owning plugin what
-to do, then does it: copy, open, show, or hide. macOS is outside the system: the pasteboard,
-Launch Services, and the global hotkey are reached through it.
+plugin, built on the SDK (`cmd-sdk`), that the app starts and talks to over its stdin and
+stdout in newline-delimited JSON. The app routes what the person types to the plugins
+that should see it, merges their answers into one ranked list, and when the person
+presses Enter asks the owning plugin what to do, then does it: copy, open, show, or hide.
+macOS is outside the system: the pasteboard, Launch Services, and the global hotkey are
+reached through it.
 
 ## Why these shapes
 
@@ -48,7 +50,25 @@ the window, and it is the same idea as the core's steps, one level out.
 **Crates are the components.** The component view of the app has three boxes because the
 app has three crates. Each crate's `Cargo.toml` declares what it may depend on, so a new
 dependency from the core on the host, or from the host on the window, is a visible change
-to a manifest rather than a quiet import.
+to a manifest rather than a quiet import. The host depends on the core for the protocol's
+types and versions and for routing; the core's state machine, driven by the window, merges
+the answers. A plugin's component view has two boxes, the SDK and the plugin's own code.
+
+**The kernel owns what every plugin shares, the SDK what every plugin would repeat, and a
+plugin the rest.** The kernel is the app's three crates. It owns what must see every
+plugin, needs the operating system, or must look the same everywhere: routing and
+keywords, merging, processes and deadlines, each plugin's data and config directory, and
+effects. The SDK owns what every plugin would otherwise write for itself: the serve loop,
+encoding at the version the host agreed to, and the helpers for that directory, a call
+with a deadline and a cache. A plugin owns what it does, its config, its state, and the
+outside tools it calls, such as the obsidian CLI or a provider command. No tool is called
+in `query` without a deadline of its own, and a provider is never called there at all: it
+fills a cache that `query` reads. The contract grows in three ways: an optional
+field a host may ignore, a capability the host names in `describe` when a plugin needs to
+choose a fallback, and a new version for anything the host must decode, such as a new
+effect kind. The host loads every version from 0 to its own. Messages a plugin starts,
+and the background-task indicators that need them, wait. Decision 9 has the rules and the
+reasons; the version negotiation and the per-plugin directories are not built yet.
 
 ## Where the boundaries are enforced
 

@@ -1,0 +1,8 @@
+// Components — Plugin process. The SDK and the plugin's own code: the line decision 9
+// draws, which scripts/import_boundaries.py enforces (the SDK imports no plugin).
+views {
+  view cmdPluginComponents of cmd.plugin {
+    title 'Components — Plugin process'
+    include *
+  }
+}
