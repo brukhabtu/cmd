@@ -43,7 +43,7 @@ vault = "Work"
 
 [obsidian.deadlines]
 probe = 0.3
-query = 2.0
+query = 1.5
 write = 5.0
 run = 2.0
 
@@ -99,10 +99,10 @@ fail quietly.
 | `date_format`, `time_format` | no | `"%Y-%m-%d"`, `"%H:%M"` | strftime formats for `{date}` and `{time}` |
 | `obsidian.bin` | yes | none | absolute path to an executable file |
 | `obsidian.app` | no | `"/Applications/Obsidian.app"` | absolute; what "Open Obsidian" opens |
-| `obsidian.process` | no | `"Obsidian"` | the exact process name the probe looks for |
+| `obsidian.process` | no | `"Obsidian"` **[2.4]** | the exact process name the probe looks for; the spike records what `pgrep -x` sees |
 | `obsidian.vault` | no | none, so the CLI's own default vault | when set, every call names this vault **[2.4]** how |
 | `obsidian.deadlines.probe` | no | `0.3` | seconds, above 0 |
-| `obsidian.deadlines.query` | no | `2.0` **[2.4]** | seconds, above 0; `probe + query` at most 2.5 |
+| `obsidian.deadlines.query` | no | `1.5` **[2.4]** | seconds, above 0; `probe + query` at most 1.8, since the call can wait up to 1 s more for pipes a grandchild holds open, and the three together stay under the host's 3 s |
 | `obsidian.deadlines.write` | no | `5.0` **[2.4]** | seconds, above 0 and at most 30; a call on the outbox thread |
 | `obsidian.deadlines.run` | no | `2.0` | seconds, above 0 and at most 8; the longest `run` spends waiting on the CLI |
 | `capture.keyword` | yes | | one word; unique among every keyword here, ASCII case ignored |
@@ -124,8 +124,8 @@ A config problem is a row, never an exception, and never stops what still works:
 
 | Problem | The plugin | The person sees |
 |---|---|---|
-| no `config.toml` | starts with no captures | on `vault`: "No config: create config.toml in <directory>"; Enter opens the directory |
-| it does not parse | starts with no captures | the parser's line, column and message, on `vault` and on each keyword of the last config that parsed (kept in the data directory as `keywords.json`), with "nothing is captured until this is fixed" |
+| no `config.toml`, or an empty one (`config()` returns `{}` for both) | starts with no captures | on `vault`: "No config: create config.toml in <directory>"; Enter opens the directory |
+| it does not parse, is a directory or cannot be read (`config()` raises `ConfigError`, whose message holds the path and the parser's own text, line and column included) | starts with no captures | that message, on `vault` and on each keyword of the last config that parsed (kept in the data directory as `keywords.json`), with "nothing is captured until this is fixed" |
 | a capture or view is invalid | drops that one; the rest work | "<keyword>: <problem>" on its keyword, when it has one, and on `vault` |
 | `obsidian.bin` is not an absolute, executable file | captures still queue and wait | the problem, on every keyword |
 | a deadline is out of range | uses that deadline's default | the problem, on `vault` |
@@ -152,15 +152,20 @@ such clashes.
   the CLI's `search` or `tasks`, made only after the probe said Obsidian is running.
 - **Every call has a deadline under the host's.** The probe is `/usr/bin/pgrep -x
   <process>` with the `probe` deadline: exit 0 is running, anything else or a timeout is
-  not running. A view's CLI call has the `query` deadline, so the two together stay
-  within 2.5 s of the host's 3 s. Both go through the SDK's call (task 2.6), which kills
-  the child at its deadline and captures its stdout. The probe's answer is kept 2 s, a
+  not running. A view's CLI call has the `query` deadline. Both go through the SDK's
+  call (task 2.6) with `kill_on_timeout=True`, which kills the child and what it started
+  at its deadline, and captures its stdout and stderr. After a normal exit the call can
+  wait up to 1 s more for pipes a grandchild holds open, so the probe, the view's call
+  and that grace together stay under the host's 3 s (hence `probe + query` at most 1.8).
+  The call raises `OSError` when `bin` does not exist or will not run: `query` shows it as
+  a row, and the outbox thread counts it as a failed call. The probe's answer is kept 2 s, a
   search's answer 10 s per text, and the task list 30 s, filtered for each keystroke in
   the plugin. **[2.4]** row 1 can move views off the query path altogether.
 - **A closed Obsidian** shows on a capture's row as the subtitle's end, "Obsidian is not
   running: kept until it opens", and as a view's only row, "Obsidian is not running",
   whose Enter opens `obsidian.app`. A running Obsidian that misses the deadline shows
-  "Obsidian did not answer within 2.0 s"; a CLI error shows the first line of its stderr.
+  "Obsidian did not answer within 1.5 s"; a CLI error shows the first line of its stderr
+  **[2.4]** (that errors arrive on stderr, and in what form, is a guess until the spike).
 
 A keyword's answer is its own rows, then up to three outbox rows, then "N more: type
 vault" if there are more. `vault` shows Obsidian running or not, every config problem and
@@ -203,11 +208,17 @@ which `query` reads and `run` and the thread change.
 |---|---|---|
 | `pending` | saved and waiting for its next try, which for a new entry is now | `writing`, when it is due and Obsidian is running |
 | `writing` | a CLI call for it is in flight | gone (written); `pending` (the call failed and tries remain); `unknown` (the call was killed at its deadline); `failed` (the fifth failed call) |
-| `unknown` | the call was killed at its deadline, or the plugin stopped mid-call, so the write may have landed | `writing`, through the duplicate check below |
+| `unknown` | the call was killed at its deadline, or the plugin stopped mid-call, so the write may have landed | gone (the check found it landed); `writing` (the check found it had not); `unknown` again, with the next try later (the check itself failed or was killed); `failed` (the fifth try, a check counting as one) |
 | `failed` | no tries remain | `pending` on Retry; gone on Discard |
 | gone | written, or discarded: the file is deleted | |
 
 At start, an entry found in `writing` becomes `unknown`.
+
+**Durable first.** A change of state is written to the entry's file, the same way (a
+temporary name, fsync, rename), before the call it announces. `writing` is on disk before
+the CLI is called, so a crash after the CLI succeeded and before the file was deleted
+restarts the entry as `unknown`, and the check finds the line. An entry is deleted only
+after the call returned success or the check found the line.
 
 **Retries.** One thread, which the plugin starts at start, is the only code that calls the
 CLI to write. It takes the oldest due entry, one at a time, so two captures to one note
@@ -238,7 +249,8 @@ new day's note, so the line may be written twice.
 |---|---|---|---|
 | `pending`, Obsidian closed | Waiting: <line or target> | <keyword>, <target>: Obsidian is not running | Copy, Discard |
 | `pending` after a failed call | Waiting: <line or target> | try <n> of 5 at <time>: <last error> | Retry now, Copy, Discard |
-| `writing` or `unknown` | Writing: <line or target> | checking whether it landed | Copy |
+| `writing` | Writing: <line or target> | a call is in flight | Copy |
+| `unknown` | Checking: <line or target> | <last error, or: checking whether it landed> | Retry now, Copy, Discard |
 | `failed` | Not written: <line or target> | <last error> | Retry, Copy, Discard |
 
 Retry sets the entry `pending` with no tries used and `next_try` now. Copy returns `copy`
@@ -255,7 +267,7 @@ wait proves too long in use.
 
 | The spike finds | Then | Otherwise |
 |---|---|---|
-| warm `search` and `tasks` answer well inside 2 s | views call the CLI in `query` as above; `deadlines.query` defaults to three times the warm 95th percentile, at least 0.5 s and at most 2.0 s | views read caches the plugin's thread refreshes while Obsidian runs; `search` becomes a match on note names from a cached list, and the owner decides whether full-text search moves to Enter |
+| warm `search` and `tasks` answer well inside 1.5 s | views call the CLI in `query` as above; `deadlines.query` defaults to three times the warm 95th percentile, at least 0.5 s and at most 1.5 s | views read caches the plugin's thread refreshes while Obsidian runs; `search` becomes a match on note names from a cached list, and the owner decides whether full-text search moves to Enter |
 | a call launches a closed Obsidian | the probe guards every call, in `query` and on the thread | the probe still runs in `query`, for the "not running" row |
 | a call hangs while Obsidian is paused | the `unknown` state and the check are met often | the same rules, met rarely |
 | the CLI writes while Obsidian is closed, without launching it | the thread drops the probe and drains at once | entries wait for Obsidian, as above |
@@ -265,8 +277,10 @@ wait proves too long in use.
 | `daily:append` creates a missing daily note | `@daily` works as written | `@daily` is refused at start with a row saying to use a path target such as `"Daily/{date}.md"` with the daily template |
 | the warm 95th percentile of `append` | `deadlines.write` defaults to three times it, at least 2 s and at most 30 s | |
 
-The spike's list lacks five things this design needs, which it should answer too: whether
-the CLI can put a line under a heading (if not, `heading` is refused at start with a row
+The spike's list lacks seven things this design needs, which it should answer too: the
+process name `pgrep -x` finds for a running Obsidian; whether CLI errors arrive on stderr
+and in what form; whether the CLI can open a note, which the `open` kind will need;
+whether the CLI can put a line under a heading (if not, `heading` is refused at start with a row
 saying to remove it, until the owner chooses another way); which command reads a note and
 today's daily note; where the CLI is installed on disk; what `create` does to a path that
 exists; and how a call names a vault.
@@ -284,8 +298,9 @@ exists; and how a call names a vault.
   Enter on a `todo` or `note` does not: it queues and closes.
 - Outbox rows appear only on the plugin's own keywords, never on other text, so a failed
   capture is seen the next time any vault keyword is typed rather than on every keystroke.
-- `config()` returns the parsed `config.toml` and raises the parser's error, with line and
-  column, for a file that does not parse, and a distinct error for one that is missing.
+- `config()` is as the SDK has it: `{}` for a missing directory or file, `ConfigError`
+  for one that does not parse or cannot be read. The plugin cannot tell a missing file from
+  an empty one, and does not need to: both leave it with nothing to capture.
 - No direct file writes, as above.
 
 ## Consequences
@@ -294,10 +309,9 @@ exists; and how a call names a vault.
   `vault` view, against the fake CLI. The `open` kind (`1:1`) and the `tasks` view need a
   task of their own, to be filed; the schema already holds them, so no config changes when
   they land.
-- Task 2.4 gains the five questions above, and its table sets the defaults marked
-  **[2.4]**.
-- Task 2.6's call must tell a call killed at its deadline from one that exited non-zero,
-  since one makes an entry `unknown` and the other `pending`.
+- Task 2.4 gains the questions above, and its table sets the defaults marked **[2.4]**.
+- Task 2.6's call already tells a call killed at its deadline (`timed_out`, no return code)
+  from one that exited non-zero, which is what makes an entry `unknown` or `pending`.
 - Draft 5 must let `query` say which keyword was typed, or the plugin keeps matching the
   first word itself. When the host names the `keywords` capability, the plugin sends its
   configured keywords; with an older host it keeps the branch above.
