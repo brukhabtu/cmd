@@ -249,6 +249,23 @@ impl Host {
         plugins: Vec<Located>,
         timeouts: Timeouts,
         env: &[(OsString, OsString)],
+        report: impl FnMut(Startup),
+    ) -> Host {
+        Self::start_reporting_with(plugins, timeouts, env, None, report)
+    }
+
+    /// [`Host::start_reporting_in`] that also gives each plugin a data and a config
+    /// directory under `user_dir`, the per-user cmd directory (`manifest::user_cmd_dir`;
+    /// tests pass a scratch directory, as they pass a scratch home elsewhere). Each
+    /// plugin process gets `CMD_PLUGIN_DATA` and `CMD_PLUGIN_CONFIG`, now and on every
+    /// restart. The data directory is created and left unwatched; the config directory
+    /// is not created, and a change in it, or its appearing, reloads the plugin. With
+    /// `None` the plugins get neither variable and nothing more is watched.
+    pub fn start_reporting_with(
+        plugins: Vec<Located>,
+        timeouts: Timeouts,
+        env: &[(OsString, OsString)],
+        user_dir: Option<&Path>,
         mut report: impl FnMut(Startup),
     ) -> Host {
         let (events, inbox) = async_channel::unbounded();
@@ -264,7 +281,15 @@ impl Host {
                 }));
                 continue;
             }
-            match handshake(located, env, timeouts.describe) {
+            let env = match plugin_env(&located.manifest.name, user_dir, env) {
+                Ok(env) => env,
+                Err(source) => {
+                    let name = located.manifest.name;
+                    report(Startup::Failed(StartError::Spawn { name, source }));
+                    continue;
+                }
+            };
+            match handshake(located, &env, timeouts.describe) {
                 Ok((located, description, process)) => {
                     let (commands, work) = mpsc::channel();
                     let reports = events.clone();
@@ -276,7 +301,7 @@ impl Host {
                         home: located.clone(),
                         description: Arc::clone(&description),
                         process,
-                        env: env.to_vec(),
+                        env,
                         timeouts,
                         restarts: Restarts::default(),
                         timeouts_in_a_row: 0,
@@ -299,7 +324,7 @@ impl Host {
                 Err(error) => report(Startup::Failed(error)),
             }
         }
-        let watcher = watch_plugins(&started);
+        let watcher = watch_plugins(&started, user_dir);
         Host {
             plugins: started,
             events,
@@ -389,6 +414,32 @@ impl Host {
         }
         Ok(())
     }
+}
+
+/// The environment for one plugin: `base`, and with a `user_dir` the two variables naming
+/// its data directory, which is created here, and its config directory, which is not.
+fn plugin_env(
+    name: &str,
+    user_dir: Option<&Path>,
+    base: &[(OsString, OsString)],
+) -> io::Result<Vec<(OsString, OsString)>> {
+    let mut env = base.to_vec();
+    let Some(user_dir) = user_dir else {
+        return Ok(env);
+    };
+    if !manifest::is_directory_name(name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{name:?} cannot name a data directory"),
+        ));
+    }
+    let user_dir = std::path::absolute(user_dir)?;
+    let data = manifest::plugin_data_root(&user_dir).join(name);
+    std::fs::create_dir_all(&data)?;
+    let config = manifest::plugin_config_root(&user_dir).join(name);
+    env.push(("CMD_PLUGIN_DATA".into(), data.into_os_string()));
+    env.push(("CMD_PLUGIN_CONFIG".into(), config.into_os_string()));
+    Ok(env)
 }
 
 fn handshake(
@@ -665,9 +716,19 @@ fn describe_failure(error: CallError) -> String {
     }
 }
 
-/// Watch every plugin directory and tell the owning worker when a file changes.
-fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
-    let homes: Vec<(PathBuf, mpsc::Sender<Command>)> = plugins
+/// Watch every plugin directory, and with a `user_dir` every plugin's config directory,
+/// and tell the owning worker when a file changes.
+///
+/// A config directory may not exist yet, and is not the host's to create. So the watch is
+/// on `plugin-config`, which holds them all and which the host makes if it is missing:
+/// a config directory appearing in it, or a file in one, arrives as an event whose path
+/// is under that plugin's directory. The data directories are under `plugin-data`, which
+/// is never watched.
+fn watch_plugins(
+    plugins: &[Plugin],
+    user_dir: Option<&Path>,
+) -> Option<notify::RecommendedWatcher> {
+    let mut homes: Vec<(PathBuf, mpsc::Sender<Command>)> = plugins
         .iter()
         .map(|plugin| {
             let dir = plugin
@@ -678,7 +739,21 @@ fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
             (dir, plugin.commands.clone())
         })
         .collect();
-    let dirs: Vec<PathBuf> = homes.iter().map(|(dir, _)| dir.clone()).collect();
+    let mut roots: Vec<PathBuf> = homes.iter().map(|(dir, _)| dir.clone()).collect();
+    let config_root = user_dir.and_then(|user_dir| {
+        let root = manifest::plugin_config_root(&std::path::absolute(user_dir).ok()?);
+        std::fs::create_dir_all(&root).ok()?;
+        root.canonicalize().ok()
+    });
+    if let Some(root) = &config_root {
+        for plugin in plugins {
+            let name = &plugin.located.manifest.name;
+            if manifest::is_directory_name(name) {
+                homes.push((root.join(name), plugin.commands.clone()));
+            }
+        }
+        roots.push(root.clone());
+    }
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         let Ok(event) = event else { return };
         if !event.kind.is_modify() && !event.kind.is_create() && !event.kind.is_remove() {
@@ -693,7 +768,7 @@ fn watch_plugins(plugins: &[Plugin]) -> Option<notify::RecommendedWatcher> {
         }
     })
     .ok()?;
-    for dir in &dirs {
+    for dir in &roots {
         if let Err(error) = watcher.watch(dir, RecursiveMode::Recursive) {
             eprintln!("cmd-host: not watching {}: {error}", dir.display());
         }

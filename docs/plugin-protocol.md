@@ -34,6 +34,28 @@ directory when it exists, or the directories in `CMD_PLUGINS` when that is set. 
 directories declaring one name are not both run: the first in that order is, and the
 second is reported as a start failure naming both.
 
+## Where a plugin keeps its data and config
+
+The host gives each plugin two directories and says where they are in the environment of
+the plugin process, on every start and restart. They are environment, not protocol: no
+field, no version, no capability. `<name>` is the `name` in the manifest, and the cmd
+directory is the parent of the per-user plugin directory
+(`~/Library/Application Support/cmd` on macOS).
+
+| Variable | Directory | The host |
+|---|---|---|
+| `CMD_PLUGIN_DATA` | `<cmd directory>/plugin-data/<name>/` | creates it before the plugin starts and does not watch it |
+| `CMD_PLUGIN_CONFIG` | `<cmd directory>/plugin-config/<name>/` | does not create it, and watches it |
+
+Both are absolute paths. A plugin writes what it keeps (state, caches, an outbox) in the
+data directory: a write there never restarts it, which a write in its own directory does,
+because that directory is watched. The user's settings for the plugin are the file
+`config.toml` in the config directory. A change to anything in that directory, or the
+directory appearing after the launcher started, starts the plugin again like a change to
+its code, and the window says "reloaded". A plugin must expect the config directory not
+to exist. A manifest name that cannot be one directory name (empty, `.`, `..`, or
+holding a path separator) is a start failure.
+
 ## Transport
 
 UTF-8 JSON, one message per line, `\n` terminated.

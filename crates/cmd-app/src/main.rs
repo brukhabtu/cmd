@@ -644,9 +644,12 @@ fn start_host_beside(located: Vec<Located>, reports: async_channel::Sender<Start
             // Inside cmd.app the bundle's uv fetches Python here, before the first plugin.
             let app = running_bundle();
             let path = std::env::var_os("PATH");
+            let user_dir =
+                std::env::var_os("HOME").map(|home| manifest::user_cmd_dir(Path::new(&home)));
             let host = bundle::start_reporting(
                 app.as_ref(),
                 path.as_deref(),
+                user_dir.as_deref(),
                 located,
                 Timeouts::default(),
                 |report| {

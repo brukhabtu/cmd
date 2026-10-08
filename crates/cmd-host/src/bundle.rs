@@ -107,21 +107,23 @@ impl Bundle {
 
 /// [`Host::start_reporting`] for the app: inside a bundle, the Python is fetched before
 /// the first plugin starts and every plugin runs with [`Bundle::environment`]; outside
-/// one, this is [`Host::start_reporting`] itself.
+/// one, this is [`Host::start_reporting_with`] itself. `user_dir` is the per-user cmd
+/// directory the plugins' data and config directories are under.
 pub fn start_reporting(
     bundle: Option<&Bundle>,
     inherited_path: Option<&OsStr>,
+    user_dir: Option<&Path>,
     plugins: Vec<Located>,
     timeouts: Timeouts,
     mut report: impl FnMut(Startup),
 ) -> Host {
     let Some(bundle) = bundle else {
-        return Host::start_reporting(plugins, timeouts, report);
+        return Host::start_reporting_with(plugins, timeouts, &[], user_dir, report);
     };
     let env = bundle.environment(inherited_path);
     report(Startup::FetchingPython);
     report(Startup::FetchedPython(bundle.install_python(&env)));
-    Host::start_reporting_in(plugins, timeouts, &env, report)
+    Host::start_reporting_with(plugins, timeouts, &env, user_dir, report)
 }
 
 #[cfg(test)]

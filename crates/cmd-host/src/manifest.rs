@@ -109,14 +109,37 @@ pub fn plugin_dirs(env: Option<&str>, home: Option<&Path>, cwd: &Path) -> Vec<Pa
     dirs
 }
 
-/// The per-user plugin directory: `~/Library/Application Support/cmd/plugins` on macOS,
-/// `~/.config/cmd/plugins` elsewhere.
-pub fn user_plugin_dir(home: &Path) -> PathBuf {
+/// The per-user cmd directory, which holds the plugins and what they keep:
+/// `~/Library/Application Support/cmd` on macOS, `~/.config/cmd` elsewhere.
+pub fn user_cmd_dir(home: &Path) -> PathBuf {
     if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/cmd/plugins")
+        home.join("Library/Application Support/cmd")
     } else {
-        home.join(".config/cmd/plugins")
+        home.join(".config/cmd")
     }
+}
+
+/// The per-user plugin directory: `plugins` under [`user_cmd_dir`].
+pub fn user_plugin_dir(home: &Path) -> PathBuf {
+    user_cmd_dir(home).join("plugins")
+}
+
+/// Where the host puts the data directories: `plugin-data` under the per-user cmd
+/// directory `user_dir`. Nothing watches it.
+pub fn plugin_data_root(user_dir: &Path) -> PathBuf {
+    user_dir.join("plugin-data")
+}
+
+/// Where each plugin's config directory is: `plugin-config` under `user_dir`. The host
+/// watches it.
+pub fn plugin_config_root(user_dir: &Path) -> PathBuf {
+    user_dir.join("plugin-config")
+}
+
+/// Whether `name` can be one directory name. A manifest name is the plugin's own to
+/// choose, and it must not lead the host out of the directory it is a name in.
+pub fn is_directory_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0'])
 }
 
 /// Load the plugins under every root, in root order then name order.
@@ -208,6 +231,19 @@ mod tests {
         let dirs = plugin_dirs(None, Some(Path::new("/home/me")), &scratch);
         assert_eq!(dirs[1], scratch.join("plugins"));
         assert!(user_plugin_dir(Path::new("/home/me")).ends_with("cmd/plugins"));
+    }
+
+    #[test]
+    fn the_data_and_config_directories_sit_beside_the_plugins() {
+        let home = Path::new("/home/me");
+        let user = user_cmd_dir(home);
+        assert_eq!(user_plugin_dir(home), user.join("plugins"));
+        assert_eq!(plugin_data_root(&user), user.join("plugin-data"));
+        assert_eq!(plugin_config_root(&user), user.join("plugin-config"));
+        assert!(is_directory_name("vault"));
+        for bad in ["", ".", "..", "a/b", "../x", "a\\b"] {
+            assert!(!is_directory_name(bad), "{bad:?}");
+        }
     }
 
     #[test]

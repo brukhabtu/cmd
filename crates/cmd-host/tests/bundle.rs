@@ -186,6 +186,7 @@ fn start_bundled(fake: &Fake, bundle: Option<&Bundle>) -> (Host, Vec<Startup>) {
     let host = bundle::start_reporting(
         bundle,
         inherited.as_deref(),
+        None,
         vec![fake.bundled_plugin()],
         Timeouts::default(),
         |report| reports.push(report),
@@ -260,9 +261,16 @@ fn outside_a_bundle_nothing_is_fetched() {
     let fake = Fake::new("no-bundle");
     let plugin = fake.plain_plugin();
     let mut reports = Vec::new();
-    let _host = bundle::start_reporting(None, None, vec![plugin], Timeouts::default(), |report| {
-        reports.push(report);
-    });
+    let _host = bundle::start_reporting(
+        None,
+        None,
+        None,
+        vec![plugin],
+        Timeouts::default(),
+        |report| {
+            reports.push(report);
+        },
+    );
     assert!(
         matches!(reports.as_slice(), [Startup::Up { .. }]),
         "{reports:?}"
