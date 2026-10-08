@@ -119,6 +119,12 @@ What each part declares:
   `Show` a line and stay open, or `Close`. A plugin may also do its own work in `run`
   (toggle a setting, say) and then return `Close`.
 - Log to stderr. Stdout belongs to the protocol, and the host rejects anything else on it.
+  While `serve` runs, `sys.stdout` points at stderr, so a stray `print` is logged and costs
+  nothing. A program you start does not follow: it writes to the real stdout unless you
+  give it somewhere else, as `subprocess.run(..., capture_output=True)` does.
+- Return what the protocol can carry. An item with a title that is not text, a `score` that
+  is NaN or infinite, or a `PathIcon` holding a `pathlib.Path` instead of a string gets a
+  `plugin_error` that names the item, and the plugin keeps serving. Use `str(path)`.
 
 **4. Try it without the app.** `cmd plugin doctor` runs a plugin directory the way the
 launcher does and prints what comes back:

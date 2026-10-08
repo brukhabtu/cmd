@@ -24,6 +24,9 @@ command = ["uv", "run", "--quiet", "calculator"]
 The host runs `command` with the plugin directory as the working directory, stdin and stdout
 piped, and stderr inherited. A plugin logs to stderr. Stdout belongs to the protocol: any
 line on it that is not a protocol message is reported as an error that quotes the line.
+The Python SDK keeps the real stdout for the protocol and points `sys.stdout` at stderr
+while it serves, so a stray `print` is logged instead; a program the plugin starts still
+inherits the real stdout unless the plugin gives it somewhere else.
 
 Where the host looks for plugin directories is the host's business: the per-user directory
 (`~/Library/Application Support/cmd/plugins` on macOS), `./plugins` under the working
@@ -96,9 +99,10 @@ new kind needs a new protocol version.
 
 `id` is what comes back in `run`. `subtitle`, `score`, `actions` and `icon` are optional.
 
-`score` is a confidence between 0 and 1 for a fuzzy match. Leave it out for a definite
-answer: the host ranks an item without a score above every item with one, so a calculator's
-`4` sits above an application whose name happens to contain a 4.
+`score` is a confidence between 0 and 1 for a fuzzy match, and a finite number: JSON has no
+NaN or infinity, and the SDK answers an item that has one with a `plugin_error`. Leave it
+out for a definite answer: the host ranks an item without a score above every item with
+one, so a calculator's `4` sits above an application whose name happens to contain a 4.
 
 `actions` are what Enter can do. The first is the default. With no actions the host sends
 `run` with action `"default"`.
@@ -180,8 +184,9 @@ window, and the old process keeps answering while a reload fails.
 
 | Code | Who | Meaning |
 |---|---|---|
-| `bad_request` | SDK | The host sent a line the SDK could not read. `id` is 0 when the line had no id |
-| `plugin_error` | SDK | The plugin's own code raised. `message` names the exception |
+| `bad_request` | SDK | The host sent a line the SDK could not read. `id` is the request's own, or 0 when the line had none |
+| `unknown_method` | SDK | The host sent a well-formed request for a method the SDK does not have, as a newer protocol might. `id` is the request's own |
+| `plugin_error` | SDK | The plugin's own code raised, or returned what the protocol cannot carry: a score that is NaN, an icon path that is not text. `message` names the exception, and for a bad item the item |
 
 Plugins may invent further codes. The host shows `code: message` to the person. An error
 whose `id` is 0 answers the request in flight, since the host sends one request at a time.

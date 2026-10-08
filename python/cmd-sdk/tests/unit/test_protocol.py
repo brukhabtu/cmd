@@ -18,10 +18,12 @@ from cmd_sdk.protocol import (
     PROTOCOL,
     Describe,
     Failure,
+    InvalidAnswerError,
     MalformedRequestError,
     Query,
     Run,
     Success,
+    UnknownMethodError,
     decode_request,
     dispatch,
     encode_response,
@@ -127,3 +129,66 @@ def test_responses_are_one_json_line() -> None:
     line = encode_response(Failure(8, "bad_request", "why"))
     assert line.endswith("\n")
     assert json.loads(line) == {"id": 8, "error": {"code": "bad_request", "message": "why"}}
+
+
+def test_a_request_for_an_unknown_method_is_an_unknown_method_error_with_its_id() -> None:
+    for line in (
+        '{"id": 12, "method": "dance", "params": {}}',
+        '{"id": 12, "method": "dance"}',
+        '{"id": 12, "method": "dance", "params": 5}',
+    ):
+        with pytest.raises(UnknownMethodError, match="unknown method 'dance'") as caught:
+            decode_request(line)
+        assert caught.value.request_id == 12
+
+
+@pytest.mark.parametrize(
+    ("line", "request_id"),
+    [
+        ("not json", 0),
+        ("[]", 0),
+        ('{"method": "query", "params": {"text": "x"}}', 0),
+        ('{"id": 4, "method": "query"}', 4),
+        ('{"id": 4, "method": 5, "params": {}}', 4),
+        ('{"id": 4, "method": "query", "params": {"text": 5}}', 4),
+        ('{"id": 4, "method": "run", "params": {"item": "a"}}', 4),
+    ],
+)
+def test_a_malformed_request_carries_its_id_when_it_had_one(line: str, request_id: int) -> None:
+    with pytest.raises(MalformedRequestError) as caught:
+        decode_request(line)
+    assert not isinstance(caught.value, UnknownMethodError)
+    assert caught.value.request_id == request_id
+
+
+@pytest.mark.parametrize("number", [float("nan"), float("inf"), -float("inf")])
+def test_a_response_json_has_no_form_for_is_refused_not_written_as_nan(number: float) -> None:
+    with pytest.raises(ValueError, match="not JSON compliant"):
+        encode_response(Success(1, {"score": number}))
+
+
+def test_a_response_with_text_that_is_not_valid_unicode_is_refused() -> None:
+    with pytest.raises(ValueError, match="surrogates not allowed"):
+        encode_response(Success(1, {"title": "caf\udce9"}))
+
+
+def test_non_ascii_text_stays_as_it_is_on_the_wire() -> None:
+    assert encode_response(Success(1, {"title": "café ⌘"})) == (
+        '{"id": 1, "result": {"title": "café ⌘"}}\n'
+    )
+
+
+def test_an_item_that_is_not_an_item_is_named_by_its_place() -> None:
+    plugin = Plugin(Description("p", "1"), lambda _t: (Item("a", "A"), {"id": "b"}), PLUGIN.run)  # type: ignore[arg-type,return-value]
+    with pytest.raises(InvalidAnswerError, match="item 2 is a dict"):
+        dispatch(Query(1, "x"), plugin)
+
+
+def test_a_finite_score_of_any_number_type_is_carried_as_it_is() -> None:
+    plugin = Plugin(
+        Description("p", "1"),
+        lambda _t: (Item("a", "A", score=1), Item("b", "B", score=0.25), Item("c", "C", score=0)),
+        PLUGIN.run,
+    )
+    result = dispatch(Query(1, "x"), plugin).result
+    assert [item["score"] for item in result["items"]] == [1, 0.25, 0]
