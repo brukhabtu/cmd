@@ -127,7 +127,7 @@ What each part declares:
   `plugin_error` that names the item, and the plugin keeps serving. Use `str(path)`.
 
 **4. Try it without the app.** `cmd plugin doctor` runs a plugin directory the way the
-launcher does and prints what comes back:
+launcher does, with its data and config directories, and prints what comes back:
 
 ```sh
 cmd plugin doctor /path/to/your/plugin --query "rust gpui" --run "https://duckduckgo.com/?q=rust+gpui" --action copy

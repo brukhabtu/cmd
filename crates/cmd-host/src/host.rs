@@ -418,7 +418,7 @@ impl Host {
 
 /// The environment for one plugin: `base`, and with a `user_dir` the two variables naming
 /// its data directory, which is created here, and its config directory, which is not.
-fn plugin_env(
+pub(crate) fn plugin_env(
     name: &str,
     user_dir: Option<&Path>,
     base: &[(OsString, OsString)],

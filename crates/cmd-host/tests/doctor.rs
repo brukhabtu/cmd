@@ -64,3 +64,59 @@ fn a_missing_manifest_is_a_plugin_problem_and_bad_arguments_are_a_usage_problem(
     assert_eq!(doctor(&empty, &[]).status.code(), Some(1));
     assert_eq!(doctor(&empty, &["--query"]).status.code(), Some(2));
 }
+
+#[test]
+fn a_plugin_is_started_with_its_data_and_config_directories() {
+    let root = std::env::temp_dir().join(format!("cmd-doctor-env-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join("envy");
+    let home = root.join("home");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(
+        dir.join("plugin.py"),
+        r#"import json, os, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["method"] == "describe":
+        result = {"name": "envy", "version": "1", "protocol": 1}
+    else:
+        result = {"items": [{"id": "d", "title": os.environ.get("CMD_PLUGIN_DATA", "unset")}]}
+    print(json.dumps({"id": request["id"], "result": result}), flush=True)
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("cmd-plugin.toml"),
+        "name = \"envy\"\ncommand = [\"python3\", \"plugin.py\"]\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_cmd-plugin"))
+        .arg("doctor")
+        .arg(&dir)
+        .args(["--query", "x"])
+        .env("HOME", &home)
+        .output()
+        .expect("cmd-plugin runs");
+    let stdout = text(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{stdout}\n{}",
+        text(&output.stderr)
+    );
+    let data = home.join(if cfg!(target_os = "macos") {
+        "Library/Application Support/cmd/plugin-data/envy"
+    } else {
+        ".config/cmd/plugin-data/envy"
+    });
+    assert!(
+        data.is_dir(),
+        "the data directory is made: {}",
+        data.display()
+    );
+    assert!(
+        stdout.contains(&format!("\"title\": \"{}\"", data.display())),
+        "{stdout}"
+    );
+    assert!(stdout.contains("CMD_PLUGIN_CONFIG="), "{stdout}");
+}

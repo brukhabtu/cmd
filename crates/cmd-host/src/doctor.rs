@@ -5,17 +5,20 @@
 //! cmd plugin doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]
 //! ```
 //!
-//! Prints the manifest, the description from the handshake, then the items for the query
+//! Prints the manifest, the environment variables naming the plugin's data and config
+//! directories (which the plugin is started with, as the launcher starts it), the
+//! description from the handshake, then the items for the query
 //! and the effect for the run, as JSON. A protocol problem prints the host's own message,
 //! the one the launcher would show, and exits 1. A usage mistake exits 2.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
 use cmd_core::protocol::{ACCEPTED, Description, Items, Method, Ran, VERSION};
 use cmd_core::state::DEFAULT_ACTION;
 
+use crate::host::plugin_env;
 use crate::{PluginProcess, Timeouts, manifest};
 
 const USAGE: &str = "usage: cmd plugin doctor <plugin-dir> [--query TEXT] [--run ITEM [--action ACTION]]\n\
@@ -59,7 +62,23 @@ pub fn examine(request: &Request, timeouts: Timeouts) -> Result<(), String> {
         "manifest: {} runs {:?}",
         located.manifest.name, located.manifest.command
     );
-    let mut process = PluginProcess::spawn(&located.manifest.command, &located.dir)
+    // The plugin gets what the launcher gives it: its data and config directories, for a
+    // plugin that reads them through the SDK. They are the real ones, so what a doctored
+    // plugin writes is what the installed one would see.
+    let user_dir = std::env::var_os("HOME").map(|home| manifest::user_cmd_dir(Path::new(&home)));
+    let env = plugin_env(&located.manifest.name, user_dir.as_deref(), &[])
+        .map_err(|error| format!("could not prepare the plugin's directories: {error}"))?;
+    for (key, value) in env
+        .iter()
+        .filter(|(key, _)| key.to_string_lossy().starts_with("CMD_PLUGIN_"))
+    {
+        println!(
+            "environment: {}={}",
+            key.to_string_lossy(),
+            value.to_string_lossy()
+        );
+    }
+    let mut process = PluginProcess::spawn_in(&located.manifest.command, &located.dir, &env)
         .map_err(|error| format!("could not start the plugin: {error}"))?;
     let description: Description = process
         .call(Method::Describe { protocol: VERSION }, timeouts.describe)
