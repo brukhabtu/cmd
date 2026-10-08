@@ -182,6 +182,16 @@ def test_a_bad_request_with_an_id_is_answered_with_that_id() -> None:
             id="an action without a title",
         ),
         pytest.param(
+            Item("a", "A", actions=Action("copy", "Copy")),  # type: ignore[arg-type]
+            "item 1 ('a'): actions must be a tuple or list of Actions, not Action",
+            id="a single Action where a tuple belongs",
+        ),
+        pytest.param(
+            Item("a", "A", score=10**400),
+            "item 1 ('a'): score is too large to be a float",
+            id="an int too large for a float",
+        ),
+        pytest.param(
             Item("a", "caf\udce9"),
             "UnicodeEncodeError",
             id="text that is not valid Unicode, as a file name in bytes that were not UTF-8",
@@ -242,3 +252,15 @@ def test_an_exception_message_that_is_not_valid_unicode_is_escaped_not_fatal() -
 
     assert [a["id"] for a in answers] == [1, 2]
     assert answers[0]["error"]["message"] == "FileNotFoundError: no such file: caf\\udce9"
+
+
+def test_a_plugin_that_exits_gets_a_plugin_error_and_the_session_goes_on() -> None:
+    def leaves(_text: str) -> tuple[Item, ...]:
+        raise SystemExit(2)
+
+    answers = run(
+        Plugin(Description("p", "1"), leaves, lambda i, _a: Copy(i)), query(1, "x"), query(2, "y")
+    )
+
+    assert [a["id"] for a in answers] == [1, 2]
+    assert answers[0]["error"] == {"code": "plugin_error", "message": "SystemExit: 2"}

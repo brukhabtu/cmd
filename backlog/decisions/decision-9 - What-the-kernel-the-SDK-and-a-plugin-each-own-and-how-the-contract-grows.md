@@ -35,10 +35,13 @@ itself and the kernel need not see. The plugin owns the rest.
 | SDK | the serve loop, encoding at the agreed version, keeping stdout for the protocol, reading the data and config directory, a subprocess call with a deadline, a TTL cache, typed provider records |
 | plugin | what it finds and does, its config schema, its outbox, the tools it calls (the obsidian CLI, provider commands) and their credentials |
 
-The host picks a data and a config directory for each plugin, outside every directory it
-watches, and passes them as `CMD_PLUGIN_DATA` and `CMD_PLUGIN_CONFIG` (task 2.5). They
-are environment, not protocol: no field, no version, no capability. The SDK reads them and
-never makes a path up; with one missing it raises an error that names the variable.
+The host picks a data and a config directory for each plugin, outside the plugin's code
+directory, which it watches for changes to restart on. The data directory is not
+watched, so a plugin writing there is not restarted; the config directory is, and a
+change to a plugin's config restarts it. The host passes them as `CMD_PLUGIN_DATA` and
+`CMD_PLUGIN_CONFIG` (task 2.5). They are environment, not protocol: no field, no
+version, no capability. The SDK reads them and never makes a path up; with one missing
+it raises an error that names the variable.
 
 ### How the contract grows
 

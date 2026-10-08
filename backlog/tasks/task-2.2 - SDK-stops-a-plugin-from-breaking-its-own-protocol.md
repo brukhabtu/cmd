@@ -1,10 +1,10 @@
 ---
 id: TASK-2.2
 title: SDK stops a plugin from breaking its own protocol
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 13:47'
-updated_date: '2026-10-08 18:36'
+updated_date: '2026-10-08 18:38'
 labels:
   - size-2
 dependencies: []
@@ -28,8 +28,8 @@ From the contract review: a stray print, a PathIcon, a NaN score and an unknown 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A plugin that prints, returns a Path icon, a NaN or infinite score, or is sent an unknown method keeps serving, and the host gets an answer with the right id
-- [ ] #2 Each case has an SDK test and the adapter test still passes
+- [x] #1 A plugin that prints, returns a Path icon, a NaN or infinite score, or is sent an unknown method keeps serving, and the host gets an answer with the right id
+- [x] #2 Each case has an SDK test and the adapter test still passes
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,4 +42,11 @@ From the contract review: a stray print, a PathIcon, a NaN score and an unknown 
 - The Rust side needed no change: error codes are free strings (PluginError.code). The host test fixtures that send id 0 still apply, for lines with no id.
 Evidence: 17 of the new functional tests fail against the SDK at HEAD (a TypeError ending the loop, a NaN on the wire, id 0 on an unknown method); all 55 SDK tests pass now; scripts/check.sh passes, including the adapter test; a real plugin process over pipes (print, a PathIcon holding a Path, a NaN score, an unknown method, then a good query) wrote strict JSON with the right ids and kept serving.
 Not covered, noted on TASK-2.6: a child process a plugin starts inherits the real stdout.
+Review at close, 2026-10-08: a read-only reviewer who did not do the work said close, both criteria met (55 tests pass, cargo test -p cmd-host passes, 17 new tests fail on the old SDK for the right reasons, the Rust host skips a late error with another id and still matches id 0). Its findings: sys.exit() in a plugin ended the session, and a single Action as actions or an int too large for a float escaped without naming the item. Both fixed, with tests (58 pass). Left as they are: a KeyboardInterrupt or a sink whose write raises still ends the loop, since the host has gone; the range of score is documented and not checked.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+SDK serve keeps stdout for the protocol and points print at stderr; answers are checked and encoded inside the guard, so a bad item, a NaN or infinite score, a Path icon or a plugin that exits becomes a plugin_error naming it; an unknown method is answered with its own id and the new unknown_method code, and bad_request carries the id when the line had one. Closed on review.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-2.1
 title: 'Design: what the kernel, the SDK and a plugin each own'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-08 13:47'
-updated_date: '2026-10-08 18:34'
+updated_date: '2026-10-08 18:38'
 labels:
   - size-3
 dependencies: []
@@ -33,9 +33,9 @@ Write one decision for the split, from the architecture review of 2026-10-08.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One decision records the split, the optional-field versus bump rule, capability negotiation, the CLI and provider rules, and what is deferred
-- [ ] #2 Decision 6 is amended or superseded to match the code
-- [ ] #3 docs/architecture.md and the LikeC4 model agree with the decision, including the host to core edge
+- [x] #1 One decision records the split, the optional-field versus bump rule, capability negotiation, the CLI and provider rules, and what is deferred
+- [x] #2 Decision 6 is amended or superseded to match the code
+- [x] #3 docs/architecture.md and the LikeC4 model agree with the decision, including the host to core edge
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,3 +53,9 @@ Assumed (in the decision, for the owner to confirm): the kernel includes cmd-app
 
 Owed elsewhere: docs/plugin-protocol.md needs the three kinds of change in place of its Versions paragraph, the negotiation and the two variables (tasks 2.3 and 2.5). Draft 10's LikeC4 edge item is done here.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decision 9 (proposed) records the kernel, SDK and plugin split, the three ways the contract grows, negotiation by the lower version, the obsidian CLI and provider rules, and what is deferred. Decision 6 is amended to match the code, and docs/architecture.md and the LikeC4 model agree. Closed on review; the owner still confirms decision 9's assumptions, before task 2.3.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -62,11 +62,11 @@ def _answer(line: str, plugin: Plugin) -> str:
         # Encoding is inside the guard: a value JSON cannot carry fails here, as an answer,
         # and not on the write, as the end of the session.
         return encode_response(dispatch(request, plugin))
-    except Exception as error:  # ruff: ignore[blind-except] - the plugin's failure must not end the session
+    except (Exception, SystemExit) as error:  # ruff: ignore[blind-except] - a plugin's failure, even its sys.exit(), must not end the session
         return encode_response(Failure(request.id, "plugin_error", _failure_message(error)))
 
 
-def _failure_message(error: Exception) -> str:
+def _failure_message(error: BaseException) -> str:
     """What the error says, in text that always encodes: an odd character is escaped."""
     message = f"{type(error).__name__}: {error}"
     return message.encode("utf-8", "backslashreplace").decode("utf-8")

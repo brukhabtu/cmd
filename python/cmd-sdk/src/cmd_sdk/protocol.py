@@ -330,8 +330,13 @@ def _score(value: object) -> float:
     """
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise InvalidAnswerError(f"score must be a number, not {type(value).__name__}")
-    if not math.isfinite(value):
-        raise InvalidAnswerError(f"score is {value}, and must be a finite number")
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:  # an int too large for a float
+        finite = False
+    if not finite:
+        shown = value if isinstance(value, float) else "too large to be a float"
+        raise InvalidAnswerError(f"score is {shown}, and must be a finite number")
     return value
 
 
@@ -371,6 +376,10 @@ def _checked_item_json(item: Item) -> dict[str, Any]:
     if item.score is not None:
         body["score"] = _score(item.score)
     if item.actions:
+        if not isinstance(item.actions, tuple | list):
+            raise InvalidAnswerError(
+                f"actions must be a tuple or list of Actions, not {type(item.actions).__name__}"
+            )
         body["actions"] = [_action_json(action) for action in item.actions]
     if item.icon is not None:
         body["icon"] = _icon_json(item.icon)
