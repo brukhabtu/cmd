@@ -646,6 +646,9 @@ fn start_host_beside(located: Vec<Located>, reports: async_channel::Sender<Start
             let path = std::env::var_os("PATH");
             let user_dir =
                 std::env::var_os("HOME").map(|home| manifest::user_cmd_dir(Path::new(&home)));
+            if user_dir.is_none() {
+                eprintln!("cmd: HOME is not set, so plugins get no data or config directory");
+            }
             let host = bundle::start_reporting(
                 app.as_ref(),
                 path.as_deref(),

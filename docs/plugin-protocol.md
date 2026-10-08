@@ -110,7 +110,8 @@ names no capability yet, so it sends `{"protocol": 1, "capabilities": []}`.
 The plugin answers with the lower of the host's version and its own, and from then on
 sends only what that version and those capabilities allow. The host loads a plugin that
 answers any version from 0 to its own, and refuses any other with a message naming the
-plugin and the range. It sends a plugin only what the version it answered has. Dropping
+plugin and the range. It does not track the version a plugin answered: every method
+exists at version 0, so it sends them all. Dropping
 an old version takes a decision (decision 9).
 
 A version 0 host, which sent `{"protocol": 0}`, loaded only a plugin that answered 0, so a

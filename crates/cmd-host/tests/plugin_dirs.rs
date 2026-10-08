@@ -221,3 +221,27 @@ fn a_name_that_cannot_be_a_directory_is_refused() {
     );
     assert!(!tree.user.join("escape").exists());
 }
+
+#[test]
+fn an_unwritable_user_directory_is_reported_naming_the_directory() {
+    let tree = Tree::new("blocked");
+    // A file where the plugin-data directory should be, so it cannot be made.
+    std::fs::write(tree.user.join("plugin-data"), b"in the way").unwrap();
+    let mut reports = Vec::new();
+    let _host = Host::start_reporting_with(
+        vec![tree.located()],
+        Timeouts::default(),
+        &[],
+        Some(&tree.user),
+        |report| reports.push(report),
+    );
+    let [Startup::Failed(error)] = reports.as_slice() else {
+        panic!("{reports:?}");
+    };
+    let message = error.to_string();
+    assert!(
+        message.contains("cannot make the data directory"),
+        "{message}"
+    );
+    assert!(message.contains("plugin-data"), "{message}");
+}

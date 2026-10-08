@@ -436,7 +436,15 @@ pub(crate) fn plugin_env(
     }
     let user_dir = std::path::absolute(user_dir)?;
     let data = manifest::plugin_data_root(&user_dir).join(name);
-    std::fs::create_dir_all(&data)?;
+    std::fs::create_dir_all(&data).map_err(|source| {
+        io::Error::new(
+            source.kind(),
+            format!(
+                "cannot make the data directory {}: {source}",
+                data.display()
+            ),
+        )
+    })?;
     let config = manifest::plugin_config_root(&user_dir).join(name);
     env.push(("CMD_PLUGIN_DATA".into(), data.into_os_string()));
     env.push(("CMD_PLUGIN_CONFIG".into(), config.into_os_string()));

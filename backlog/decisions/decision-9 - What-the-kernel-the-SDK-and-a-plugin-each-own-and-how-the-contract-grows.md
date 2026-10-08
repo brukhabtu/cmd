@@ -16,7 +16,8 @@ needs a new version.
 What the code has today. The host sends its version (1) in `describe` and loads a plugin
 that answers 0 or 1 (`ACCEPTED` in `crates/cmd-core/src/protocol.rs`). Neither side
 rejects a field it does not know, so an extra field is ignored. An item has `icon` and
-no `details`. An unknown icon kind or effect kind fails the whole answer.
+no `details`. An unknown effect kind fails the whole answer. (An unknown icon kind did too,
+until task 2.3 made the host drop only that icon.)
 
 ## Decision
 
@@ -48,7 +49,9 @@ it raises an error that names the variable.
 Every change to the contract is one of three kinds.
 
 1. **An optional field.** A host that ignores it still does right by the person, so the
-   plugin sends it whatever the host is. No new version, no capability. Examples: the
+   plugin sends it whatever the host is, unless the version the two agreed on predates the
+   field, when the SDK leaves it out (task 2.3 does so for `icon` at version 0). No new
+   version, no capability. Examples: the
    flag that asks for blank input (draft 5), `details` when it is built.
 2. **A capability.** The plugin must behave differently when the host does not read the
    field. The host names it in `describe`, and the plugin uses it only then. The first is
