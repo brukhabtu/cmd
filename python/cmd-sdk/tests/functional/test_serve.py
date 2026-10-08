@@ -7,7 +7,19 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
-from cmd_sdk import Action, Copy, Description, Effect, Item, PathIcon, Plugin, serve
+from cmd_sdk import (
+    Action,
+    Close,
+    Copy,
+    Description,
+    Effect,
+    Item,
+    PathIcon,
+    Plugin,
+    SymbolIcon,
+    protocol,
+    serve,
+)
 
 
 def _explode(_text: str) -> tuple[Item, ...]:
@@ -71,6 +83,79 @@ def test_answers_each_request_in_order_and_stops_at_end_of_input() -> None:
     assert [a["id"] for a in answers] == [1, 2, 3]
     assert answers[1]["result"] == {"items": [{"id": "HI", "title": "HI"}]}
     assert answers[2]["result"] == {"effect": {"kind": "copy", "text": "HI"}}
+
+
+def describe(request_id: int, params: dict[str, Any]) -> str:
+    return json.dumps({"id": request_id, "method": "describe", "params": params})
+
+
+@pytest.mark.parametrize(
+    ("params", "agreed", "item"),
+    [
+        pytest.param(
+            {"protocol": 0},
+            0,
+            {"id": "x", "title": "x"},
+            id="a version 0 host, which sends no capabilities, is never sent an icon",
+        ),
+        pytest.param(
+            {"protocol": 1, "capabilities": []},
+            1,
+            {"id": "x", "title": "x", "icon": {"kind": "symbol", "name": "globe"}},
+            id="a version 1 host",
+        ),
+        pytest.param(
+            {"protocol": 9, "capabilities": ["from-the-future"]},
+            1,
+            {"id": "x", "title": "x", "icon": {"kind": "symbol", "name": "globe"}},
+            id="a newer host is answered with the SDK's own version",
+        ),
+    ],
+)
+def test_describe_agrees_a_version_every_later_answer_holds_to(
+    params: dict[str, Any], agreed: int, item: dict[str, Any]
+) -> None:
+    plugin = Plugin(
+        Description("p", "1"),
+        lambda t: (Item(t, t, icon=SymbolIcon("globe")),),
+        lambda i, _a: Copy(i),
+    )
+    answers = run(plugin, describe(1, params), query(2, "x"))
+    assert answers[0]["result"]["protocol"] == agreed
+    assert answers[1]["result"] == {"items": [item]}
+
+
+def test_a_describe_with_unreadable_capabilities_is_a_bad_request_and_the_loop_goes_on() -> None:
+    answers = run(
+        answering(Item("a", "A")),
+        describe(1, {"protocol": 1, "capabilities": "keywords"}),
+        describe(2, {"protocol": 1}),
+    )
+    assert answers[0]["id"] == 1
+    assert answers[0]["error"]["code"] == "bad_request"
+    assert answers[1]["result"]["protocol"] == 1
+
+
+def test_a_kind_newer_than_the_agreed_version_is_a_plugin_error_and_the_loop_goes_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No effect kind is newer than version 0 yet, so pretend copy arrived in version 1.
+    monkeypatch.setitem(protocol.EFFECT_KIND_SINCE, "copy", 1)
+    answers = run(
+        running(Close()),
+        describe(1, {"protocol": 0}),
+        run_of(2, "good"),
+        run_of(3, "bad"),
+        describe(4, {"protocol": 1}),
+        run_of(5, "good"),
+    )
+    assert [a["id"] for a in answers] == [1, 2, 3, 4, 5]
+    assert answers[1]["error"] == {
+        "code": "plugin_error",
+        "message": "InvalidAnswerError: effect kind 'copy' needs protocol 1, and the host agreed to 0",
+    }
+    assert answers[2]["result"] == {"effect": {"kind": "close"}}
+    assert answers[4]["result"] == {"effect": {"kind": "copy", "text": "good"}}
 
 
 def test_a_bad_line_gets_an_error_and_the_loop_goes_on() -> None:

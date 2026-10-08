@@ -9,15 +9,27 @@ use cmd_host::{HostEvent, Located, Manifest};
 /// Answers describe, echoes queries as one item, copies the item on run. Special texts:
 /// "stall" never answers, "late" answers after 300 ms, "chatter" writes a stray line,
 /// "quit" exits, "fail" answers with an error, "unreadable" answers with an id-0 error,
-/// "icon" answers one item carrying a path icon. It speaks protocol 0, which the host
-/// still loads, so the icon is the one version 1 field it sends.
+/// "icon" answers one item carrying a path icon, "mixed" answers a good item, an item
+/// without a title, an item with an icon of an unknown kind and a score above 1, and
+/// "described" answers one item whose title is the describe params it was sent, as JSON
+/// with sorted keys. It speaks protocol 0, which the host still loads, so the icon is the
+/// one version 1 field it sends.
 pub const FAKE: &str = r#"
 import json, sys, time
 for line in sys.stdin:
     request = json.loads(line)
     reply = lambda result: print(json.dumps({"id": request["id"], "result": result}), flush=True)
     if request["method"] == "describe":
+        described = request["params"]
         reply({"name": NAME, "version": "0", "protocol": 0})
+    elif request["method"] == "query" and request["params"]["text"] == "described":
+        reply({"items": [{"id": "described", "title": json.dumps(described, sort_keys=True)}]})
+    elif request["method"] == "query" and request["params"]["text"] == "mixed":
+        reply({"items": [
+            {"id": "good", "title": "Good"},
+            {"id": "untitled"},
+            {"id": "odd", "title": "Odd", "score": 3, "icon": {"kind": "emoji", "text": "?"}},
+        ]})
     elif request["method"] == "run":
         reply({"effect": {"kind": "copy", "text": request["params"]["item"]}})
     elif request["params"]["text"] == "stall":

@@ -7,13 +7,37 @@ mod common;
 
 use std::path::PathBuf;
 
-use cmd_core::protocol::{Effect, Icon};
+use cmd_core::protocol::{Description, Effect, Icon, Items, Method, VERSION};
 use cmd_core::state::DEFAULT_ACTION;
-use cmd_host::{Host, Timeouts, manifest};
+use cmd_host::{Host, PluginProcess, Timeouts, manifest};
 use common::{answer_from, effect_from};
 
 fn plugins_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins")
+}
+
+#[test]
+fn the_real_sdk_answers_a_version_0_host_at_version_0_and_sends_it_no_icon() {
+    let located = manifest::load(&plugins_dir().join("calculator")).expect("the calculator");
+    let mut process =
+        PluginProcess::spawn(&located.manifest.command, &located.dir).expect("it starts");
+    let timeouts = Timeouts::default();
+    let older = Method::Describe {
+        protocol: 0,
+        capabilities: vec![],
+    };
+    let description: Description = process.call(older, timeouts.describe).unwrap();
+    assert_eq!(description.protocol, 0);
+    let items: Items = process
+        .call(
+            Method::Query {
+                text: "2 + 2".into(),
+            },
+            timeouts.query,
+        )
+        .unwrap();
+    assert_eq!(items.items[0].title, "4");
+    assert_eq!(items.items[0].icon, None, "version 0 has no icon field");
 }
 
 #[test]
@@ -35,6 +59,11 @@ fn the_calculator_answers_through_the_real_process() {
         .descriptions()
         .position(|description| description.name == "calculator")
         .expect("the calculator started");
+    assert!(
+        host.descriptions()
+            .all(|description| description.protocol == VERSION),
+        "every plugin agrees this host's version"
+    );
     let events = host.events();
 
     assert!(host.query(1, "2 + 2 * 3").contains(&calculator));

@@ -3,21 +3,28 @@
 //! The host writes one [`Request`] per line and the plugin answers with one
 //! [`Response`] per line carrying the same `id`. The specification is
 //! `docs/plugin-protocol.md`; this module is the Rust side of it, and
-//! `cmd_sdk.protocol` is the Python side.
+//! `cmd_sdk.protocol` is the Python side. `docs/plugin-protocol.golden.json` holds
+//! exchanges both sides are tested against.
 
 use std::ops::RangeInclusive;
 
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 /// The protocol version this crate speaks: what the host sends in `describe`.
 pub const VERSION: u32 = 1;
 
-/// The versions a plugin may answer `describe` with and still be loaded. Version 1 only
-/// adds optional fields to what version 0 carries (decision 6), so a plugin that speaks
-/// 0 answers with items that simply have none of them.
-pub const ACCEPTED: RangeInclusive<u32> = 0..=1;
+/// The versions a plugin may answer `describe` with and still be loaded: every one from 0
+/// to this crate's own. A plugin answers with the lower of the host's version and its own,
+/// so an older plugin answers with its own and a newer one with the host's. Dropping an
+/// old version takes a decision (decision 9).
+pub const ACCEPTED: RangeInclusive<u32> = 0..=VERSION;
+
+/// The capabilities this host names in `describe`: behaviour a plugin may use only when
+/// the host names it, because without it the plugin falls back to something else
+/// (decision 9). None is built yet, so the list is empty.
+pub const CAPABILITIES: &[&str] = &[];
 
 /// One call from the host to a plugin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,8 +38,14 @@ pub struct Request {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 pub enum Method {
-    /// Handshake. The plugin answers with a [`Description`].
-    Describe { protocol: u32 },
+    /// Handshake: the host's version and the capabilities it names, where a missing list
+    /// is an empty one. The plugin answers with a [`Description`] whose `protocol` is the
+    /// lower of the host's version and its own.
+    Describe {
+        protocol: u32,
+        #[serde(default)]
+        capabilities: Vec<String>,
+    },
     /// The text the person typed, already stripped of the plugin's keyword.
     /// The plugin answers with [`Items`].
     Query { text: String },
@@ -40,11 +53,22 @@ pub enum Method {
     Run { item: String, action: String },
 }
 
+impl Method {
+    /// The handshake this host sends: its [`VERSION`] and its [`CAPABILITIES`].
+    pub fn describe() -> Self {
+        Method::Describe {
+            protocol: VERSION,
+            capabilities: CAPABILITIES.iter().map(ToString::to_string).collect(),
+        }
+    }
+}
+
 /// What a plugin says about itself in the handshake.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Description {
     pub name: String,
     pub version: String,
+    /// The version the plugin speaks with this host: the lower of the two.
     pub protocol: u32,
     /// With a keyword, the plugin sees only queries that start with it.
     /// Without one, it sees every query.
@@ -65,6 +89,10 @@ pub enum Icon {
 }
 
 /// One row in the result list.
+///
+/// Decoding forgives what can cost only part of a row: an icon the host cannot read is
+/// no icon, and a score outside `0.0..=1.0` is clamped into it. Anything else wrong
+/// loses the item, and [`Items`] keeps the rest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Item {
     pub id: String,
@@ -72,15 +100,36 @@ pub struct Item {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<String>,
     /// Confidence in `0.0..=1.0` for fuzzy matches. Leave it out for a definite answer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A score outside the range is clamped when it is decoded, so it cannot outrank 1.0.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "clamped_score"
+    )]
     pub score: Option<f64>,
     /// The first action is the one Enter runs. Empty means the host runs
     /// [`crate::state::DEFAULT_ACTION`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<Action>,
-    /// Since version 1. A plugin that speaks version 0 never sets it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Since version 1. A plugin that speaks version 0 never sets it. An icon of a kind
+    /// this host does not know, or of a known kind in the wrong shape, decodes as none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "readable_icon"
+    )]
     pub icon: Option<Icon>,
+}
+
+/// A score as sent, clamped into `0.0..=1.0`. JSON has no NaN to clamp.
+fn clamped_score<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
+    Ok(Option::<f64>::deserialize(deserializer)?.map(|score| score.clamp(0.0, 1.0)))
+}
+
+/// The icon if this host can read it, and none otherwise: the row keeps its text.
+fn readable_icon<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Icon>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 /// Something that can be done with an item.
@@ -90,13 +139,60 @@ pub struct Action {
     pub title: String,
 }
 
-/// The answer to `query`.
+/// The answer to `query`, decoded item by item: an item that does not decode is left
+/// out on its own, and why is kept in `dropped` so the host can say so.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "WireItems")]
 pub struct Items {
     pub items: Vec<Item>,
+    /// Why each item that could not be decoded was left out, in the answer's order. The
+    /// host's own note: it never goes on the wire.
+    #[serde(skip)]
+    pub dropped: Vec<String>,
+}
+
+impl Items {
+    /// What to tell the person when items were left out, or `None` when none were.
+    pub fn dropped_note(&self) -> Option<String> {
+        let count = self.dropped.len();
+        let noun = if count == 1 { "item" } else { "items" };
+        (count > 0).then(|| {
+            format!(
+                "left out {count} {noun} it could not read: {}",
+                self.dropped.join("; ")
+            )
+        })
+    }
+}
+
+/// The answer to `query` as it arrives: a list whose elements are decoded one by one.
+#[derive(Deserialize)]
+struct WireItems {
+    items: Vec<serde_json::Value>,
+}
+
+impl From<WireItems> for Items {
+    fn from(wire: WireItems) -> Self {
+        let mut items = Vec::with_capacity(wire.items.len());
+        let mut dropped = Vec::new();
+        for (index, value) in wire.items.into_iter().enumerate() {
+            let position = index + 1;
+            let label = match value.get("id").and_then(serde_json::Value::as_str) {
+                Some(id) => format!("item {position} ({id:?})"),
+                None => format!("item {position}"),
+            };
+            match serde_json::from_value::<Item>(value) {
+                Ok(item) => items.push(item),
+                Err(error) => dropped.push(format!("{label}: {error}")),
+            }
+        }
+        Items { items, dropped }
+    }
 }
 
 /// What the host does after an action ran. The plugin returns it; the host performs it.
+/// An effect of a kind this host does not know fails the whole answer: effects stay
+/// versioned (decision 9), and the host never guesses at one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Effect {
@@ -178,8 +274,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_version_this_crate_speaks_is_one_it_accepts() {
-        assert!(ACCEPTED.contains(&VERSION));
+    fn the_host_loads_every_version_from_zero_to_its_own() {
+        assert_eq!(ACCEPTED, 0..=VERSION);
     }
 
     #[test]
@@ -195,14 +291,28 @@ mod tests {
     }
 
     #[test]
-    fn describe_carries_the_protocol_version() {
+    fn describe_carries_the_version_and_the_capabilities_even_when_there_are_none() {
         let line = encode_request(&Request {
             id: 1,
-            method: Method::Describe { protocol: VERSION },
+            method: Method::describe(),
         });
         assert_eq!(
             line,
-            "{\"id\":1,\"method\":\"describe\",\"params\":{\"protocol\":1}}\n"
+            "{\"id\":1,\"method\":\"describe\",\"params\":{\"protocol\":1,\"capabilities\":[]}}\n"
+        );
+    }
+
+    #[test]
+    fn a_describe_without_capabilities_names_none() {
+        let request: Request =
+            serde_json::from_str(r#"{"id": 1, "method": "describe", "params": {"protocol": 0}}"#)
+                .unwrap();
+        assert_eq!(
+            request.method,
+            Method::Describe {
+                protocol: 0,
+                capabilities: vec![]
+            }
         );
     }
 
@@ -216,6 +326,8 @@ mod tests {
         assert_eq!(items.items[0].actions, vec![]);
         assert_eq!(items.items[0].score, None);
         assert_eq!(items.items[0].icon, None);
+        assert_eq!(items.dropped, Vec::<String>::new());
+        assert_eq!(items.dropped_note(), None);
     }
 
     #[test]
@@ -251,9 +363,84 @@ mod tests {
     }
 
     #[test]
-    fn an_icon_of_an_unknown_kind_is_a_decode_error() {
-        let line = r#"{"id": 1, "result": {"items": [{"id": "a", "title": "a", "icon": {"kind": "emoji", "text": "x"}}]}}"#;
+    fn an_icon_the_host_cannot_read_loses_the_icon_and_nothing_else() {
+        let line = r#"{"id": 1, "result": {"items": [
+            {"id": "a", "title": "a", "subtitle": "kept", "icon": {"kind": "emoji", "text": "x"}},
+            {"id": "b", "title": "b", "icon": {"kind": "path"}},
+            {"id": "c", "title": "c", "icon": "globe"}
+        ]}}"#;
+        let items = result::<Items>(decode_response(line).unwrap()).unwrap();
+        assert_eq!(items.dropped, Vec::<String>::new());
+        assert_eq!(items.items.len(), 3);
+        assert!(items.items.iter().all(|item| item.icon.is_none()));
+        assert_eq!(items.items[0].subtitle.as_deref(), Some("kept"));
+    }
+
+    #[test]
+    fn an_item_that_does_not_decode_is_left_out_on_its_own_and_named() {
+        let line = r#"{"id": 1, "result": {"items": [
+            {"id": "a", "title": "a"},
+            {"id": "b"},
+            "not an item",
+            {"id": "d", "title": "d", "score": "high"},
+            {"id": "e", "title": "e"}
+        ]}}"#;
+        let items = result::<Items>(decode_response(line).unwrap()).unwrap();
+        let ids: Vec<&str> = items.items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(ids, ["a", "e"]);
+        assert_eq!(items.dropped.len(), 3);
+        assert!(
+            items.dropped[0].starts_with("item 2 (\"b\"): missing field `title`"),
+            "{:?}",
+            items.dropped
+        );
+        assert!(
+            items.dropped[1].starts_with("item 3: "),
+            "{:?}",
+            items.dropped
+        );
+        assert!(
+            items.dropped[2].starts_with("item 4 (\"d\"): "),
+            "{:?}",
+            items.dropped
+        );
+        let note = items.dropped_note().unwrap();
+        assert!(
+            note.starts_with("left out 3 items it could not read: item 2"),
+            "{note}"
+        );
+    }
+
+    #[test]
+    fn an_answer_whose_items_are_not_a_list_is_a_decode_error() {
+        let line = r#"{"id": 1, "result": {"items": {"id": "a", "title": "a"}}}"#;
         let err = result::<Items>(decode_response(line).unwrap()).unwrap_err();
+        assert!(matches!(err, DecodeError::Json(_)), "{err}");
+    }
+
+    #[test]
+    fn a_score_outside_zero_to_one_is_clamped_and_cannot_outrank_one() {
+        let line = r#"{"items": [
+            {"id": "sure", "title": "sure", "score": 1.0},
+            {"id": "loud", "title": "loud", "score": 7.5},
+            {"id": "low", "title": "low", "score": -2},
+            {"id": "mid", "title": "mid", "score": 0.5},
+            {"id": "definite", "title": "definite"}
+        ]}"#;
+        let items: Items = serde_json::from_str(line).unwrap();
+        let scores: Vec<Option<f64>> = items.items.iter().map(|item| item.score).collect();
+        assert_eq!(scores, [Some(1.0), Some(1.0), Some(0.0), Some(0.5), None]);
+        let ranked: Vec<String> = crate::query::merge([(0, items.items)])
+            .into_iter()
+            .map(|hit| hit.item.id)
+            .collect();
+        assert_eq!(ranked, ["definite", "sure", "loud", "mid", "low"]);
+    }
+
+    #[test]
+    fn an_effect_of_an_unknown_kind_fails_the_whole_answer() {
+        let line = r#"{"id": 1, "result": {"effect": {"kind": "paste", "text": "x"}}}"#;
+        let err = result::<Ran>(decode_response(line).unwrap()).unwrap_err();
         assert!(matches!(err, DecodeError::Json(_)), "{err}");
     }
 

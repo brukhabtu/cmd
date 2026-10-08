@@ -5,10 +5,14 @@ import sys
 from typing import TextIO
 
 from cmd_sdk.protocol import (
+    BEFORE_DESCRIBE,
+    Agreement,
+    Describe,
     Failure,
     MalformedRequestError,
     Plugin,
     UnknownMethodError,
+    agree,
     decode_request,
     dispatch,
     encode_response,
@@ -27,8 +31,11 @@ def serve(plugin: Plugin, source: TextIO | None = None, sink: TextIO | None = No
       it does not have an ``unknown_method`` error. Both carry the request's own id when
       the line had one.
     - An exception from the plugin's own functions, or an answer the protocol cannot carry
-      (an icon path that is not text, a score that is NaN), gets a ``plugin_error`` that
-      says what it was.
+      (an icon path that is not text, a score that is NaN, an effect kind the agreed
+      version lacks), gets a ``plugin_error`` that says what it was.
+
+    ``describe`` sets the version and the capabilities every later answer holds to: the
+    lower of the host's version and the SDK's, and the names the host sent.
 
     While serving to stdout, ``print`` writes to stderr instead: stdout belongs to the
     protocol, and a line on it the host cannot read costs the answer it landed in.
@@ -43,27 +50,35 @@ def serve(plugin: Plugin, source: TextIO | None = None, sink: TextIO | None = No
 
 
 def _loop(plugin: Plugin, source: TextIO, sink: TextIO) -> None:
+    agreement = BEFORE_DESCRIBE
     for line in source:
         if not line.strip():
             continue
-        sink.write(_answer(line, plugin))
+        answer, agreement = _answer(line, plugin, agreement)
+        sink.write(answer)
         sink.flush()
 
 
-def _answer(line: str, plugin: Plugin) -> str:
-    """The line to write for one request line. It is always an answer and never raises."""
+def _answer(line: str, plugin: Plugin, agreement: Agreement) -> tuple[str, Agreement]:
+    """The line to write for one request line, and the agreement from then on.
+
+    It is always an answer and never raises.
+    """
     try:
         request = decode_request(line)
     except UnknownMethodError as error:
-        return encode_response(Failure(error.request_id, "unknown_method", str(error)))
+        return encode_response(Failure(error.request_id, "unknown_method", str(error))), agreement
     except MalformedRequestError as error:
-        return encode_response(Failure(error.request_id, "bad_request", str(error)))
+        return encode_response(Failure(error.request_id, "bad_request", str(error))), agreement
+    if isinstance(request, Describe):
+        agreement = agree(request)
     try:
         # Encoding is inside the guard: a value JSON cannot carry fails here, as an answer,
         # and not on the write, as the end of the session.
-        return encode_response(dispatch(request, plugin))
+        return encode_response(dispatch(request, plugin, agreement)), agreement
     except (Exception, SystemExit) as error:  # ruff: ignore[blind-except] - a plugin's failure, even its sys.exit(), must not end the session
-        return encode_response(Failure(request.id, "plugin_error", _failure_message(error)))
+        failure = Failure(request.id, "plugin_error", _failure_message(error))
+        return encode_response(failure), agreement
 
 
 def _failure_message(error: BaseException) -> str:

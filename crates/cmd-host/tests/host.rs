@@ -426,6 +426,42 @@ fn an_item_s_icon_arrives_typed() {
 }
 
 #[test]
+fn describe_sends_the_host_s_version_and_an_empty_list_of_capabilities() {
+    let host = host(&[("a", false)]);
+    assert_eq!(
+        ask(&host, 1, "described"),
+        r#"{"capabilities": [], "protocol": 1}"#
+    );
+}
+
+#[test]
+fn an_unreadable_item_is_left_out_alone_and_the_window_is_told() {
+    let host = host(&[("a", false)]);
+    host.query(1, "mixed");
+    let items = match next_within(&host, Duration::from_secs(10)) {
+        HostEvent::Answered {
+            generation: 1,
+            result: Ok(items),
+            ..
+        } => items,
+        other => panic!("unexpected {other:?}"),
+    };
+    let shown: Vec<(&str, Option<f64>, Option<&Icon>)> = items
+        .iter()
+        .map(|item| (item.id.as_str(), item.score, item.icon.as_ref()))
+        .collect();
+    assert_eq!(shown, [("good", None, None), ("odd", Some(1.0), None)]);
+    match next_within(&host, Duration::from_secs(10)) {
+        HostEvent::Trouble { plugin: 0, message } => assert_eq!(
+            message,
+            "left out 1 item it could not read: item 2 (\"untitled\"): missing field `title`"
+        ),
+        other => panic!("unexpected {other:?}"),
+    }
+    assert_eq!(ask(&host, 2, "after"), "a:after");
+}
+
+#[test]
 fn a_second_directory_declaring_a_running_name_is_refused_naming_both() {
     let first = common::located("a", false);
     let mut second = common::located("a", false);

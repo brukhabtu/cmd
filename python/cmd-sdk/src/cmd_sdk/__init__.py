@@ -10,6 +10,7 @@ from cmd_sdk.locate import ConfigError, MissingVariableError
 from cmd_sdk.protocol import (
     PROTOCOL,
     Action,
+    Agreement,
     Close,
     Copy,
     Description,
@@ -27,6 +28,7 @@ from cmd_sdk.serve import serve
 __all__ = [
     "PROTOCOL",
     "Action",
+    "Agreement",
     "CallResult",
     "Close",
     "ConfigError",

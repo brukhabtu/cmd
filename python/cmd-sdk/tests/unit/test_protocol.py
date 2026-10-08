@@ -13,9 +13,11 @@ from cmd_sdk import (
     Plugin,
     Show,
     SymbolIcon,
+    protocol,
 )
 from cmd_sdk.protocol import (
     PROTOCOL,
+    Agreement,
     Describe,
     Failure,
     InvalidAnswerError,
@@ -24,6 +26,7 @@ from cmd_sdk.protocol import (
     Run,
     Success,
     UnknownMethodError,
+    agree,
     decode_request,
     dispatch,
     encode_response,
@@ -58,6 +61,10 @@ def test_decodes_each_method(line: str, expected: Describe | Query | Run) -> Non
         '{"id": 1, "method": "query"}',
         '{"id": 1, "method": "query", "params": {"text": 5}}',
         '{"id": 1, "method": "describe", "params": {"protocol": true}}',
+        '{"id": 1, "method": "describe", "params": {"protocol": -1}}',
+        '{"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": "keywords"}}',
+        '{"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": [1]}}',
+        '{"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": null}}',
         '{"id": 1, "method": "dance", "params": {}}',
     ],
 )
@@ -71,6 +78,76 @@ def test_describe_adds_the_protocol_version() -> None:
     assert dispatch(Describe(1, 1), PLUGIN) == Success(
         1, {"name": "echo", "version": "1.0", "protocol": PROTOCOL, "keyword": "echo"}
     )
+
+
+def test_describe_reads_the_capabilities_and_a_missing_list_names_none() -> None:
+    with_names = '{"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": ["keywords", "x"]}}'
+    assert decode_request(with_names) == Describe(1, 1, frozenset({"keywords", "x"}))
+    without = '{"id": 1, "method": "describe", "params": {"protocol": 1}}'
+    assert decode_request(without) == Describe(1, 1, frozenset())
+
+
+@pytest.mark.parametrize(("host", "agreed"), [(0, 0), (1, 1), (7, PROTOCOL)])
+def test_the_agreed_version_is_the_lower_of_the_host_s_and_the_sdk_s(
+    host: int, agreed: int
+) -> None:
+    assert agree(Describe(1, host, frozenset({"k"}))) == Agreement(agreed, frozenset({"k"}))
+    assert dispatch(Describe(1, host), PLUGIN).result["protocol"] == agreed
+
+
+def test_a_plugin_may_describe_itself_by_the_agreement() -> None:
+    seen: list[Agreement] = []
+
+    def described(agreement: Agreement) -> Description:
+        seen.append(agreement)
+        return Description("p", "1", keyword="p" if "keywords" in agreement.capabilities else None)
+
+    plugin = Plugin(PLUGIN.description, PLUGIN.query, PLUGIN.run, describe=described)
+    assert dispatch(Describe(1, 0, frozenset({"keywords"})), plugin).result == {
+        "name": "p",
+        "version": "1",
+        "protocol": 0,
+        "keyword": "p",
+    }
+    assert "keyword" not in dispatch(Describe(2, 1), plugin).result
+    assert seen == [Agreement(0, frozenset({"keywords"})), Agreement(1, frozenset())]
+
+
+def test_at_version_0_an_icon_is_left_out_and_the_item_is_sent() -> None:
+    plugin = Plugin(
+        Description("i", "0"),
+        lambda _: (Item("x", "X", icon=SymbolIcon("globe")),),
+        lambda _i, _a: Close(),
+    )
+    assert dispatch(Query(5, "x"), plugin, Agreement(0)).result == {
+        "items": [{"id": "x", "title": "X"}]
+    }
+    assert dispatch(Query(6, "x"), plugin, Agreement(1)).result == {
+        "items": [{"id": "x", "title": "X", "icon": {"kind": "symbol", "name": "globe"}}]
+    }
+
+
+def test_a_kind_the_agreed_version_lacks_is_refused_by_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No kind is newer than version 1 yet, so pretend show and symbol arrived in version 2.
+    monkeypatch.setitem(protocol.EFFECT_KIND_SINCE, "show", 2)
+    monkeypatch.setitem(protocol.ICON_KIND_SINCE, "symbol", 2)
+    showing = Plugin(Description("s", "0"), lambda _: (), lambda _i, _a: Show("m"))
+    with pytest.raises(
+        InvalidAnswerError, match="effect kind 'show' needs protocol 2, and the host agreed to 1"
+    ):
+        dispatch(Run(1, "i", "a"), showing, Agreement(1))
+    assert dispatch(Run(2, "i", "a"), PLUGIN, Agreement(1)).result == {
+        "effect": {"kind": "copy", "text": "i/a"}
+    }
+    symbolic = Plugin(
+        Description("s", "0"),
+        lambda _: (Item("x", "X", icon=SymbolIcon("globe")),),
+        lambda _i, _a: Close(),
+    )
+    with pytest.raises(InvalidAnswerError, match="item 1 \\('x'\\): icon kind 'symbol' needs"):
+        dispatch(Query(3, "x"), symbolic, Agreement(1))
 
 
 def test_query_serialises_items_with_only_the_fields_that_are_set() -> None:

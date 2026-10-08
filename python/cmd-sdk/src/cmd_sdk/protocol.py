@@ -15,10 +15,42 @@ from dataclasses import dataclass
 from typing import Any, assert_never
 
 PROTOCOL = 1
-"""The protocol version this SDK speaks."""
+"""The protocol version this SDK speaks. With a host it speaks the lower of this and the host's."""
 
 DEFAULT_ACTION = "default"
 """The action id the host sends when an item declared no actions."""
+
+ICON_FIELD_SINCE = 1
+"""The version that added ``icon`` to an item. Before it the SDK leaves the field out."""
+
+ICON_KIND_SINCE = {"path": 1, "symbol": 1}
+"""The version each icon kind arrived in.
+
+The SDK sends only what the version agreed in ``describe`` has: a kind from a later version
+is a ``plugin_error`` naming it, so a host is never sent a kind it cannot decode
+(decision 9).
+"""
+
+EFFECT_KIND_SINCE = {"close": 0, "copy": 0, "open": 0, "show": 0}
+"""The version each effect kind arrived in, held to as ``ICON_KIND_SINCE`` is."""
+
+
+@dataclass(frozen=True)
+class Agreement:
+    """What the host and this SDK agreed in ``describe``.
+
+    ``protocol`` is the lower of the host's version and ``PROTOCOL``, and every answer after
+    the handshake holds to it. ``capabilities`` are the names the host sent; a plugin uses a
+    capability only when its name is here, and falls back otherwise. Before any
+    ``describe`` the SDK assumes its own version and no capabilities.
+    """
+
+    protocol: int = PROTOCOL
+    capabilities: frozenset[str] = frozenset()
+
+
+BEFORE_DESCRIBE = Agreement()
+"""The agreement in force until the host's ``describe`` arrives."""
 
 
 # --- what a plugin produces -----------------------------------------------------------
@@ -127,11 +159,17 @@ class Plugin:
     returns the items to show. ``run`` receives the id of the chosen item and the id of
     the chosen action (``DEFAULT_ACTION`` when the item declared none) and returns the
     effect the host should perform.
+
+    ``describe``, when set, is called with the ``Agreement`` once the host's ``describe``
+    arrives, and the ``Description`` it returns is sent in place of ``description``: that is
+    how a plugin reads the agreed version and the host's capabilities, and describes itself
+    by them.
     """
 
     description: Description
     query: Callable[[str], Sequence[Item]]
     run: Callable[[str, str], Effect]
+    describe: Callable[[Agreement], Description] | None = None
 
 
 # --- the wire -------------------------------------------------------------------------
@@ -139,10 +177,19 @@ class Plugin:
 
 @dataclass(frozen=True)
 class Describe:
-    """The handshake. ``protocol`` is the version the host speaks."""
+    """The handshake: the version the host speaks and the capabilities it names.
+
+    A host that sends no list of capabilities names none.
+    """
 
     id: int
     protocol: int
+    capabilities: frozenset[str] = frozenset()
+
+
+def agree(describe: Describe) -> Agreement:
+    """What this SDK and the host speak from this ``describe`` on."""
+    return Agreement(min(describe.protocol, PROTOCOL), describe.capabilities)
 
 
 @dataclass(frozen=True)
@@ -245,7 +292,7 @@ def decode_request(line: str) -> Request:
 def _decode_params(method: str, request_id: int, params: Mapping[str, Any]) -> Request:
     match method:
         case "describe":
-            return Describe(request_id, _field(params, "protocol", int))
+            return Describe(request_id, _version(params), _capabilities(params))
         case "query":
             return Query(request_id, _field(params, "text", str))
         case "run":
@@ -255,23 +302,27 @@ def _decode_params(method: str, request_id: int, params: Mapping[str, Any]) -> R
             raise UnknownMethodError(f"unknown method {method!r}", request_id)
 
 
-def dispatch(request: Request, plugin: Plugin) -> Success:
-    """Answer one request with the plugin's functions.
+def dispatch(request: Request, plugin: Plugin, agreement: Agreement = BEFORE_DESCRIBE) -> Success:
+    """Answer one request with the plugin's functions, at the version agreed.
+
+    A ``describe`` makes its own agreement, ``agree(request)``, and answers with its
+    version; every other request is answered within ``agreement``, which the caller keeps
+    from the last ``describe``.
 
     Whatever the plugin's own functions raise passes through, and so does
-    ``InvalidAnswerError`` for an answer the protocol cannot carry; ``serve`` turns either
-    into an error response at the boundary.
+    ``InvalidAnswerError`` for an answer the protocol cannot carry, or the agreed version
+    lacks; ``serve`` turns either into an error response at the boundary.
     """
     match request:
         case Describe():
-            return Success(request.id, _description_json(plugin.description))
+            return Success(request.id, _description_json(plugin, agree(request)))
         case Query():
             items = plugin.query(request.text)
-            body = [_item_json(item, position) for position, item in enumerate(items, 1)]
+            body = [_item_json(item, position, agreement) for position, item in enumerate(items, 1)]
             return Success(request.id, {"items": body})
         case Run():
             effect = plugin.run(request.item, request.action)
-            return Success(request.id, {"effect": _effect_json(effect)})
+            return Success(request.id, {"effect": _effect_json(effect, agreement)})
         case _ as unreachable:
             assert_never(unreachable)
 
@@ -311,6 +362,44 @@ def _field[T](params: Mapping[str, Any], name: str, kind: type[T]) -> T:
     return value
 
 
+def _version(params: Mapping[str, Any]) -> int:
+    """The version in ``params.protocol``.
+
+    Raises:
+        MalformedRequestError: It is not a whole number of 0 or more.
+    """
+    version = _field(params, "protocol", int)
+    if version < 0:
+        raise MalformedRequestError("params.protocol must be a version, 0 or more")
+    return version
+
+
+def _capabilities(params: Mapping[str, Any]) -> frozenset[str]:
+    """The names in ``params.capabilities``; none when the host sent no list.
+
+    Raises:
+        MalformedRequestError: The host sent something other than a list of names.
+    """
+    if "capabilities" not in params:
+        return frozenset()
+    names = params["capabilities"]
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise MalformedRequestError("params.capabilities must be a list of names")
+    return frozenset(names)
+
+
+def _within(agreement: Agreement, what: str, since: int) -> None:
+    """Refuse a part of an answer that arrived after the agreed version.
+
+    Raises:
+        InvalidAnswerError: It did, and the message names it and both versions.
+    """
+    if since > agreement.protocol:
+        raise InvalidAnswerError(
+            f"{what} needs protocol {since}, and the host agreed to {agreement.protocol}"
+        )
+
+
 def _text(value: object, what: str) -> str:
     """The value if it is text.
 
@@ -340,23 +429,29 @@ def _score(value: object) -> float:
     return value
 
 
-def _description_json(description: Description) -> dict[str, Any]:
+def _description_json(plugin: Plugin, agreement: Agreement) -> dict[str, Any]:
+    description = plugin.description if plugin.describe is None else plugin.describe(agreement)
+    if not isinstance(description, Description):
+        raise InvalidAnswerError(
+            f"the description must be a Description, not {type(description).__name__}"
+        )
     body: dict[str, Any] = {
         "name": _text(description.name, "description name"),
         "version": _text(description.version, "description version"),
-        "protocol": PROTOCOL,
+        "protocol": agreement.protocol,
     }
     if description.keyword is not None:
         body["keyword"] = _text(description.keyword, "description keyword")
     return body
 
 
-def _item_json(item: object, position: int) -> dict[str, Any]:
-    """One item as JSON, with its fields checked.
+def _item_json(item: object, position: int, agreement: Agreement) -> dict[str, Any]:
+    """One item as JSON, with its fields checked against the protocol and the agreement.
 
     Raises:
-        InvalidAnswerError: It is not an ``Item`` or a field is wrong. The message names the
-            item by its place in the answer and its id, so the author can find it.
+        InvalidAnswerError: It is not an ``Item``, a field is wrong, or it holds a kind the
+            agreed version lacks. The message names the item by its place in the answer
+            and its id, so the author can find it.
     """
     if not isinstance(item, Item):
         raise InvalidAnswerError(
@@ -364,12 +459,12 @@ def _item_json(item: object, position: int) -> dict[str, Any]:
         )
     label = f"item {position}" + (f" ({item.id!r})" if isinstance(item.id, str) else "")
     try:
-        return _checked_item_json(item)
+        return _checked_item_json(item, agreement)
     except InvalidAnswerError as problem:
         raise InvalidAnswerError(f"{label}: {problem}") from None
 
 
-def _checked_item_json(item: Item) -> dict[str, Any]:
+def _checked_item_json(item: Item, agreement: Agreement) -> dict[str, Any]:
     body: dict[str, Any] = {"id": _text(item.id, "id"), "title": _text(item.title, "title")}
     if item.subtitle is not None:
         body["subtitle"] = _text(item.subtitle, "subtitle")
@@ -381,8 +476,13 @@ def _checked_item_json(item: Item) -> dict[str, Any]:
                 f"actions must be a tuple or list of Actions, not {type(item.actions).__name__}"
             )
         body["actions"] = [_action_json(action) for action in item.actions]
+    # A host before the icon field would ignore it, but the line holds only what the agreed
+    # version has: an optional field is left out, where a kind would be refused.
     if item.icon is not None:
-        body["icon"] = _icon_json(item.icon)
+        icon = _icon_json(item.icon)
+        if agreement.protocol >= ICON_FIELD_SINCE:
+            _within(agreement, f"icon kind {icon['kind']!r}", ICON_KIND_SINCE[icon["kind"]])
+            body["icon"] = icon
     return body
 
 
@@ -406,7 +506,13 @@ def _icon_json(icon: Icon) -> dict[str, str]:
             assert_never(unreachable)
 
 
-def _effect_json(effect: Effect) -> dict[str, str]:
+def _effect_json(effect: Effect, agreement: Agreement) -> dict[str, str]:
+    body = _unchecked_effect_json(effect)
+    _within(agreement, f"effect kind {body['kind']!r}", EFFECT_KIND_SINCE[body["kind"]])
+    return body
+
+
+def _unchecked_effect_json(effect: Effect) -> dict[str, str]:
     if not isinstance(effect, Close | Copy | Open | Show):
         raise InvalidAnswerError(
             f"run must return a Close, Copy, Open or Show, not {type(effect).__name__}"

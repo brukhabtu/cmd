@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use cmd_core::protocol::{Description, Items, Method, VERSION};
+use cmd_core::protocol::{Description, Items, Method};
 use cmd_host::{CallError, PluginProcess};
 
 const FAKE: &str = r#"
@@ -52,10 +52,7 @@ fn query_within(
 fn a_plugin_answers_describe_and_query() {
     let mut process = fake();
     let description: Description = process
-        .call(
-            Method::Describe { protocol: VERSION },
-            Duration::from_secs(5),
-        )
+        .call(Method::describe(), Duration::from_secs(5))
         .unwrap();
     assert_eq!(description.name, "fake");
     assert_eq!(

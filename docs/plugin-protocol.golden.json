@@ -1,0 +1,69 @@
+{
+  "about": [
+    "Golden exchanges of the plugin protocol (docs/plugin-protocol.md). Both sides are tested",
+    "against this one file: crates/cmd-core/tests/golden.rs and",
+    "python/cmd-sdk/tests/unit/test_golden.py. Each exchange is a request the host sends, the",
+    "answer a plugin sends, and what the host reads from that answer. Some answers hold what a",
+    "newer or careless plugin might send and this SDK never would; sdk_never_sends names those",
+    "items by id. A dropped entry is the start of the host's note about an item it left out."
+  ],
+  "exchanges": [
+    {
+      "name": "describe from a version 1 host, which names no capabilities yet",
+      "request": {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": []}},
+      "answer": {"id": 1, "result": {"name": "golden", "version": "1.0.0", "protocol": 1, "keyword": "gold"}},
+      "host_reads": {"description": {"name": "golden", "version": "1.0.0", "protocol": 1, "keyword": "gold"}}
+    },
+    {
+      "name": "describe from a version 0 host, which sends no list of capabilities",
+      "request": {"id": 1, "method": "describe", "params": {"protocol": 0}},
+      "answer": {"id": 1, "result": {"name": "golden", "version": "1.0.0", "protocol": 0, "keyword": "gold"}},
+      "host_reads": {"description": {"name": "golden", "version": "1.0.0", "protocol": 0, "keyword": "gold"}}
+    },
+    {
+      "name": "a query answered with items of every shape",
+      "request": {"id": 2, "method": "query", "params": {"text": "safari"}},
+      "answer": {"id": 2, "result": {"items": [
+        {"id": "plain", "title": "Plain"},
+        {"id": "app", "title": "Safari", "subtitle": "Application", "score": 0.75,
+         "icon": {"kind": "path", "path": "/Applications/Safari.app"}},
+        {"id": "search", "title": "Search the web", "score": 1,
+         "actions": [{"id": "open", "title": "Open"}, {"id": "copy", "title": "Copy"}],
+         "icon": {"kind": "symbol", "name": "globe"}},
+        {"id": "sparkle", "title": "An icon of a kind this host does not know",
+         "icon": {"kind": "emoji", "text": "*"}},
+        {"id": "loud", "title": "A score above 1", "score": 7.5},
+        {"id": "low", "title": "A score below 0", "score": -0.5},
+        {"id": "untitled"}
+      ]}},
+      "sdk_never_sends": ["sparkle", "untitled"],
+      "host_reads": {
+        "items": [
+          {"id": "plain", "title": "Plain"},
+          {"id": "app", "title": "Safari", "subtitle": "Application", "score": 0.75,
+           "icon": {"kind": "path", "path": "/Applications/Safari.app"}},
+          {"id": "search", "title": "Search the web", "score": 1.0,
+           "actions": [{"id": "open", "title": "Open"}, {"id": "copy", "title": "Copy"}],
+           "icon": {"kind": "symbol", "name": "globe"}},
+          {"id": "sparkle", "title": "An icon of a kind this host does not know"},
+          {"id": "loud", "title": "A score above 1", "score": 1.0},
+          {"id": "low", "title": "A score below 0", "score": 0.0}
+        ],
+        "dropped": ["item 7 (\"untitled\"): missing field `title`"],
+        "ranked": ["plain", "sparkle", "search", "loud", "app", "low"]
+      }
+    },
+    {
+      "name": "a run answered with an effect",
+      "request": {"id": 3, "method": "run", "params": {"item": "search", "action": "open"}},
+      "answer": {"id": 3, "result": {"effect": {"kind": "open", "target": "https://duckduckgo.com/?q=safari"}}},
+      "host_reads": {"effect": {"kind": "open", "target": "https://duckduckgo.com/?q=safari"}}
+    },
+    {
+      "name": "a query answered with an error",
+      "request": {"id": 4, "method": "query", "params": {"text": "boom"}},
+      "answer": {"id": 4, "error": {"code": "plugin_error", "message": "RuntimeError: boom"}},
+      "host_reads": {"error": {"code": "plugin_error", "message": "RuntimeError: boom"}}
+    }
+  ]
+}

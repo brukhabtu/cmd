@@ -13,7 +13,7 @@ use std::sync::{Arc, PoisonError, RwLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cmd_core::protocol::{ACCEPTED, Description, Effect, Item, Items, Method, Ran, VERSION};
+use cmd_core::protocol::{ACCEPTED, Description, Effect, Item, Items, Method, Ran};
 use cmd_core::query::{self, Scope};
 use notify::{RecursiveMode, Watcher};
 use thiserror::Error;
@@ -133,7 +133,8 @@ pub enum HostEvent {
     Restarted { plugin: usize, attempt: u32 },
     /// A file in the plugin's directory changed and a fresh process runs the new code.
     Reloaded { plugin: usize },
-    /// The plugin could not be started again; the window should say so.
+    /// Something the window should say about the plugin: it could not be started again,
+    /// or its answer had items the host could not read, which are left out.
     Trouble { plugin: usize, message: String },
 }
 
@@ -454,7 +455,7 @@ fn handshake(
             source,
         })?;
     let description: Description = process
-        .call(Method::Describe { protocol: VERSION }, timeout)
+        .call(Method::describe(), timeout)
         .map_err(|source| StartError::Describe {
             name: name.clone(),
             source,
@@ -566,12 +567,17 @@ impl Worker {
         command: Command,
         reports: &async_channel::Sender<HostEvent>,
     ) -> bool {
-        let (event, health) = self.answer(command);
+        let (event, health, aside) = self.answer(command);
         let (event, gone) = self.hung_or_gone(event, health);
         if health == Health::Fine {
             self.restarts.healthy();
         }
         if reports.send_blocking(event).is_err() {
+            return false;
+        }
+        if let Some(aside) = aside
+            && reports.send_blocking(aside).is_err()
+        {
             return false;
         }
         if !gone {
@@ -584,8 +590,10 @@ impl Worker {
         reports.send_blocking(event).is_ok()
     }
 
-    /// Run one command and say how the process behind it fared.
-    fn answer(&mut self, command: Command) -> (HostEvent, Health) {
+    /// Run one command and say how the process behind it fared. The third value is an
+    /// event to send after the answer: a note that items the host could not read were
+    /// left out of it, which the window shows as it shows any trouble.
+    fn answer(&mut self, command: Command) -> (HostEvent, Health, Option<HostEvent>) {
         let plugin = self.plugin;
         match command {
             Command::Reload => unreachable!("reloads are handled before answering"),
@@ -594,6 +602,11 @@ impl Worker {
                     .process
                     .call::<Items>(Method::Query { text }, self.timeouts.query);
                 let health = health_of(&result);
+                let aside = result
+                    .as_ref()
+                    .ok()
+                    .and_then(Items::dropped_note)
+                    .map(|message| HostEvent::Trouble { plugin, message });
                 let result = result.map(|items| items.items).map_err(describe_failure);
                 (
                     HostEvent::Answered {
@@ -602,6 +615,7 @@ impl Worker {
                         result,
                     },
                     health,
+                    aside,
                 )
             }
             Command::Run {
@@ -621,6 +635,7 @@ impl Worker {
                         result,
                     },
                     health,
+                    None,
                 )
             }
         }

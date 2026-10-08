@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
-use cmd_core::protocol::{ACCEPTED, Description, Items, Method, Ran, VERSION};
+use cmd_core::protocol::{ACCEPTED, Description, Items, Method, Ran};
 use cmd_core::state::DEFAULT_ACTION;
 
 use crate::host::plugin_env;
@@ -81,7 +81,7 @@ pub fn examine(request: &Request, timeouts: Timeouts) -> Result<(), String> {
     let mut process = PluginProcess::spawn_in(&located.manifest.command, &located.dir, &env)
         .map_err(|error| format!("could not start the plugin: {error}"))?;
     let description: Description = process
-        .call(Method::Describe { protocol: VERSION }, timeouts.describe)
+        .call(Method::describe(), timeouts.describe)
         .map_err(|error| format!("describe: {error}"))?;
     println!("description: {}", pretty(&description));
     if !ACCEPTED.contains(&description.protocol) {
@@ -97,6 +97,9 @@ pub fn examine(request: &Request, timeouts: Timeouts) -> Result<(), String> {
             .call(Method::Query { text: text.clone() }, timeouts.query)
             .map_err(|error| format!("query {text:?}: {error}"))?;
         println!("items for {text:?}: {}", pretty(&items.items));
+        if let Some(note) = items.dropped_note() {
+            println!("the launcher {note}");
+        }
     }
     if let Some(item) = &request.run {
         let ran: Ran = process
