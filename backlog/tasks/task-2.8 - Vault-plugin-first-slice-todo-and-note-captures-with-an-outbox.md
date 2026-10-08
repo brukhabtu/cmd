@@ -1,10 +1,10 @@
 ---
 id: TASK-2.8
 title: 'Vault plugin, first slice: todo and note captures with an outbox'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-08 13:47'
-updated_date: '2026-10-08 20:59'
+updated_date: '2026-10-08 21:05'
 labels:
   - size-5
 dependencies:
@@ -27,10 +27,10 @@ A new plugin under plugins/vault. Captures `todo` and `note` from config, writte
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 todo and note captures are written to the configured target through the CLI, from config alone
-- [ ] #2 With the fake CLI closed, slow or failing, the capture stays in the outbox and is written once when it recovers
-- [ ] #3 query never raises, never calls the CLI while Obsidian is not running, and returns within the host timeout
-- [ ] #4 The check owed on a Mac is recorded on this task
+- [x] #1 todo and note captures are written to the configured target through the CLI, from config alone
+- [x] #2 With the fake CLI closed, slow or failing, the capture stays in the outbox and is written once when it recovers
+- [x] #3 query never raises, never calls the CLI while Obsidian is not running, and returns within the host timeout
+- [x] #4 The check owed on a Mac is recorded on this task
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -69,10 +69,11 @@ A new plugin under plugins/vault. Captures `todo` and `note` from config, writte
 11. A lasting CLI error going to `failed` at once is not built: it needs the spike's exit codes.
 12. An outbox file that is not an entry is left where it is and named on `vault`.
 13. Guesses until the spike (all in `invocations.py`, or `schema.DEFAULT_PROCESS`): the process name for `pgrep -x`; that errors arrive on stderr and a missing note's error says "not found", "does not exist" or "no such"; `vault=<name>` as the first argument; `path=`, `content=`, `heading=`, `template=`, `query=`, `limit=`; `search` prints one vault-relative path a line; `open path=` opens a note.
+14. One plugin process uses a data directory at a time, as the host runs one process per plugin; the outbox takes a thread lock and no file lock, so two processes on one directory could both write an entry. Nothing in the host does that.
 
 ## Workarounds and things not done
 
-- `plugins/index.toml` lists the vault, as `scripts/tests/test_check_index.py` requires of every plugin, pinned for now to the commit this work branched from. No commit on GitHub holds `plugins/vault/cmd-plugin.toml` yet, so the online index check fails on this one entry until it is re-pinned to the merge commit (the applications plugin's first commit did the same).
+- `plugins/index.toml` lists the vault, as `scripts/tests/test_check_index.py` requires of every plugin, pinned to commit d50f420, the one that holds the plugin (the index check fetches each ref from GitHub, so a new plugin is pinned to a commit that already has it; done, and the online check passes).
 - SDK: nothing changed. The plugin names the config directory with `cmd_sdk.locate.directory_from`, since the SDK has no public helper for it, and treats an `OSError` from `config()` like a `ConfigError` (this worktree's SDK lets a directory or an unreadable file through; the main tree's does not).
 - This worktree's `call()` waits up to 1 s per pipe for a grandchild after a normal exit (the main tree's change makes it 1 s in all). With the older one a search could, in the worst case, take 0.3 + 1.5 + 2 s. The plugin is correct against the main tree's SDK.
 
@@ -85,11 +86,20 @@ Not done. On the owner's Mac, with Obsidian and its CLI installed; each step nam
 3. With Obsidian quit: `obsidian vault=W daily:read; echo $?`, watching the Dock. Launches Obsidian: the probe must guard every call (already so). Fails fast: note the exit code and whether the message is on stderr (`invocations.first_line`). Writes while closed (try `daily:append content=x`): decision 10 row 4, the thread may drop the probe.
 4. Warm, 20 times each: `time obsidian vault=W search query=meeting limit=20` and `... tasks format=json`. The 95th percentile x 3, between 0.5 and 1.5 s, becomes `deadlines.query`; above 1.5 s, views move off the query path (row 1). Record what `search` prints: one path a line or not (`invocations.found_paths`).
 5. `obsidian vault=W daily:append content="- [ ] spike" heading=Tasks` on a day with no daily note, then on one whose note has a `# Tasks` section. Creates the note: `@daily` stands (row 8), else refuse `@daily` at start. Line under Tasks: `heading` stands; ignored or refused: refuse `heading` at start with a row.
-6. `obsidian vault=W read path=Nope.md; echo $?` and `obsidian vault=W daily:read`. Record the missing-note message; adjust `_MISSING` in `invocations.py`. Confirms which command reads a note and today's daily note (the duplicate check).
+6. `obsidian vault=W read path=Nope.md; echo $?` and `obsidian vault=W daily:read`. Record the missing-note message; adjust `_MISSING` in `invocations.py`. Confirms which command reads a note and today's daily note (the duplicate check). Also confirm that what `read` prints is exactly what `append` wrote, for a line with `=`, quotes and non-ASCII characters in it: the duplicate check compares the rendered line with the note's lines, and a CLI that escaped, quoted or trimmed on the way in would make an `unknown` entry be written twice.
 7. `obsidian vault=W create path=Spike/A.md template=Person`, then the same again. Where the file lands (row 6), and what `create` does to an existing path (must not overwrite; the plugin never asks it to).
 8. `obsidian vault=W append path=Missing.md content=x; echo $?`. An error confirms read-then-create; a silent create means the template is skipped for such targets.
 9. `obsidian vault=W open path=Spike/A.md`. Whether the CLI opens a note (search results now, the `open` kind later).
 10. 20 warm `daily:append` calls timed: 95th percentile x 3, between 2 and 30 s, becomes `deadlines.write` (row 9).
 11. `kill -STOP $(pgrep -x Obsidian)`, then `obsidian vault=W daily:read` with a 5 s timeout, then `kill -CONT`. A hang means `unknown` and the check are met often (row 3).
 12. End to end: `config.toml` with the real `bin`, then `cmd plugin doctor plugins/vault --query "todo spike from cmd"` and `--run "capture:todo spike from cmd"`, with Obsidian running and then quit and reopened; the line lands once, and `vault` shows it waiting while Obsidian is closed.
+
+## Review at close, 2026-10-08
+A read-only reviewer who did not do the work said close once the stale index-pin note was corrected (done), and asked that two things be recorded (done above: the Mac checklist's step 6 now also confirms that read returns exactly what append wrote, and assumption 14 names the one-process-per-data-directory reading). All four criteria met in tests, 153 vault tests and 478 in all; every CLI guess is marked [2.4]. The lead also ran what the reviewer had not: with 300 captures queued and Obsidian closed, query takes 2 microseconds for a word that is no keyword, 0.07 ms for a capture and 0.5 ms for the vault view; with Obsidian open all 300 were written once, in capture order, and the outbox emptied. Still owed, on the owner's Mac: the 12-step checklist above (it is also TASK-2.4's work).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+plugins/vault: todo and note captures from config alone, written through the obsidian CLI by one thread from an outbox in the data directory (kept and retried while Obsidian is closed, slow or failing, and written once), a search view through the CLI only when Obsidian is running, and a query path that never raises or calls the CLI for a capture. Tested against a fake CLI. Closed on review; the real CLI check is owed on the owner's Mac.
+<!-- SECTION:FINAL_SUMMARY:END -->
