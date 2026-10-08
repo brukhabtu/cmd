@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-08 13:47'
+updated_date: '2026-10-08 20:27'
 labels:
   - size-2
 dependencies: []
@@ -27,3 +28,9 @@ Time 50 warm runs each of `search format=json`, `tasks format=json` and `append`
 - [ ] #2 The four open behaviours (content with template, template path, tasks json fields, daily note creation) are answered
 - [ ] #3 The intent's CLI-versus-files question is closed or carried forward on purpose
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: cannot run in the cloud session the rest of TASK-2 is being built in (Linux, no Obsidian). It needs the owner's Mac with Obsidian 1.12.4 or later and the CLI on. TASK-2.7 (the vault design) and TASK-2.8 (the plugin) were done without it, as decision 9 allows: each says where a spike result would change a number or a branch, and 2.8 tests against a fake CLI. Running this spike closes the owed Mac check on TASK-2.8 as well.
+<!-- SECTION:NOTES:END -->
