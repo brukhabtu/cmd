@@ -72,7 +72,8 @@ class TtlCache[T]:
     def wait(self, timeout: float | None = None) -> None:
         """Wait for the background refresh in flight, if any. For tests and orderly shutdown.
 
-        The first fill of a ``block_first`` cache runs on the caller's thread and is not waited for here.
+        The first fill of a ``block_first`` cache runs on the caller's thread, and is not
+        waited for here.
         """
         with self._lock:
             thread = self._thread
