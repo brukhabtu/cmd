@@ -73,6 +73,7 @@ plugins:
             - plugins/files/src
             - plugins/system/src
             - plugins/applications/src
+            - plugins/vault/src
           options:
             docstring_style: google
             show_source: false
@@ -119,6 +120,7 @@ nav:
       - Everyday use: use/everyday.md
       - Plugins: use/plugins.md
       - Plugins in the index: use/catalogue.md
+      - The vault plugin: use/vault.md
       - Troubleshooting: use/troubleshooting.md
   - Write a plugin:
       - plugins/index.md

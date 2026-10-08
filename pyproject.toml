@@ -66,7 +66,7 @@ convention = "google"
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:plugins/applications/src:scripts"
+mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:plugins/applications/src:plugins/vault/src:scripts"
 files = ["python", "plugins", "scripts"]
 
 [tool.pytest.ini_options]
@@ -79,6 +79,7 @@ testpaths = [
   "plugins/files/tests",
   "plugins/system/tests",
   "plugins/applications/tests",
+  "plugins/vault/tests",
   "scripts/tests",
 ]
 
@@ -90,6 +91,7 @@ src = [
   "plugins/files/src",
   "plugins/system/src",
   "plugins/applications/src",
+  "plugins/vault/src",
 ]
 rules = [
   "import-boundaries",
@@ -111,5 +113,5 @@ rules = [
 # to this rule; scripts/import_boundaries.py gates those, right after this check in
 # scripts/check.sh.
 [tool.pypeeker.import-boundaries]
-allow = { protocol = [], locate = [], expiry = [], environment = ["locate"], calls = [], cache = ["expiry"], serve = ["protocol"], arithmetic = [], search = [], commands = [], scan = [], matching = [] }
+allow = { protocol = [], locate = [], expiry = [], environment = ["locate"], calls = [], cache = ["expiry"], serve = ["protocol"], arithmetic = [], search = [], commands = [], scan = [], matching = [], schema = [], outbox = ["schema"], invocations = ["outbox", "schema"], answers = ["invocations", "outbox", "schema"] }
 report-unused-allowances = true

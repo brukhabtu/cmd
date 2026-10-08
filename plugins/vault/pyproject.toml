@@ -1,0 +1,17 @@
+[project]
+name = "vault"
+version = "0.1.0"
+description = "A cmd plugin: capture to-dos and notes into Obsidian through its CLI, kept in an outbox until written, and search the vault."
+requires-python = ">=3.15"
+license = "MIT"
+dependencies = ["cmd-sdk"]
+
+[project.scripts]
+vault = "vault:main"
+
+[tool.uv.sources]
+cmd-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9,<1"]
+build-backend = "uv_build"

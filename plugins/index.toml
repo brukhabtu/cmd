@@ -41,3 +41,10 @@ summary = "Type part of an application's name; Enter opens it."
 source = "https://github.com/brukhabtu/cmd"
 ref = "f4b315507b63b5f64741512542e5fa38af60b82d"
 subdirectory = "plugins/applications"
+
+[[plugin]]
+name = "vault"
+summary = "Capture to-dos and notes into Obsidian through its CLI, kept until written; search the vault. Keywords come from its config."
+source = "https://github.com/brukhabtu/cmd"
+ref = "3b7a2c5e3abfc76d075ae08dee9bf49e73d69b4a"
+subdirectory = "plugins/vault"
