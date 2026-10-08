@@ -34,7 +34,7 @@ def execute(argv: Sequence[str], patience: float = PATIENCE) -> str | None:
     process too.
     """
     try:
-        result = call(argv, patience)
+        result = call(argv, patience, keep_stdout=False)
     except OSError as error:
         return f"{argv[0]}: {error.strerror}"
     if result.timed_out or result.returncode == 0:

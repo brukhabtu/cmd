@@ -19,7 +19,7 @@ from cmd_sdk.locate import (
 
 
 def data_dir() -> Path:
-    """The plugin's data directory: the absolute path in ``CMD_PLUGIN_DATA``.
+    """The plugin's data directory: the path in ``CMD_PLUGIN_DATA``, as the host wrote it.
 
     The host creates it. Raises ``MissingVariableError`` naming the variable when it is
     missing or empty.
@@ -35,13 +35,15 @@ def config() -> dict[str, Any]:
     the problem; a missing variable raises ``MissingVariableError`` naming it.
 
     Raises:
-        ConfigError: the file is not valid TOML.
+        ConfigError: the file is not valid TOML, or is a directory, or cannot be read.
     """
     path = directory_from(os.environ, CONFIG_VARIABLE) / CONFIG_FILE
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")  # a BOM is not part of the TOML
     except FileNotFoundError, NotADirectoryError:
         return {}
     except UnicodeDecodeError as error:
         raise ConfigError(f"{path} is not valid TOML: {error}") from error
+    except (IsADirectoryError, PermissionError) as error:
+        raise ConfigError(f"{path} cannot be read: {error.strerror}") from error
     return parse_config(text, path)

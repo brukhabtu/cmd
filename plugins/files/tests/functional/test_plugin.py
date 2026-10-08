@@ -1,6 +1,7 @@
 """The shell against fake ``mdfind`` and ``open`` scripts on PATH, so it runs anywhere."""
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,6 +94,18 @@ def test_a_slow_search_still_answers_with_what_it_found(
     )
     monkeypatch.setattr(files, "SEARCH_DEADLINE", 0.2)
     assert [row.id for row in PLUGIN.query("readme")] == [fakes.found[1], fakes.found[0]]
+
+
+@pytest.mark.usefixtures("fakes")
+def test_a_slow_search_is_killed_and_does_not_finish_in_the_background(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "finished"
+    _install(tmp_path / "bin", "mdfind", f"sleep 1\ntouch '{marker}'")
+    monkeypatch.setattr(files, "SEARCH_DEADLINE", 0.2)
+    PLUGIN.query("readme")  # gives up at the deadline, with nothing found
+    time.sleep(1.5)
+    assert not marker.exists()
 
 
 def test_without_mdfind_the_failure_names_it(

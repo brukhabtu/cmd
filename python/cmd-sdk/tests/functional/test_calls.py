@@ -87,3 +87,17 @@ def test_a_slow_child_is_killed_when_asked(tmp_path: Path) -> None:
     assert result.timed_out
     time.sleep(1.5)
     assert not marker.exists()
+
+
+def test_stdout_can_be_discarded_while_stderr_is_kept() -> None:
+    code = "import sys; print('out'); print('err', file=sys.stderr)"
+    result = call(_python(code), 10, keep_stdout=False)
+    assert (result.returncode, result.stdout, result.stderr) == (0, b"", b"err\n")
+
+
+def test_a_grandchild_holding_the_pipes_costs_one_grace_not_two() -> None:
+    code = "import subprocess, sys; subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(3)']); print('hi')"
+    start = time.monotonic()
+    result = call(_python(code), 10)
+    assert result.stdout == b"hi\n"
+    assert time.monotonic() - start < 1.8

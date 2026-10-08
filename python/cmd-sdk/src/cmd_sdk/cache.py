@@ -85,6 +85,12 @@ class TtlCache[T]:
                 self._stamp = self._clock()
                 self._refreshing = False
             return
+        except BaseException:
+            # Not for the caller to keep, but the cache must not wait for it forever.
+            with self._lock:
+                self._stamp = self._clock()
+                self._refreshing = False
+            raise
         with self._lock:
             self._value = value
             self._error = None

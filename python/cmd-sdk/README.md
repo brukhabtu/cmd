@@ -156,9 +156,10 @@ appear in that line, and editing its files reloads it.
   `MissingVariableError` naming it. The SDK never makes a path up.
 - `call(command, timeout)` runs a list of arguments (no shell) and returns a `CallResult`
   with `returncode`, `stdout` and `stderr` (bytes) and `timed_out`. Output written before
-  the deadline is kept. A slow child is not killed or waited for: it finishes in the
-  background. The child's stdout and stderr are always captured, so it cannot write into
-  the protocol's stdout, and its stdin is closed.
+  the deadline is kept. A slow child is not waited for and, unless you pass
+  `kill_on_timeout=True`, not killed: it finishes in the background. The child's stdout
+  and stderr are never inherited, so it cannot write into the protocol's stdout: they are
+  captured, or with `keep_stdout=False` the stdout is discarded. Its stdin is closed.
 - `TtlCache(produce, ttl)` holds one value. `get()` returns it at once (or `None` before
   the first fill); once it is older than `ttl` seconds a daemon thread refreshes it, one at
   a time. A refresh that raises keeps the old value and leaves the exception in `.error`.
