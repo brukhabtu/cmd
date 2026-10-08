@@ -78,3 +78,12 @@ def test_a_missing_program_raises_os_error() -> None:
 def test_a_string_is_not_a_command() -> None:
     with pytest.raises(TypeError, match="list"):
         call("echo hi", 1)
+
+
+def test_a_slow_child_is_killed_when_asked(tmp_path: Path) -> None:
+    marker = tmp_path / "done"
+    code = f"import time, pathlib; time.sleep(1); pathlib.Path({str(marker)!r}).write_text('x')"
+    result = call(_python(code), 0.1, kill_on_timeout=True)
+    assert result.timed_out
+    time.sleep(1.5)
+    assert not marker.exists()

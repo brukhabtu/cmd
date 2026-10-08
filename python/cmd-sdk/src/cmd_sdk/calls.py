@@ -1,5 +1,8 @@
 """Run a program with a deadline, keep what it said, and leave a slow one to finish."""
 
+import contextlib
+import os
+import signal
 import subprocess
 import threading
 from collections.abc import Sequence
@@ -48,7 +51,7 @@ class _Collector:
             return b"".join(self._chunks)
 
 
-def call(command: Sequence[str], timeout: float) -> CallResult:
+def call(command: Sequence[str], timeout: float, *, kill_on_timeout: bool = False) -> CallResult:
     """Run ``command`` and wait up to ``timeout`` seconds for it.
 
     ``command`` is a list, never a string, and no shell is involved. The child's stdout and
@@ -56,10 +59,12 @@ def call(command: Sequence[str], timeout: float) -> CallResult:
     would write into the plugin's protocol stream (``serve`` repoints ``sys.stdout``, not
     the descriptor). Its stdin is closed, so it cannot read the protocol's requests either.
 
-    When the deadline passes the child is not killed and the call does not wait for it:
-    the result says ``timed_out``, holds the output so far, and the child carries on in a
-    session of its own, with daemon threads draining its pipes and reaping it. Starting
-    the program can fail with ``OSError``, which is raised as is.
+    When the deadline passes the call does not wait for the child: the result says
+    ``timed_out`` and holds the output so far. The child carries on in a session of its
+    own, with daemon threads draining its pipes and reaping it, unless ``kill_on_timeout``
+    is set, which kills it and whatever it started: right for a search that nobody wants
+    the rest of, wrong for a command whose work should finish. Starting the program can
+    fail with ``OSError``, which is raised as is.
 
     Raises:
         TypeError: ``command`` is a string.
@@ -82,6 +87,10 @@ def call(command: Sequence[str], timeout: float) -> CallResult:
     try:
         process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
+        if kill_on_timeout:
+            # The child leads its own session, so its process group is it and its children.
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
         # Someone has to wait for it, or it lingers as a zombie as long as the plugin lives.
         threading.Thread(target=process.wait, daemon=True).start()
         return CallResult(None, out.so_far(), err.so_far(), timed_out=True)

@@ -50,7 +50,7 @@ def _query(text: str) -> tuple[Item, ...]:
     if not wanted:
         return (_HINT,)
     mdfind = _executable("mdfind")
-    found = call([mdfind, *search_arguments(wanted)], SEARCH_DEADLINE)
+    found = call([mdfind, *search_arguments(wanted)], SEARCH_DEADLINE, kill_on_timeout=True)
     return rank(paths_from(found.stdout), wanted, Path.home())
 
 
