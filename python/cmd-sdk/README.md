@@ -147,6 +147,23 @@ window first opens, and in the terminal the app was started from. Once running, 
 appear in that line, and editing its files reloads it.
 
 <!-- --8<-- [end:tutorial] -->
+## Helpers every plugin needs
+
+- `data_dir()` is the directory in `CMD_PLUGIN_DATA`, which the host creates. `config()` is
+  the plugin's `config.toml`, read from the directory in `CMD_PLUGIN_CONFIG`, as a dict.
+  The host does not create that directory, so no file means `{}`; a file that is not
+  TOML raises `ConfigError` naming the file. With a variable missing, both raise
+  `MissingVariableError` naming it. The SDK never makes a path up.
+- `call(command, timeout)` runs a list of arguments (no shell) and returns a `CallResult`
+  with `returncode`, `stdout` and `stderr` (bytes) and `timed_out`. Output written before
+  the deadline is kept. A slow child is not killed or waited for: it finishes in the
+  background. The child's stdout and stderr are always captured, so it cannot write into
+  the protocol's stdout, and its stdin is closed.
+- `TtlCache(produce, ttl)` holds one value. `get()` returns it at once (or `None` before
+  the first fill); once it is older than `ttl` seconds a daemon thread refreshes it, one at
+  a time. A refresh that raises keeps the old value and leaves the exception in `.error`.
+  `block_first=True` makes the first `get()` wait for the first value.
+
 <!-- --8<-- [start:testing] -->
 ## Testing a plugin
 

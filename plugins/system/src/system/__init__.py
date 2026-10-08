@@ -5,12 +5,10 @@ answer and the host ranks those above every fuzzy match. Enter performs it and t
 launcher hides.
 """
 
-import subprocess
 import sys
-import threading
 from collections.abc import Callable, Sequence
 
-from cmd_sdk import Close, Description, Effect, Item, Plugin, Show, SymbolIcon, serve
+from cmd_sdk import Close, Description, Effect, Item, Plugin, Show, SymbolIcon, call, serve
 from cmd_sdk.protocol import DEFAULT_ACTION
 
 from system.commands import by_id, matching
@@ -32,34 +30,18 @@ def execute(argv: Sequence[str], patience: float = PATIENCE) -> str | None:
     """Run ``argv`` and return its failure as one line, or ``None`` when it succeeded.
 
     A command still running after ``patience`` seconds is left to finish on its own (see
-    ``PATIENCE``); it starts in a session of its own so it outlives this process too.
+    ``PATIENCE``); ``cmd_sdk.call`` starts it in a session of its own so it outlives this
+    process too.
     """
     try:
-        process = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-        )
+        result = call(argv, patience)
     except OSError as error:
         return f"{argv[0]}: {error.strerror}"
-    try:
-        _, stderr = process.communicate(timeout=patience)
-    except subprocess.TimeoutExpired:
-        _let_finish(process)
+    if result.timed_out or result.returncode == 0:
         return None
-    if process.returncode == 0:
-        return None
+    stderr = result.stderr.decode("utf-8", errors="replace")
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    return lines[-1] if lines else f"{argv[0]} exited with {process.returncode}"
-
-
-def _let_finish(process: subprocess.Popen[str]) -> None:
-    # Someone has to keep reading stderr, or a chatty child blocks on a full pipe, and
-    # someone has to wait for it, or it lingers as a zombie for as long as the plugin lives.
-    threading.Thread(target=process.communicate, daemon=True).start()
+    return lines[-1] if lines else f"{argv[0]} exited with {result.returncode}"
 
 
 def plugin(execute: Executor = execute, platform: str = sys.platform) -> Plugin:

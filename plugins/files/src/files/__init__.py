@@ -7,10 +7,9 @@ what to run and what the answer means.
 """
 
 import shutil
-import subprocess
 from pathlib import Path
 
-from cmd_sdk import Close, Description, Effect, Item, Open, Plugin, Show, SymbolIcon, serve
+from cmd_sdk import Close, Description, Effect, Item, Open, Plugin, Show, SymbolIcon, call, serve
 from cmd_sdk.protocol import DEFAULT_ACTION
 
 from files.search import (
@@ -51,28 +50,14 @@ def _query(text: str) -> tuple[Item, ...]:
     if not wanted:
         return (_HINT,)
     mdfind = _executable("mdfind")
-    try:
-        output = subprocess.run(
-            [mdfind, *search_arguments(wanted)],
-            capture_output=True,
-            timeout=SEARCH_DEADLINE,
-            check=False,
-        ).stdout
-    except subprocess.TimeoutExpired as expired:
-        output = expired.stdout or b""
-    return rank(paths_from(output), wanted, Path.home())
+    found = call([mdfind, *search_arguments(wanted)], SEARCH_DEADLINE)
+    return rank(paths_from(found.stdout), wanted, Path.home())
 
 
 def _reveal(path: str) -> Effect:
     opener = _executable("open")
-    try:
-        finished = subprocess.run(
-            [opener, *reveal_arguments(path)],
-            capture_output=True,
-            timeout=REVEAL_DEADLINE,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
+    finished = call([opener, *reveal_arguments(path)], REVEAL_DEADLINE)
+    if finished.timed_out:
         return Show(text=f"Finder did not answer in time for {path}")
     if finished.returncode != 0:
         reason = finished.stderr.decode("utf-8", errors="replace").strip()

@@ -61,8 +61,7 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "D", "ANN", "PLR2004", "INP001", "FBT", "E501"]
 "scripts/**" = ["T201", "INP001", "S404", "S603"] # scripts print, are not a package, and check_index.py runs git
-"plugins/files/src/files/__init__.py" = ["S404", "S603"] # the plugin runs mdfind and open, found with shutil.which
-"plugins/system/src/system/__init__.py" = ["S404", "S603"] # runs fixed macOS commands by absolute path
+"python/cmd-sdk/src/cmd_sdk/calls.py" = ["S404", "S603"] # runs the list of arguments it is given, with no shell
 
 [tool.mypy]
 strict = true
@@ -102,12 +101,15 @@ rules = [
 
 # Units are the modules directly under each top-level package (the rule's per-file root).
 # The core/shell line inside the SDK: protocol takes data and returns data and imports no
-# shell; serve is the only module that may import protocol. In the calculator, arithmetic is
+# shell; serve is the only module that may import protocol. The same line holds for the
+# helpers: locate (what a variable or a TOML text means) and expiry (when a value is old)
+# are pure and import nothing; environment and cache are their shells, calls only runs a
+# process. In the calculator, arithmetic is
 # pure and imports nothing of ours, and so are search in the files plugin, commands in
 # the system plugin, and scan and matching in the applications plugin. An import that
 # crosses source roots (the SDK importing a plugin, or a plugin another plugin) is invisible
 # to this rule; scripts/import_boundaries.py gates those, right after this check in
 # scripts/check.sh.
 [tool.pypeeker.import-boundaries]
-allow = { protocol = [], serve = ["protocol"], arithmetic = [], search = [], commands = [], scan = [], matching = [] }
+allow = { protocol = [], locate = [], expiry = [], environment = ["locate"], calls = [], cache = ["expiry"], serve = ["protocol"], arithmetic = [], search = [], commands = [], scan = [], matching = [] }
 report-unused-allowances = true
