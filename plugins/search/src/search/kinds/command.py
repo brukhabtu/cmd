@@ -16,7 +16,7 @@ from typing import Any
 
 from cmd_sdk import CallResult
 
-from search.hits import Failed, Found, Hit, InvalidError, Outcome, first_line, shown
+from search.hits import Failed, Found, Hit, InvalidError, Outcome, clean, first_line, shown, tidy
 from search.values import choice, program, texts
 
 KEYS = frozenset({"command", "format", "exit_codes"})
@@ -183,7 +183,7 @@ def _path_entry(piece: bytes) -> _Entry:
         path = os.fsdecode(piece)
         if not path.startswith("/"):
             raise InvalidError(f"{shown(path)!r} is not an absolute path")
-        return Hit(title=shown(PurePosixPath(path).name), path=path)
+        return Hit(title=tidy(shown(PurePosixPath(path).name)), path=path)
 
     return entry
 
@@ -230,10 +230,10 @@ def _hit(value: object) -> Hit:
             raise InvalidError(f"{key}: must be text")
     snippet = value.get("snippet") or ""
     return Hit(
-        title=shown((title or PurePosixPath(str(path)).name).strip()),
+        title=tidy(shown((title or PurePosixPath(str(path)).name).strip())),
         path=path,
         url=url,
-        snippet=shown(" ".join(snippet.split())),
+        snippet=clean(shown(" ".join(snippet.split()))),
         line=line,
         reference=value.get("reference") or None,
     )

@@ -16,7 +16,7 @@ from typing import Any
 
 from cmd_sdk import CallResult
 
-from search.hits import Failed, Found, Hit, InvalidError, Outcome, first_line, shown
+from search.hits import Failed, Found, Hit, InvalidError, Outcome, clean, first_line, shown, tidy
 from search.values import choice, name, program, texts
 
 KEYS = frozenset({"bin", "collections", "index", "mode"})
@@ -146,7 +146,7 @@ def _hit(entry: object, cwd: Path) -> Hit:
     title = entry.get("title")
     if not isinstance(title, str) or not title.strip():
         title = PurePosixPath(file).name
-    title = shown(title.strip())
+    title = tidy(shown(title.strip()))
     snippet = entry.get("snippet")
     line = entry.get("line")
     docid = entry.get("docid")
@@ -154,7 +154,7 @@ def _hit(entry: object, cwd: Path) -> Hit:
         title=title,
         path=path,
         url=url,
-        snippet=shown(clean_snippet(snippet, title)) if isinstance(snippet, str) else "",
+        snippet=clean(shown(clean_snippet(snippet, title))) if isinstance(snippet, str) else "",
         line=line if isinstance(line, int) and not isinstance(line, bool) and line >= 1 else None,
         reference=docid if isinstance(docid, str) and docid else None,
     )

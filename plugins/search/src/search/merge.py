@@ -16,7 +16,7 @@ from typing import Any
 
 from cmd_sdk import Action, Icon, Item, PathIcon, SymbolIcon
 
-from search.hits import Failed, Found, Hit, Outcome, shown
+from search.hits import Failed, Found, Hit, Outcome, shown, tidy
 from search.kinds.qmd import URI_SCHEME
 from search.settings import Provider, fill_open
 
@@ -265,12 +265,6 @@ def _late(name: str, deadline: float) -> tuple[str, str]:
         f"{name} did not answer within {deadline} s",
         "its hits are left out; the others' are above",
     )
-
-
-def tidy(text: str, limit: int = 160) -> str:
-    """``text`` safe for a row: control characters shown as ``?``, and at most ``limit`` long."""
-    shown = "".join(char if char.isprintable() else "?" for char in text)
-    return shown if len(shown) <= limit else shown[: limit - 1] + "\u2026"
 
 
 def problem(provider: Provider, report: Report, deadline: float) -> tuple[str, str] | None:

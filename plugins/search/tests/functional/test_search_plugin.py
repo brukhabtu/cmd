@@ -301,6 +301,14 @@ def test_control_characters_and_walls_of_text_never_reach_a_row_raw(host: Host) 
     assert title.startswith("loud: boom ?[31mred?[0m ?")
 
 
+def test_a_hit_title_from_a_file_name_with_control_characters_is_cleaned(host: Host) -> None:
+    host.configure(provider("rg", ["n"], host.fake, "paths", "/notes/a\x08b\x1b[31m.md"))
+    (row,) = query(host.start(), "n offsite")
+    assert row.title == "a?b?[31m.md"
+    assert row.subtitle is not None
+    assert row.subtitle.isprintable()
+
+
 def test_an_exit_code_in_exit_codes_is_an_answer(host: Host) -> None:
     host.configure(provider("rg", ["n"], host.fake, "exit1", exit_codes=[0, 1]))
     (row,) = query(host.start(), "n offsite")

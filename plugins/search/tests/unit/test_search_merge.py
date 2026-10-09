@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from cmd_sdk import CallResult, PathIcon, SymbolIcon
-from search.hits import Failed, Found, Hit
+from search.hits import Failed, Found, Hit, tidy
 from search.kinds import command, qmd
 from search.merge import (
     Called,
@@ -21,7 +21,6 @@ from search.merge import (
     problem,
     rows,
     summary,
-    tidy,
 )
 from search.settings import Provider
 

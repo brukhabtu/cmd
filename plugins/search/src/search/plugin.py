@@ -77,9 +77,10 @@ from search.replies import (
 from search.settings import Problem, Provider, Settings, command_line, fold, parse, unusable
 
 GRACE = 1.0
+"""Seconds ``call`` may wait, after a child exits, for pipes a grandchild holds open."""
+
 MAX_OUTPUT = 1 << 20
 """Bytes of a provider's output the plugin keeps, per stream; past it the provider is killed."""
-"""Seconds ``call`` may wait, after a child exits, for pipes a grandchild holds open."""
 
 REVEAL_DEADLINE = 5.0
 """Seconds to wait for Finder, as the files plugin does."""

@@ -137,8 +137,9 @@ reads no more than `4 * limit` entries and stops. Every call passes `max_output=
 started: the answer is then `capped`, its complete entries are hits, and the provider's problem
 row says "printed more than the plugin reads" (a JSON array cut short is no answer, as at the
 deadline). A command should still limit itself with `{limit}` (ripgrep's `--max-count`,
-`fd --max-results`): the cap is a guard and not a plan. Text a provider prints is shown
-in rows only after control characters become `?` and the line is cut at 160 characters.
+`fd --max-results`): the cap is a guard and not a plan. Text a provider prints enters a
+row only after control characters become `?`: hit titles and problem text are also cut at
+160 characters, snippets are cut as the row needs.
 
 ### The process's environment
 

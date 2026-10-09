@@ -102,8 +102,9 @@ The paths are examples: put in what `command -v` printed on your Mac. For ripgre
 `--fixed-strings` keeps the text from being read as a regular expression, `--sortr
 modified` lists the note changed last first, and `exit_codes = [0, 1]` because ripgrep
 exits 1 when nothing matches. `{limit}` would put the provider's limit into an argument
-(`--max-count`, `fd --max-results`); a provider should limit itself, since the plugin keeps
-whatever it prints until the deadline.
+(`--max-count`, `fd --max-results`); a provider should limit itself: the plugin keeps at most
+1 MiB of what it prints, kills a provider that prints more, and shows only the hits in the part
+it kept.
 
 ### Why `bin` and `env.PATH`
 

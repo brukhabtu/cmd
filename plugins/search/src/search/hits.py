@@ -70,6 +70,17 @@ def first_line(text: str, fallback: str) -> str:
     return fallback
 
 
+def clean(text: str) -> str:
+    """``text`` with each character that is not printable (control characters) as ``?``."""
+    return "".join(char if char.isprintable() else "?" for char in text)
+
+
+def tidy(text: str, limit: int = 160) -> str:
+    """``text`` cleaned, and at most ``limit`` long: how a provider's words enter a row."""
+    cleaned = clean(text)
+    return cleaned if len(cleaned) <= limit else cleaned[: limit - 1] + "\u2026"
+
+
 def shown(text: str) -> str:
     """Text as a row can carry it: a character a file name smuggled in, replaced.
 
