@@ -1,10 +1,10 @@
 ---
 id: TASK-3.1
 title: 'Design: the search plugin''s providers, config and merging'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-09 13:51'
-updated_date: '2026-10-09 14:03'
+updated_date: '2026-10-09 14:06'
 labels:
   - size-3
 milestone: m-3
@@ -28,9 +28,9 @@ Settle before any code, since a config format is hard to change once people writ
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One decision records the provider interface, the config schema with a worked example for qmd and for a second provider, and how providers that share a keyword are merged
-- [ ] #2 The decision says what a failing, slow or missing provider shows, and that query never raises and stays inside the host's timeout
-- [ ] #3 The decision says how Enter, the other actions and a hit without a path behave
+- [x] #1 One decision records the provider interface, the config schema with a worked example for qmd and for a second provider, and how providers that share a keyword are merged
+- [x] #2 The decision says what a failing, slow or missing provider shows, and that query never raises and stays inside the host's timeout
+- [x] #3 The decision says how Enter, the other actions and a hit without a path behave
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -45,4 +45,13 @@ Assumptions (all in the decision): status keyword search; deadline 1.0 s; rank i
 Verified by running the isolated qmd 2.8.3 from a scratch directory: warm search --json --full-path took 0.20 s median, 0.22 s p95, 0.24 s max over 20 runs; the decision's exact argv (-c twice, --index index, --) works; -x without -- is a usage error, -- -offsite answers []; FTS syntax in the text never errors; -c nosuch exits 1 with one stderr line; bare PATH exits 127, /usr/bin/env PATH=... answers; --index nosuchindex answers [] and creates an empty index (removed afterwards); qmd get <absolute path> reads a note and prints its URI and docid on its first line; the score is |bm25|/(1+|bm25|) (store.ts searchFTS), not normalised per result set as TASK-3 says. The ripgrep command in the example answered NUL-separated paths, exit 1 for no match, 2 with stderr for a missing folder. vsearch and query not run: there are no models and none were downloaded, so their time is unmeasured.
 
 Checks: scripts/docs.sh passes.
+
+## Review at close, 2026-10-09
+A read-only reviewer who did not do the work said close, all three criteria met; it ran the decision's exact qmd command against the real qmd 2.8.3 and a ripgrep command and found every claim held. Its four gaps are settled in decision 11 by the lead: a timed-out or cut call is neither cached nor counted as healthy (only a call that finished in time is cached, and three calls that all missed the deadline start the rest); output decoding (os.fsdecode for paths) and a bound (4 times limit entries read, and the commands should limit themselves, since the SDK call has no output cap: a follow-up for the SDK); entries a failing exit code printed are still shown, above the problem row (ripgrep exit 2); item ids carry the providers and the rank, and the other rows have fixed ids. Also: the deadline floor is 0.5 s, realpath runs in each provider's thread, and decision 9's provider rule is scoped to feeds. Left for the owner: decision 11 is proposed; whether problem rows sit above or below the hits; the obsidian:// open example, which needs the Mac.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decision 11 (proposed) defines the search plugin's provider interface (qmd and a generic command kind), its config schema with worked examples for qmd and a second provider, how providers sharing a keyword are searched in parallel, merged and ranked by their own order, what a failing, slow or missing provider shows, and what Enter and the other actions do. Closed on review; the qmd claims were checked against a real qmd.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -120,9 +120,18 @@ placeholder it does not know; here braces belong to the tools.) Some argument mu
   are ignored, so a tool may print more. An entry that does not fit is skipped and counted.
 
 An exit code in `exit_codes` is an answer (ripgrep and grep exit 1 for no match); any
-other is `Failed` with stderr's first line. At the deadline a `paths` or JSON-lines
+other is `Failed` with stderr's first line, and the complete entries it printed before
+failing are still hits, shown above the problem row (ripgrep exits 2 for one unreadable
+file and still prints the rest). At the deadline a `paths` or JSON-lines
 answer keeps its complete lines and is `cut`; an array is `Failed`. Output whose every
 entry was skipped is `Failed("N entries are not <format>: <first problem>")`.
+
+**Decoding and size.** A path is decoded as the file system does (`os.fsdecode`, so a name
+that is not UTF-8 still names its file), any other text as UTF-8 with replacement. The kind
+reads no more than `4 * limit` entries and stops; the bytes `call` has already kept are
+bounded by the deadline and not by a cap, since `call` has none: a command should limit
+itself with `{limit}` (ripgrep's `--max-count`, `fd --max-results`), and a cap in `call` is
+a follow-up for the SDK, not this plugin.
 
 ### The process's environment
 
@@ -191,14 +200,14 @@ The paths are examples: where qmd, node and ripgrep live is the owner's Mac's to
 | Key | Must be set | Default | Rule |
 |---|---|---|---|
 | `status_keyword` | no | `"search"` | one word; shows the providers and every config problem; no provider may use it |
-| `deadline` | no | `1.0` | seconds, 0.2 to 1.5; one deadline for every provider of a keyword, which run at once |
+| `deadline` | no | `1.0` | seconds, 0.5 to 1.5 (qmd's warm median is 0.2 s); one deadline for every provider of a keyword, which run at once |
 | `min_chars` | no | `2` | 1 to 10; a text after the keyword shorter than this starts no process |
 | `provider.name` | yes | | letters, digits, `.`, `_`, `-`, at most 32; unique, ASCII case ignored; named in every row |
 | `provider.kind` | yes | | `qmd` or `command` |
 | `provider.keywords` | yes | | a list of one or more words, ASCII case ignored; providers may share a word. A provider with none is refused: it could only run on every keystroke of all text |
 | `provider.env` | no | none: the plugin's own environment | a table of strings; names match `[A-Za-z_][A-Za-z0-9_]*` |
 | `provider.limit` | no | `10` | hits asked for and kept, 1 to 50 |
-| `provider.open` | no | `"{uri}"` | what Enter opens for a hit with a path: a URL with a scheme after filling `{uri}` (the `file://` URL), `{path}` (the path, percent-encoded but for `/`) and `{line}` (the hit's line, or 1); it holds `{uri}` or `{path}` |
+| `provider.open` | no | `"{uri}"` | what Enter opens for a hit with a path: a URL with a scheme after filling `{uri}` (the `file://` URL), `{path}` (the path, percent-encoded but for `/`) and `{line}` (the hit's line, or 1); it holds `{uri}` or `{path}`; each placeholder is filled once, so a URL embedded in another URL's query is not supported |
 | `bin` (qmd) | yes | | absolute path to an executable file, without `=` (env would take it for a variable) |
 | `collections` (qmd) | no | `[]`: qmd's default collections | names, none starting with `-`; one `-c` each |
 | `index` (qmd) | no | none: qmd's default index | letters, digits, `.`, `_`, `-`; passed as `--index` |
@@ -237,11 +246,14 @@ request at a time and asks only the newest of the queries that queued meanwhile:
 
 - **A minimum length.** A text shorter than `min_chars` gets one row, "Search qmd,
   notes-rg", "Type at least 2 characters after n", and starts nothing.
-- **A short cache.** Each provider's outcome for a text, found or failed, is kept 10 s
-  (at most 64 kept), so backspacing over a word and typing it again starts nothing.
-- **A rest for a hung provider.** A provider that missed the deadline three times in a
-  row starts nothing for 30 s and shows "notes-rg is resting after 3 slow answers, until
-  14:31". An answer in time sets the count back to 0. Without it one hung tool would cost
+- **A short cache.** Each provider's answer for a text is kept 10 s (at most 64 kept), so
+  backspacing over a word and typing it again starts nothing. Only the answer of a call
+  that finished in time is kept, hits or a failure message alike. A call that missed the
+  deadline, cut or not, is not kept, so typing the text again tries again.
+- **A rest for a hung provider.** A provider whose last three calls all missed the
+  deadline (the call came back `timed_out`, with hits kept or not) starts nothing for 30 s and shows "notes-rg is resting after 3 slow answers, until
+  14:31". A call that finished in time sets the count back to 0, even if it then spent
+  `call`'s grace draining pipes; an answer from the cache is no call and changes nothing. Without it one hung tool would cost
   every keystroke on its keyword the whole deadline.
 - **No delay before a search.** The plugin cannot see the keystroke that follows, so
   waiting would only make every answer later.
@@ -259,7 +271,8 @@ dropped. **`query` never raises**: its body is one `try`, and an exception becom
 
 **Merging.** Hits are merged in the order above. Two hits are one when their paths are the
 same file (`os.path.realpath`, which reads only the file system's metadata, for at most
-the hits kept: qmd prints real paths, ripgrep prints them as reached under the folder it
+the hits kept, and run in each provider's own thread, so the deadline covers it and a path
+that is not resolved by then is compared as written: qmd prints real paths, ripgrep prints them as reached under the folder it
 was given, perhaps through a symlink), or when they have the same `url`; hits with
 neither never collapse. The collapsed row sits at its best rank, takes title, snippet,
 line and `open` from that provider and the reference from whichever has one, and names
@@ -302,7 +315,10 @@ Enter on any of these shows the command as run and stderr's first five lines (`s
   handle qmd still has.
 - An item's id is a small JSON object holding what `run` needs (path, open target, URL,
   reference, qmd URI, text), so `run` keeps no memory of the query and survives a restart
-  between the two.
+  between the two. The object also names the providers that found the hit and its place in
+  the merged order, so no two rows share an id. The other rows have fixed ids: `status`,
+  `hint:min`, `config:<n>` for the nth config problem, `problem:<provider>` for a
+  provider's failure and `none` for the row that says there were no hits.
 
 ### qmd's slow modes
 
