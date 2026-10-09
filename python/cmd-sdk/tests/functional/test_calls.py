@@ -101,3 +101,52 @@ def test_a_grandchild_holding_the_pipes_costs_one_grace_not_two() -> None:
     result = call(_python(code), 10)
     assert result.stdout == b"hi\n"
     assert time.monotonic() - start < 1.8
+
+
+def test_output_past_the_cap_is_cut_and_the_child_is_killed() -> None:
+    code = "import sys; sys.stdout.buffer.write(b'x' * 5_000_000); sys.stdout.flush()"
+    start = time.monotonic()
+    result = call(_python(code), 10, max_output=1000)
+    assert time.monotonic() - start < 3
+    assert result.truncated
+    assert result.stdout == b"x" * 1000
+    assert not result.timed_out
+
+
+def test_output_under_the_cap_is_kept_whole_and_not_marked_truncated() -> None:
+    result = call(_python("print('hello')"), 10, max_output=1000)
+    assert (result.stdout, result.truncated) == (b"hello\n", False)
+
+
+def test_stderr_has_the_same_cap() -> None:
+    code = "import sys; sys.stderr.write('e' * 100_000); sys.stderr.flush()"
+    result = call(_python(code), 10, max_output=500)
+    assert result.truncated
+    assert result.stderr == b"e" * 500
+
+
+def test_a_grandchild_holding_the_pipes_past_the_grace_is_killed_when_asked(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "grandchild-finished"
+    grandchild = (
+        f"import time, pathlib; time.sleep(1.5); pathlib.Path({str(marker)!r}).write_text('x')"
+    )
+    code = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {grandchild!r}]); print('hi')"
+    result = call(_python(code), 10, kill_on_timeout=True)
+    assert result.stdout == b"hi\n"
+    time.sleep(2)
+    assert not marker.exists()
+
+
+def test_a_grandchild_is_left_alone_without_the_request(tmp_path: Path) -> None:
+    marker = tmp_path / "grandchild-finished"
+    grandchild = (
+        f"import time, pathlib; time.sleep(1.5); pathlib.Path({str(marker)!r}).write_text('x')"
+    )
+    code = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {grandchild!r}]); print('hi')"
+    call(_python(code), 10)
+    deadline = time.monotonic() + 10
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert marker.exists()

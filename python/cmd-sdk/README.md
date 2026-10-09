@@ -160,6 +160,10 @@ appear in that line, and editing its files reloads it.
   `kill_on_timeout=True`, not killed: it finishes in the background. The child's stdout
   and stderr are never inherited, so it cannot write into the protocol's stdout: they are
   captured, or with `keep_stdout=False` the stdout is discarded. Its stdin is closed.
+  `max_output=N` keeps the first N bytes of each stream, kills the child and what it
+  started, and sets `truncated` on the result: without it everything the child prints
+  before the deadline is held in memory. With `kill_on_timeout=True` a grandchild that
+  still holds the pipes once the one-second grace is over is killed as well.
 - `TtlCache(produce, ttl)` holds one value. `get()` returns it at once (or `None` before
   the first fill); once it is older than `ttl` seconds a daemon thread refreshes it, one at
   a time. A refresh that raises keeps the old value and leaves the exception in `.error`.
