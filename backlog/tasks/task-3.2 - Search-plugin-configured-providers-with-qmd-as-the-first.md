@@ -1,10 +1,10 @@
 ---
 id: TASK-3.2
 title: 'Search plugin: configured providers, with qmd as the first'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-09 13:51'
-updated_date: '2026-10-09 14:35'
+updated_date: '2026-10-09 14:58'
 labels:
   - size-5
 milestone: m-3
@@ -23,11 +23,11 @@ A new plugin under plugins/search, built as the design decision says: the provid
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A configured keyword and text shows qmd's hits ranked best first, and Enter opens the note, from config alone
-- [ ] #2 Two providers sharing a keyword are searched together and merged, and a failing or slow one shows its message beside the other's hits
-- [ ] #3 query never raises and answers inside the host's timeout; a first word that is no keyword starts no process
-- [ ] #4 Fixtures captured from the real qmd run through the plugin in a contract test, and a test against an installed qmd runs when one is named in the environment and is skipped otherwise
-- [ ] #5 docs/use has a page for the plugin, the plugin is in the index and the generated references, and scripts/check.sh passes
+- [x] #1 A configured keyword and text shows qmd's hits ranked best first, and Enter opens the note, from config alone
+- [x] #2 Two providers sharing a keyword are searched together and merged, and a failing or slow one shows its message beside the other's hits
+- [x] #3 query never raises and answers inside the host's timeout; a first word that is no keyword starts no process
+- [x] #4 Fixtures captured from the real qmd run through the plugin in a contract test, and a test against an installed qmd runs when one is named in the environment and is skipped otherwise
+- [x] #5 docs/use has a page for the plugin, the plugin is in the index and the generated references, and scripts/check.sh passes
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -73,4 +73,13 @@ Owed on the owner's Mac:
 - [ ] A cold qmd search after sleep answers inside deadline 1.0.
 - [ ] The ripgrep provider from the worked example, with rg's real path.
 - [ ] Re-pin plugins/index.toml's search entry after the push.
+
+## Review at close, 2026-10-09
+Two read-only reviewers who did not do the work. The first said not yet: a provider that printed 200 MB held 1.1 GB and once pushed a query past the host's 3 s; binary text reached a row title; the layering table, which names units by module alone, had been widened by the plugin's schema and answers modules; text with a NUL blamed every program; the grandchild of a hung provider outlived the answer; and the steps owed on the Mac were not done. The lead fixed them: the SDK's call() gained max_output (kills the child, sets truncated) and kills a grandchild still holding the pipes after the grace; the plugin passes 1 MiB; hit titles, snippets and problem text are cleaned (and titles cut at 160); a NUL text gets its own row; the plugin's modules are now settings and replies, the vault's table rows are as they were, and the search plugin has complete rows (the reviewer proved the gate enforces both with throwaway forbidden imports). With the first reviewer's own flood, hang and slow providers: ten queries took at most 1.52 s, the plugin peaked at 37 MB, no process was left. The second reviewer found everything fixed except control characters in a hit's title (fixed after: clean and tidy in hits, a test that fails without it) and two documentation nits (fixed). Left as they are: only the first problem per provider is shown. Still owed on the owner's Mac, recorded in the checklist above: qmd installed there, the absolute bin and PATH from a Dock launch, Open and Reveal, the obsidian:// template, a cold search timing, the ripgrep example.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+plugins/search: configured search providers, qmd first. Providers sharing a keyword are searched in parallel under one deadline and merged by rank, a failing, slow or flooding provider shows its message without hiding the others, query never raises and answers in about 1.5 s at worst, and every value comes from config. Tested with fixtures captured from the real qmd, a fake provider and a real-qmd test run once. Closed on review; the Mac checks are owed.
+<!-- SECTION:FINAL_SUMMARY:END -->
