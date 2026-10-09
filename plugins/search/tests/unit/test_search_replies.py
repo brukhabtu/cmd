@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass
 
-from search.answers import (
+from search.hits import Failed, Found, Hit
+from search.memory import CACHE_SECONDS, CACHE_SIZE, REST_SECONDS, Memory
+from search.merge import Called, Target, Unstarted, encode
+from search.replies import (
     Detail,
     Keyword,
     OnHit,
@@ -14,10 +17,7 @@ from search.answers import (
     route,
     status_rows,
 )
-from search.hits import Failed, Found, Hit
-from search.memory import CACHE_SECONDS, CACHE_SIZE, REST_SECONDS, Memory
-from search.merge import Called, Target, Unstarted, encode
-from search.schema import Problem, Settings, parse, unusable
+from search.settings import Problem, Settings, parse, unusable
 
 QMD = {"name": "qmd", "kind": "qmd", "keywords": ["n", "qmd"], "bin": "/q"}
 RG = {
@@ -81,7 +81,7 @@ def test_the_status_rows_list_providers_last_outcomes_and_problems() -> None:
     assert rows[0].title == "search: 2 providers"
     assert rows[0].subtitle == "keywords: n, qmd, grep, broken"
     assert rows[1].title == "qmd: qmd on n, qmd"
-    assert rows[1].subtitle == "last search: 1 hits"
+    assert rows[1].subtitle == "last search: 1 hit"
     assert rows[2].subtitle == "rg: /rg is not an executable file"
     assert rows[4].title == "rg: /rg is not an executable file"
 

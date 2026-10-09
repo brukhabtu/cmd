@@ -21,8 +21,9 @@ from search.merge import (
     problem,
     rows,
     summary,
+    tidy,
 )
-from search.schema import Provider
+from search.settings import Provider
 
 QMD = Provider("qmd", "qmd", ("n",), qmd.Settings("/q"), reference="Copy docid")
 RG = Provider("notes-rg", "command", ("n",), command.Settings("/rg", ("{text}",), "paths"))
@@ -291,3 +292,11 @@ def test_folder_shortens_home() -> None:
     assert folder("/Users/bruk/a.md", HOME) == "~"
     assert folder("/Users/bruk/Notes/a.md", HOME) == "~/Notes"
     assert folder("/Users/brukx/a.md", HOME) == "/Users/brukx"
+
+
+def test_tidy_shows_control_characters_as_question_marks_and_cuts_long_text() -> None:
+    assert tidy("a\x08b\rc\nd\x1b") == "a?b?c?d?"
+    assert tidy("é ⌘ fine") == "é ⌘ fine"
+    long = tidy("y" * 500)
+    assert len(long) == 160
+    assert long.endswith("…")

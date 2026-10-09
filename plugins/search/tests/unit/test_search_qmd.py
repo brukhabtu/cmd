@@ -12,7 +12,7 @@ import pytest
 from cmd_sdk import CallResult
 from search.hits import Failed, Found, Hit, InvalidError
 from search.kinds import KINDS, qmd
-from search.schema import Provider, command_line
+from search.settings import Provider, command_line
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "qmd"
 SETTINGS = qmd.Settings(bin="/opt/homebrew/bin/qmd")

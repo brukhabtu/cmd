@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 from search.kinds import command, qmd
-from search.schema import (
+from search.settings import (
     Problem,
     Provider,
     Settings,

@@ -270,6 +270,37 @@ def test_a_failing_or_slow_provider_shows_its_message_beside_the_others_hits(
     assert [row.id for row in rows][len(extra) + 1 :] == (["problem:broken"] if expected else [])
 
 
+def test_output_past_the_cap_is_cut_and_the_provider_killed_and_named(host: Host) -> None:
+    good = host.note("good.md")
+    host.configure(
+        provider("flood", ["n"], host.fake, "flood", good)
+        + provider("good", ["n"], host.fake, "paths", good)
+    )
+    rows, took = _timed(host.start(), "n offsite")
+    assert took < 2.5
+    assert _paths(rows)[0] == good
+    assert _problems(rows) == [
+        ("flood printed more than the plugin reads", "its hits above are the first it printed")
+    ]
+
+
+def test_a_text_with_a_nul_character_is_a_row_and_starts_nothing(host: Host) -> None:
+    host.configure(provider("rg", ["n"], host.fake, "paths"))
+    (row,) = query(host.start(), "n off\0site")
+    assert (row.id, row.title) == ("hint:text", "search: the text has a NUL character")
+    assert host.starts() == []
+
+
+def test_control_characters_and_walls_of_text_never_reach_a_row_raw(host: Host) -> None:
+    host.configure(provider("loud", ["n"], host.fake, "noisy"))
+    rows = query(host.start(), "n offsite")
+    (title, subtitle) = _problems(rows)[0]
+    for text in (title, subtitle or ""):
+        assert text.isprintable()
+        assert len(text) <= 160
+    assert title.startswith("loud: boom ?[31mred?[0m ?")
+
+
 def test_an_exit_code_in_exit_codes_is_an_answer(host: Host) -> None:
     host.configure(provider("rg", ["n"], host.fake, "exit1", exit_codes=[0, 1]))
     (row,) = query(host.start(), "n offsite")

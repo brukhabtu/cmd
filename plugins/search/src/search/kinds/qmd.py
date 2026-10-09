@@ -97,6 +97,8 @@ def read(settings: Settings, finished: CallResult, cwd: Path, limit: int) -> Out
     """
     if finished.timed_out:
         return Failed("no answer by the deadline: half a JSON array is no answer")
+    if finished.truncated:
+        return Failed("printed more than the plugin reads: half a JSON array is no answer")
     if finished.returncode != 0:
         stderr = finished.stderr.decode("utf-8", "replace")
         return Failed(first_line(stderr, f"exited with {finished.returncode}"))

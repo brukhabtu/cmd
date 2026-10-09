@@ -42,6 +42,8 @@ class Found:
     first of them. ``cut`` is a call stopped at the deadline: these are the hits read by
     then. ``failure`` is a command that exited with a code it does not answer with after
     printing these hits (ripgrep's exit 2 for one unreadable file): the hits still count.
+    ``capped`` is a call whose output reached the size cap and was killed: these are the hits
+    in the part kept.
     """
 
     hits: tuple[Hit, ...]
@@ -49,6 +51,7 @@ class Found:
     problem: str = ""
     cut: bool = False
     failure: Failed | None = None
+    capped: bool = False
 
 
 type Outcome = Found | Failed

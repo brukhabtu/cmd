@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from cmd_sdk import Item, SymbolIcon
 
 from search.merge import PROBLEM_ICON, Report, Target, decode, summary
-from search.schema import Problem, Provider, Settings, fold
+from search.settings import Problem, Provider, Settings, fold
 
 STATUS = "status"
 HINT = "hint:min"
@@ -89,6 +89,16 @@ def config_rows(problems: tuple[tuple[int, Problem], ...]) -> tuple[Item, ...]:
             icon=PROBLEM_ICON,
         )
         for position, problem in problems
+    )
+
+
+def bad_text_row() -> Item:
+    """The row for a text no program can be given: it holds a NUL character."""
+    return Item(
+        id="hint:text",
+        title="search: the text has a NUL character",
+        subtitle="No program can be given one: remove it to search",
+        icon=SymbolIcon("exclamationmark.triangle"),
     )
 
 

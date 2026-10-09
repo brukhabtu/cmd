@@ -105,7 +105,8 @@ def read(settings: Settings, finished: CallResult, cwd: Path, limit: int) -> Out
     and the answer is ``cut``; a JSON array cut short is no answer.
     """
     failure = None
-    if not finished.timed_out and finished.returncode not in settings.exit_codes:
+    incomplete = finished.timed_out or finished.truncated
+    if not incomplete and finished.returncode not in settings.exit_codes:
         stderr = finished.stderr.decode("utf-8", "replace")
         failure = Failed(first_line(stderr, f"exited with {finished.returncode}"))
     entries = _entries(settings.format, finished)
@@ -124,10 +125,15 @@ def read(settings: Settings, finished: CallResult, cwd: Path, limit: int) -> Out
             break
     if not hits and failure is not None:
         return failure
-    if not hits and skipped and not finished.timed_out:
+    if not hits and skipped and not incomplete:
         return Failed(f"{skipped} entries are not {settings.format}: {problem}")
     return Found(
-        tuple(hits), skipped=skipped, problem=problem, cut=finished.timed_out, failure=failure
+        tuple(hits),
+        skipped=skipped,
+        problem=problem,
+        cut=finished.timed_out,
+        failure=failure,
+        capped=finished.truncated,
     )
 
 
@@ -137,11 +143,12 @@ type _Entry = Callable[[], Hit]
 
 def _entries(form: str, finished: CallResult) -> Iterator[_Entry] | Failed:
     stdout = finished.stdout
+    incomplete = finished.timed_out or finished.truncated
     if form == PATHS:
-        return (_path_entry(piece) for piece in _pieces(stdout, cut=finished.timed_out))
+        return (_path_entry(piece) for piece in _pieces(stdout, cut=incomplete))
     if stdout.lstrip().startswith(b"["):
-        if finished.timed_out:
-            return Failed("stopped at the deadline: half a JSON array is no answer")
+        if incomplete:
+            return Failed("stopped before the end: half a JSON array is no answer")
         try:
             answer = json.loads(os.fsdecode(stdout))
         except ValueError as error:
@@ -149,7 +156,7 @@ def _entries(form: str, finished: CallResult) -> Iterator[_Entry] | Failed:
         if not isinstance(answer, list):
             return Failed("answer is not a JSON array of hits")
         return (_hit_entry(entry) for entry in answer)
-    return (_line_entry(line) for line in _pieces(stdout, cut=finished.timed_out, lines=True))
+    return (_line_entry(line) for line in _pieces(stdout, cut=incomplete, lines=True))
 
 
 def _pieces(stdout: bytes, *, cut: bool, lines: bool = False) -> Iterator[bytes]:

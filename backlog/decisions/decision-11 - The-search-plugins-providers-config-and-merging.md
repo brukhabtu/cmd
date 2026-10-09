@@ -132,10 +132,13 @@ entry was skipped is `Failed("N entries are not <format>: <first problem>")`.
 
 **Decoding and size.** A path is decoded as the file system does (`os.fsdecode`, so a name
 that is not UTF-8 still names its file), any other text as UTF-8 with replacement. The kind
-reads no more than `4 * limit` entries and stops; the bytes `call` has already kept are
-bounded by the deadline and not by a cap, since `call` has none: a command should limit
-itself with `{limit}` (ripgrep's `--max-count`, `fd --max-results`), and a cap in `call` is
-a follow-up for the SDK, not this plugin.
+reads no more than `4 * limit` entries and stops. Every call passes `max_output=1 MiB` to
+`call`, which keeps the first 1 MiB of each stream and kills the provider and what it
+started: the answer is then `capped`, its complete entries are hits, and the provider's problem
+row says "printed more than the plugin reads" (a JSON array cut short is no answer, as at the
+deadline). A command should still limit itself with `{limit}` (ripgrep's `--max-count`,
+`fd --max-results`): the cap is a guard and not a plan. Text a provider prints is shown
+in rows only after control characters become `?` and the line is cut at 160 characters.
 
 ### The process's environment
 

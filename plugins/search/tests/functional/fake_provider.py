@@ -12,6 +12,8 @@ to ``starts.log`` beside it, then behaves as the mode says:
   then a line on stderr, and exits 2, as ripgrep does for one unreadable file.
 - ``slow``: sleeps far past any deadline. ``partial``: prints the items as paths, then a
   half path with no newline, then sleeps far past any deadline.
+- ``noisy``: one long line on stderr with escape and control characters, and exit 2.
+- ``flood``: prints the items as paths, then about 40 MB more paths, as fast as it can.
 - ``garbage``: prints bytes that are neither paths nor JSON.
 - ``grandchild``: prints the items as paths, starts a child that holds stdout open and
   sleeps, and exits 0 at once. ``late-grandchild``: the same after sleeping as many
@@ -29,7 +31,7 @@ from pathlib import Path
 _SLEEP = 30.0
 
 
-def main() -> int:  # ruff: ignore[complex-structure, too-many-branches] - one branch per mode
+def main() -> int:  # ruff: ignore[complex-structure, too-many-branches, too-many-return-statements] - one branch per mode
     """Do one search, as the mode says."""
     here = Path(__file__).resolve().parent
     arguments = sys.argv[1:]
@@ -64,6 +66,15 @@ def main() -> int:  # ruff: ignore[complex-structure, too-many-branches] - one b
             out.write(b"".join(item.encode() + b"\n" for item in items) + b"/half/a/pa")
             out.flush()
             time.sleep(_SLEEP)
+        case "noisy":
+            sys.stderr.buffer.write(b"boom \x1b[31mred\x1b[0m \x08\r" + b"y" * 500 + b"\n")
+            return 2
+        case "flood":
+            out.write(b"".join(item.encode() + b"\n" for item in items))
+            out.flush()
+            line = b"/flood/" + b"x" * 90 + b"\n"
+            for _ in range(400_000):  # about 40 MB, far more than the plugin keeps
+                out.write(line)
         case "garbage":
             out.write(b"\xff\xfe not a path {{{ nor JSON\n\x01\x02\n")
         case "grandchild" | "late-grandchild":

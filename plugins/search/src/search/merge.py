@@ -18,7 +18,7 @@ from cmd_sdk import Action, Icon, Item, PathIcon, SymbolIcon
 
 from search.hits import Failed, Found, Hit, Outcome, shown
 from search.kinds.qmd import URI_SCHEME
-from search.schema import Provider, fill_open
+from search.settings import Provider, fill_open
 
 OPEN = "open"
 REVEAL = "reveal"
@@ -267,8 +267,19 @@ def _late(name: str, deadline: float) -> tuple[str, str]:
     )
 
 
+def tidy(text: str, limit: int = 160) -> str:
+    """``text`` safe for a row: control characters shown as ``?``, and at most ``limit`` long."""
+    shown = "".join(char if char.isprintable() else "?" for char in text)
+    return shown if len(shown) <= limit else shown[: limit - 1] + "\u2026"
+
+
 def problem(provider: Provider, report: Report, deadline: float) -> tuple[str, str] | None:
     """The title and subtitle of a provider's problem row, or ``None`` when it has none."""
+    found = _problem(provider, report, deadline)
+    return None if found is None else (tidy(found[0]), tidy(found[1]))
+
+
+def _problem(provider: Provider, report: Report, deadline: float) -> tuple[str, str] | None:
     name = provider.name
     match report:
         case Resting():
@@ -278,7 +289,9 @@ def problem(provider: Provider, report: Report, deadline: float) -> tuple[str, s
             return (f"{name}: {report.message}", "check its program in config.toml")
         case Called(outcome=Failed() as failed) if not report.timed_out:
             return (f"{name}: {failed.message}", _exit(report.returncode))
-        case Called(outcome=Found() as found) if found.failure or found.cut or found.skipped:
+        case Called(outcome=Found() as found) if (
+            found.failure or found.cut or found.capped or found.skipped
+        ):
             return _found_problem(name, found, report.returncode, deadline)
         case Called(outcome=Found()):
             return None
@@ -295,6 +308,11 @@ def _found_problem(
         return (f"{name}: {found.failure.message}", _exit(returncode))
     if found.cut and not found.hits:
         return _late(name, deadline)
+    if found.capped:
+        return (
+            f"{name} printed more than the plugin reads",
+            "its hits above are the first it printed",
+        )
     if found.cut:
         return (f"{name} stopped at {deadline} s", "its hits above are those it found by then")
     return (f"{name}: {found.skipped} entries could not be read", found.problem)
@@ -307,7 +325,8 @@ def summary(provider: Provider, report: Report | None, deadline: float) -> str:
     trouble = problem(provider, report, deadline)
     if trouble is not None:
         return f"last search: {trouble[0]}"
-    return f"last search: {len(_hits(report))} hits"
+    count = len(_hits(report))
+    return f"last search: {count} {'hit' if count == 1 else 'hits'}"
 
 
 def rows(

@@ -38,21 +38,6 @@ from cmd_sdk import (
 from cmd_sdk.locate import CONFIG_FILE, CONFIG_VARIABLE, directory_from
 from cmd_sdk.protocol import DEFAULT_ACTION
 
-from search.answers import (
-    Detail,
-    Keyword,
-    OnHit,
-    OpenConfig,
-    Say,
-    Startup,
-    Status,
-    choice,
-    config_rows,
-    failure_row,
-    hint_row,
-    route,
-    status_rows,
-)
 from search.hits import Failed, Found, Outcome, shown
 from search.kinds import KINDS
 from search.memory import REST_AFTER, Memory
@@ -73,9 +58,27 @@ from search.merge import (
     actions,
     rows,
 )
-from search.schema import Problem, Provider, Settings, command_line, fold, parse, unusable
+from search.replies import (
+    Detail,
+    Keyword,
+    OnHit,
+    OpenConfig,
+    Say,
+    Startup,
+    Status,
+    bad_text_row,
+    choice,
+    config_rows,
+    failure_row,
+    hint_row,
+    route,
+    status_rows,
+)
+from search.settings import Problem, Provider, Settings, command_line, fold, parse, unusable
 
 GRACE = 1.0
+MAX_OUTPUT = 1 << 20
+"""Bytes of a provider's output the plugin keeps, per stream; past it the provider is killed."""
 """Seconds ``call`` may wait, after a child exits, for pipes a grandchild holds open."""
 
 REVEAL_DEADLINE = 5.0
@@ -106,7 +109,7 @@ class Search:
 
 
 def _call(command: Sequence[str], deadline: float) -> CallResult:
-    return call(command, deadline, kill_on_timeout=True)
+    return call(command, deadline, kill_on_timeout=True, max_output=MAX_OUTPUT)
 
 
 def now() -> datetime:
@@ -218,6 +221,8 @@ def _query(search: Search, text: str) -> tuple[Item, ...]:
                 return problems
             if len(found.text) < settings.min_chars:
                 return (hint_row(found, settings.min_chars), *problems)
+            if "\0" in found.text:
+                return (bad_text_row(), *problems)
             answers = _ask(search, usable, found.text)
             return (*rows(answers, settings.deadline, search.home), *problems)
 
