@@ -26,7 +26,7 @@ My notes, meeting transcripts and docs are indexed by qmd (https://github.com/to
 
 ## What the qmd spike found (the lead, 2026-10-09, qmd 2.8.3 run for real on Linux)
 - `qmd search "<text>" --json -n N [-c <collection>]... [--full-path] [--index <name>]` prints a JSON array. Each hit: `{"docid": "#75ebe1", "score": 0.49, "file": "qmd://notes/offsite.md", "line": 1, "title": "...", "context"?: "...", "snippet": "@@ -1,3 @@ (0 before, 1 after)\n# Title\n\nbody text"}`. No hits: `[]`, exit 0. With `--full-path` `file` is the on-disk path, absolute unless the file is under the working directory, when it is `./relative` (resolve it against the working directory) and `docid` is left out.
-- `score` is a BM25 score normalised per result set and not trustworthy across queries: in a three-note corpus a clear match scored 0 and another 0.49. Rank order is the signal.
+- `score` is `|bm25|/(1+|bm25|)` (checked in qmd's source by the design worker) and not trustworthy across queries: in a three-note corpus a clear match scored 0 and another 0.49. Rank order is the signal.
 - The snippet opens with a diff-style header line (`@@ -1,3 @@ (...)`) that must be dropped before showing it.
 - Warm `qmd search` takes about 0.23 s. Errors are exit 1 and one stderr line: `Collection not found: nosuchcollection`, and `Usage: qmd search [options] <query>` for an empty query or one that starts with `-` (put `--` before the query).
 - The `qmd` launcher is `#!/usr/bin/env node`, so from a Dock launch (a bare PATH) it fails with exit 127 and `env: 'node': No such file or directory`. A provider needs an absolute binary and a PATH it hands to the process (`/usr/bin/env PATH=... <bin> ...`).

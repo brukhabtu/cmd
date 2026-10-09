@@ -86,7 +86,9 @@ A plugin that calls an outside tool owns the call. The host's deadlines (3 s for
   in the data directory first and leaves it when the CLI has written it; the plugin
   retries it, so a capture made while Obsidian is closed or slow is kept. The outbox's
   states, retries and duplicate rule are task 2.7's.
-- **Providers.** A provider is a command the person writes, at an absolute path. It runs
+- **Providers.** This is the rule for feed providers, whose answer does not depend on what
+  is typed (a search provider answers the typed text, so it runs in `query` under its own
+  deadline: decision 11). A feed provider is a command the person writes, at an absolute path. It runs
   once per refresh: one request on stdin, one answer on stdout, then it exits. It never
   runs in `query`. A refresh on the plugin's own thread fills a cache, and `query` reads
   the cache only. Its credentials are its own, never in this repository. The contract's
