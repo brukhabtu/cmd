@@ -48,3 +48,10 @@ summary = "Capture to-dos and notes into Obsidian through its CLI, kept until wr
 source = "https://github.com/brukhabtu/cmd"
 ref = "d50f42021077cbdfc783dced41302d44c9381408"
 subdirectory = "plugins/vault"
+
+[[plugin]]
+name = "search"
+summary = "Search your notes and documents through providers you configure, qmd first; providers that share a keyword are searched at once and merged."
+source = "https://github.com/brukhabtu/cmd"
+ref = "ef9028ec9d11054782f626faef565617c01dd61a"
+subdirectory = "plugins/search"

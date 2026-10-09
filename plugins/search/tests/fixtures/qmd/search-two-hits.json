@@ -1,0 +1,19 @@
+[
+  {
+    "docid": "#75ebe1",
+    "score": 0,
+    "file": "qmd://notes/offsite.md",
+    "line": 1,
+    "title": "Team offsite planning",
+    "context": "Personal notes and ideas",
+    "snippet": "@@ -1,3 @@ (0 before, 1 after)\n# Team offsite planning\n\nWe want a two day offsite in March. Budget approved by finance. Venue shortlist: the lake house and the city loft."
+  },
+  {
+    "docid": "#1f2c47",
+    "score": 0,
+    "file": "qmd://meetings/2026-10-01-planning.md",
+    "line": 3,
+    "title": "Quarterly planning meeting",
+    "snippet": "@@ -2,3 @@ (1 before, 0 after)\n\nTimeline for the quarter: ship the launcher plugins, document the protocol, plan the offsite. Sam owns the timeline.\n"
+  }
+]

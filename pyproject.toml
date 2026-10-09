@@ -31,8 +31,10 @@ docs = [
 line-length = 100
 preview = true
 target-version = "py314"
-# The vendored Claude Code plugin is written for Python 3.9 and has its own tests.
-extend-exclude = [".claude"]
+# The vendored Claude Code plugin is written for Python 3.9 and has its own tests. The board
+# is prose: ruff formats the Python blocks in Markdown, and a decision's blocks are sketches
+# whose aligned comments are part of the text.
+extend-exclude = [".claude", "backlog"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -66,7 +68,7 @@ convention = "google"
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:plugins/applications/src:plugins/vault/src:scripts"
+mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:plugins/applications/src:plugins/vault/src:plugins/search/src:scripts"
 files = ["python", "plugins", "scripts"]
 
 [tool.pytest.ini_options]
@@ -80,6 +82,7 @@ testpaths = [
   "plugins/system/tests",
   "plugins/applications/tests",
   "plugins/vault/tests",
+  "plugins/search/tests",
   "scripts/tests",
 ]
 
@@ -92,6 +95,7 @@ src = [
   "plugins/system/src",
   "plugins/applications/src",
   "plugins/vault/src",
+  "plugins/search/src",
 ]
 rules = [
   "import-boundaries",
@@ -108,10 +112,14 @@ rules = [
 # are pure and import nothing; environment and cache are their shells, calls only runs a
 # process. In the calculator, arithmetic is
 # pure and imports nothing of ours, and so are search in the files plugin, commands in
-# the system plugin, and scan and matching in the applications plugin. An import that
+# the system plugin, and scan and matching in the applications plugin. A unit is named by
+# its module alone, so the vault's schema and answers share their rows with the search
+# plugin's: there, hits (the values a provider returns) and values (checks on one config
+# value) are pure, a kind imports only them, schema the kinds, merge the schema, and answers
+# the merge; memory and plugin are the shell. An import that
 # crosses source roots (the SDK importing a plugin, or a plugin another plugin) is invisible
 # to this rule; scripts/import_boundaries.py gates those, right after this check in
 # scripts/check.sh.
 [tool.pypeeker.import-boundaries]
-allow = { protocol = [], locate = [], expiry = [], environment = ["locate"], calls = [], cache = ["expiry"], serve = ["protocol"], arithmetic = [], search = [], commands = [], scan = [], matching = [], schema = [], outbox = ["schema"], invocations = ["outbox", "schema"], answers = ["invocations", "outbox", "schema"] }
+allow = { protocol = [], locate = [], expiry = [], environment = ["locate"], calls = [], cache = ["expiry"], serve = ["protocol"], arithmetic = [], search = [], commands = [], scan = [], matching = [], schema = ["hits", "kinds", "values"], outbox = ["schema"], invocations = ["outbox", "schema"], answers = ["invocations", "merge", "outbox", "schema"], hits = [], values = ["hits"], kinds = ["hits", "values"], merge = ["hits", "kinds", "schema"] }
 report-unused-allowances = true

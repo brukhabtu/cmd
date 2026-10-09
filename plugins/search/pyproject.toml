@@ -1,0 +1,17 @@
+[project]
+name = "search"
+version = "0.1.0"
+description = "A cmd plugin: search your notes and documents through providers you configure, qmd first, several at once under one keyword."
+requires-python = ">=3.15"
+license = "MIT"
+dependencies = ["cmd-sdk"]
+
+[project.scripts]
+search = "search:main"
+
+[tool.uv.sources]
+cmd-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9,<1"]
+build-backend = "uv_build"

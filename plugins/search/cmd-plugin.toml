@@ -1,0 +1,2 @@
+name = "search"
+command = ["uv", "run", "--quiet", "search"]
