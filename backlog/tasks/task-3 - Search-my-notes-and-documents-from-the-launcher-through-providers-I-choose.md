@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-09 13:51'
-updated_date: '2026-10-09 14:58'
+updated_date: '2026-10-09 19:07'
 labels:
   - size-5
 milestone: m-3
@@ -48,4 +48,6 @@ My notes, meeting transcripts and docs are indexed by qmd (https://github.com/to
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-09: TASK-3.1 and TASK-3.2 are Done, closed on review. Acceptance criterion 1 (Enter opens the note) is shown on Linux with an Open effect and a real qmd; what a Mac does with it (qmd installed there, the Dock launch's bare PATH and the absolute bin and env.PATH, Open and Reveal in Finder, the obsidian:// open template, a cold search's timing) is the checklist on TASK-3.2, and closes this intent. Open question: qmd's slow modes (query, vsearch) stay off the as-you-type path until they are measured on the Mac with their models; decision 11 lists what would have to be true for them to join. Decision 11 is proposed: its assumptions (the status keyword search, the 1.0 s deadline, the cache and rest numbers, problem rows after the hits) are the owner's to confirm.
+
+2026-10-09: the owner approved the suggested path for decision 11 ("lets go with your suggestions"). Taste calls now taken as confirmed for the Mac session: status keyword `search`; problem rows after the hits; rank interleave, no provider weights; Copy docid only where qmd gives one; rare gaps accepted. Decision 11 stays proposed until one Mac session measures the guessed numbers (deadline, min_chars, cache, rest, cold search, the obsidian:// template). scripts/mac-session.sh runs the measurable checks of TASK-3.2's and TASK-2.8's lists, together with TASK-2.4's spike, and prints Markdown to fold into the decisions; then accept decision 11 and close this intent. Follow-ups filed, not blockers: DRAFT-5 (several keywords per plugin) and DRAFT-14 (a warm qmd server kind for qmd's slow modes).
 <!-- SECTION:NOTES:END -->
