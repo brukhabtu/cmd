@@ -33,10 +33,11 @@ the config's `kind` to it, so a new kind is one module and one line:
 
 ```python
 KEYS: frozenset[str]  # the keys this kind adds to a [[provider]] table
-REFERENCE: str        # the title of the action that copies Hit.reference ("Copy docid")
+REFERENCE: str  # the title of the action that copies Hit.reference ("Copy docid")
+
 
 def parse(table: Mapping[str, Any]) -> Settings: ...  # its own keys; raises Invalid(message)
-def executable(settings: Settings) -> str: ...        # the program, checked at start
+def executable(settings: Settings) -> str: ...  # the program, checked at start
 def arguments(settings: Settings, text: str, limit: int) -> tuple[str, ...]: ...
 def read(settings: Settings, finished: CallResult, cwd: Path) -> Outcome: ...
 ```
@@ -47,22 +48,25 @@ The types they share, in `search.kinds`:
 @dataclass(frozen=True, slots=True)
 class Hit:
     title: str
-    path: str | None = None       # absolute; None when the hit has no file on disk
-    url: str | None = None        # with a scheme, for a hit that is not a file
-    snippet: str = ""             # plain text, no header line
-    line: int | None = None       # 1-based line of the snippet in the file
+    path: str | None = None  # absolute; None when the hit has no file on disk
+    url: str | None = None  # with a scheme, for a hit that is not a file
+    snippet: str = ""  # plain text, no header line
+    line: int | None = None  # 1-based line of the snippet in the file
     reference: str | None = None  # the provider's own handle for the hit (qmd's docid)
+
 
 @dataclass(frozen=True, slots=True)
 class Found:
-    hits: tuple[Hit, ...]         # best first
-    skipped: int = 0              # entries of the output that could not be read
-    cut: bool = False             # the deadline passed: these are the hits read by then
+    hits: tuple[Hit, ...]  # best first
+    skipped: int = 0  # entries of the output that could not be read
+    cut: bool = False  # the deadline passed: these are the hits read by then
+
 
 @dataclass(frozen=True, slots=True)
 class Failed:
-    message: str                  # one line, for the row's title
-    detail: str = ""              # the command and stderr's first lines, for Enter
+    message: str  # one line, for the row's title
+    detail: str = ""  # the command and stderr's first lines, for Enter
+
 
 type Outcome = Found | Failed
 ```

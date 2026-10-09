@@ -34,7 +34,7 @@ target-version = "py314"
 # The vendored Claude Code plugin is written for Python 3.9 and has its own tests. The board
 # is prose: ruff formats the Python blocks in Markdown, and a decision's blocks are sketches
 # whose aligned comments are part of the text.
-extend-exclude = [".claude", "backlog"]
+extend-exclude = [".claude"]
 
 [tool.ruff.lint]
 select = ["ALL"]
