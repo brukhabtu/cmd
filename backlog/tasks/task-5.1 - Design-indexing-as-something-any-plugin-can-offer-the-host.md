@@ -5,10 +5,15 @@ status: To Do
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-10 16:16'
+updated_date: '2026-10-10 16:44'
 labels:
   - size-3
 milestone: m-3
 dependencies: []
+references:
+  - >-
+    backlog/decisions/decision-12 -
+    Plugins-report-background-tasks-and-the-host-shows-them.md
 parent_task_id: TASK-5
 type: design
 ordinal: 58000
@@ -46,3 +51,9 @@ A decision, then the capability in the protocol, the SDK helper and the host, as
 - [ ] #1 A decision records whether indexing is a capability, its methods and states, push or poll, and which existing plugins would adopt it
 - [ ] #2 The decision says what a plugin must do so that a build never blocks a query or the window
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-10: decision 12 written (proposed). Answers: plugins push; the message is a generic task report (indexing is one task; the vault outbox is another), behind a `tasks` capability so the protocol stays 1; rebuild is a row the plugin offers, no new method; the host shows the latest state per task in the status line first. Awaiting the owner on its assumptions; then three tasks follow (host reader and SDK writer; status line; embeddings kind in TASK-5).
+<!-- SECTION:NOTES:END -->

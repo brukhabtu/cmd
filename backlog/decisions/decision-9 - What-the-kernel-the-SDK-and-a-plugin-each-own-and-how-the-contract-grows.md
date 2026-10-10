@@ -61,6 +61,8 @@ Every change to the contract is one of three kinds.
 3. **A new version.** Anything the host must decode to keep working, or that changes what
    an existing message means: a new effect kind (paste, set-input), a new icon kind, a new
    method, a message in a new direction, a field that becomes required or changes meaning.
+   (Decision 12 proposes an exception: a plugin-to-host message that the plugin sends only to
+   a host that named it in `capabilities`, and leaves unsent otherwise, is a capability.)
    Kinds stay versioned after task 2.3 makes the host decode item by item: that limits the
    damage of a mistake and is no licence to send a kind the host does not know.
 
