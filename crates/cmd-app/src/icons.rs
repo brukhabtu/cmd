@@ -4,8 +4,10 @@
 //! window can draw. The system does the resolving: on macOS, `NSWorkspace` knows the icon
 //! for a path and `NSImage` knows the symbols, so no bundle or icns is read here. GPUI's
 //! asset cache keeps each resolved icon for the app's lifetime, keyed by the request, so
-//! `AppKit` is asked once per distinct icon, and only the PNG decode runs off the main
-//! thread, because `AppKit` objects must not cross threads.
+//! `AppKit` is asked once per distinct icon. The asking, the encode and the PNG decode all
+//! run on the background executor, one `AppKit` call at a time, because the main thread
+//! must not wait on the disk. An `AppKit` object never leaves the call that made it; only
+//! bytes cross threads.
 
 use std::sync::Arc;
 
@@ -47,11 +49,12 @@ impl Asset for IconAsset {
         source: Request,
         _cx: &mut App,
     ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
-        // The cache calls this on the main thread, which is where `AppKit` is asked; the
-        // future that goes to the background carries only bytes.
-        let png = platform::png(&source.icon, PIXELS);
+        // Everything runs in the future, which the cache puts on the background executor:
+        // asking `AppKit` for an icon reads the disk (a path on a slow or asleep volume
+        // can take seconds) and encodes a bitmap, and the main thread must never wait on
+        // either. The `NSImage` lives and dies inside the block, with no await in it.
         let tint = matches!(source.icon, Icon::Symbol { .. }).then_some(source.tint);
-        async move { png.and_then(|bytes| render_image(&bytes, tint)) }
+        async move { platform::png(&source.icon, PIXELS).and_then(|bytes| render_image(&bytes, tint)) }
     }
 }
 
@@ -103,6 +106,7 @@ fn nearest(widths: &[u32], wanted: u32) -> Option<usize> {
 #[cfg(target_os = "macos")]
 mod platform {
     use std::path::Path;
+    use std::sync::{Mutex, PoisonError};
 
     use cmd_core::protocol::Icon;
     use objc2_app_kit::{
@@ -113,9 +117,15 @@ mod platform {
 
     use super::nearest;
 
+    static ASKING: Mutex<()> = Mutex::new(());
+
     /// The icon as PNG bytes, from the bitmap nearest `pixels` wide, or nothing when the
     /// system has no icon for it: a path that is not there, a symbol name it does not know.
     pub fn png(icon: &Icon, pixels: u32) -> Option<Vec<u8>> {
+        // One call at a time: the shared workspace is not documented as safe to ask from
+        // several threads at once, and an icon is cheap enough to queue behind another.
+        // A poisoned lock guards nothing, so it is taken as it is.
+        let _one_at_a_time = ASKING.lock().unwrap_or_else(PoisonError::into_inner);
         let image = match icon {
             Icon::Path { path } => {
                 let location = Path::new(path);

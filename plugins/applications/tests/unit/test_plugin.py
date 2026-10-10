@@ -72,3 +72,15 @@ def test_roots_come_from_repeated_root_flags_or_are_the_defaults() -> None:
         roots_from_args(["--root", "/a", "--verbose"])
     with pytest.raises(ValueError, match="--root"):
         roots_from_args(["--root"])
+
+
+def test_a_second_query_does_not_walk_the_roots_again(root: Path) -> None:
+    plugin = plugin_for([root])
+    assert [row.title for row in plugin.query("saf")] == ["Safari"]
+    (root / "Safari2.app").mkdir()
+    assert [row.title for row in plugin.query("saf")] == ["Safari"]
+
+
+def test_a_warm_plugin_answers_a_query_made_while_it_scans(root: Path) -> None:
+    plugin = plugin_for([root], warm=True)
+    assert [row.title for row in plugin.query("saf")] == ["Safari"]

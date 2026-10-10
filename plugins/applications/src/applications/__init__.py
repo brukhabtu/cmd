@@ -8,20 +8,25 @@ This module is the shell: it knows where applications live and what Enter does;
 """
 
 import sys
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 
-from cmd_sdk import Description, Effect, Item, Open, PathIcon, Plugin, Show, serve
+from cmd_sdk import Description, Effect, Item, Open, PathIcon, Plugin, Show, TtlCache, serve
 from cmd_sdk.protocol import DEFAULT_ACTION
 
 from applications.matching import score
-from applications.scan import scan
+from applications.scan import App, scan
 
 LIMIT = 8
 """How many rows to show: the closest matches, and no more than fit without scrolling."""
 
 OPEN = "open"
 """The one action, also what Enter does."""
+
+RESCAN_AFTER = 30.0
+"""Seconds before the roots are scanned again, in the background: a new application shows
+up within this long, and no keystroke waits for the walk."""
 
 ROOT_FLAG = "--root"
 """Repeatable: a directory to scan instead of the defaults, so a test can supply its own."""
@@ -44,9 +49,9 @@ DEFAULT_ROOTS: tuple[Path, ...] = (
 """Where macOS keeps applications: installed, the person's own, and Apple's."""
 
 
-def query(text: str, roots: Sequence[Path]) -> tuple[Item, ...]:
-    """The closest matching applications under ``roots``, best first, at most ``LIMIT``."""
-    scored = [(found, app) for app in scan(roots) if (found := score(text, app.name)) is not None]
+def query(text: str, apps: Sequence[App]) -> tuple[Item, ...]:
+    """The closest matching of ``apps``, best first, at most ``LIMIT``."""
+    scored = [(found, app) for app in apps if (found := score(text, app.name)) is not None]
     scored.sort(key=lambda pair: (-pair[0], pair[1].name.casefold(), pair[1].path))
     return tuple(
         Item(
@@ -94,12 +99,22 @@ def roots_from_args(argv: Sequence[str]) -> tuple[Path, ...]:
     return tuple(roots) or DEFAULT_ROOTS
 
 
-def plugin_for(roots: Sequence[Path]) -> Plugin:
-    """The plugin with its roots fixed, so a test can point it at a tree of its own."""
+def plugin_for(roots: Sequence[Path], *, warm: bool = False) -> Plugin:
+    """The plugin with its roots fixed, so a test can point it at a tree of its own.
+
+    ``warm`` starts the first scan at once on another thread, so it is under way before
+    the first keystroke.
+    """
+    cache = TtlCache(lambda: scan(roots), RESCAN_AFTER, block_first=True)
 
     def _query(text: str) -> tuple[Item, ...]:
-        return query(text, roots)
+        # None only while another thread fills the cache for the first time (the warm-up
+        # in main) or when a scan raised: walk the roots here, as every query once did.
+        apps = cache.get()
+        return query(text, scan(roots) if apps is None else apps)
 
+    if warm:
+        threading.Thread(target=cache.get, daemon=True).start()
     return Plugin(Description(name="applications", version="0.1.0"), _query, run)
 
 
@@ -113,4 +128,4 @@ def main() -> None:
     except ValueError as error:
         sys.stderr.write(f"{error}\n")
         sys.exit(2)
-    serve(plugin_for(roots))
+    serve(plugin_for(roots, warm=True))
