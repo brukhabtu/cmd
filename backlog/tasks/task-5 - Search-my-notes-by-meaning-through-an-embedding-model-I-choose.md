@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-10 16:15'
+updated_date: '2026-10-10 18:30'
 labels:
   - size-8
 milestone: m-3
@@ -34,3 +35,9 @@ Keyword search (qmd's BM25, ripgrep) misses a note that says the same thing in o
 - [ ] #4 Typing stays responsive while indexing runs and while the model is slow or down; a failing model shows a row, not a stall
 - [ ] #5 The user page says how to point it at a local model, and what leaves the machine if a hosted one is chosen
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-10: the owner is not in a hurry to build this plugin; what it showed is the protocol gap (plugin-to-host reports), now decision 12 with the vault as its first user. This intent stays To Do and uses the tasks capability whenever it is built.
+<!-- SECTION:NOTES:END -->

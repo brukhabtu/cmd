@@ -108,16 +108,19 @@ deferred. The spinner and the hover are a later look at the same data.
 
 ### Who adopts it
 
-- The embeddings provider kind of the search plugin (task 5), the first user: it reports
-  its build.
-- The search plugin could also report a qmd index it triggers, if it ever does.
-- The vault's outbox is not an index but fits the same message (`3 waiting`, then `failed`
-  on a capture it cannot write), and is the reason the message says task, not index.
+The embeddings plugin (task 5) is where this need showed up, and it is not the first user:
+the protocol change does not wait for that plugin, which the owner is in no hurry to build.
+The first user is a plugin that exists.
+
+- **The vault** reports its outbox: `running` with `done` and `total` while a capture is
+  being written or retried, `failed` on one it cannot write. It is the task draft 4 was
+  written for, and a failed capture is the worst silent loss the launcher has.
+- The embeddings kind of the search plugin reports its build, when it is built (task 5).
 - Applications and files do not need it.
 
-Only the first is planned. A contract that fits one user is a smell, and the vault is the
-second user who would show whether the shape is right; the shape is kept small (id, label,
-state, done, total, detail) so that a second user does not change it.
+The message says task, not index, because the vault is not an index and still fits it.
+Two real users of different kinds are what keep the shape (id, label, state, done, total,
+detail) from being fitted to indexing alone.
 
 ### Deferred
 
@@ -141,7 +144,8 @@ state, done, total, detail) so that a second user does not change it.
 
 - Three tasks follow, in this order: the host reader and the SDK writer with a golden
   fixture for the new line (protocol; docs/plugin-protocol.md changes with them); the
-  window's status line; the search plugin's embeddings kind reporting its build (task 5).
+  window's status line; the vault reporting its outbox. The embeddings kind (task 5) uses
+  it whenever it is built.
 - Decision 9 gets a short amendment to its third kind.
 - `docs/plugin-protocol.md` documents the line, the capability and the host's handling of
   a line between calls. The Rust side, the Python side and the adapter test change
