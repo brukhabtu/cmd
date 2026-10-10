@@ -6,6 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-10 16:12'
+updated_date: '2026-10-10 16:16'
 labels:
   - size-2
 dependencies: []
@@ -22,3 +23,9 @@ Reported by the owner: the UI freezes in two situations. (1) IconAsset::load ask
 <!-- AC:BEGIN -->
 - [ ] #1 Typing does not call AppKit or walk the disk on the main thread; applications scans at most once per 30 s
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Related: TASK-5 (semantic search) and its design task, indexing as a plugin capability.
+<!-- SECTION:NOTES:END -->
