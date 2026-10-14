@@ -20,7 +20,7 @@ from cmd_sdk import Copy, InvalidNoticeError, InvalidTaskError, Open, Plugin, Sh
 from cmd_sdk.protocol import Agreement
 from cmd_sdk.reporter import Reporter, installed
 from watchdemo.keeper import STATE_FILE, Store
-from watchdemo.plugin import Demo, home, plugin, query, run, start
+from watchdemo.plugin import EDIT_ID, MOVE_ID, Demo, home, plugin, query, run, start
 from watchdemo.poller import Poller
 
 URL = "https://example.test/PROJ-1"
@@ -186,24 +186,19 @@ def test_a_missing_or_invalid_tickets_file_is_a_row_not_a_crash(
         assert items[0].actions == ()
 
 
-@pytest.mark.parametrize("config", [None, "tickets = 5\n", "tickets = [", "interval = 2\n"])
-def test_missing_or_bad_config_is_a_row_not_a_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: str | None
+@pytest.mark.parametrize("config", ["tickets = 5\n", "tickets = ["])
+def test_a_bad_config_is_a_row_not_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: str
 ) -> None:
-    if config is None:  # no config.toml at all
-        rig(tmp_path, monkeypatch, config="")
-        (tmp_path / "config" / "config.toml").unlink()
-        demo = start()
-    else:
-        demo = rig(tmp_path, monkeypatch, config=config).demo
+    demo = rig(tmp_path, monkeypatch, config=config).demo
     assert demo.settings.tickets is None
+    assert not demo.settings.sample
     (item, *_) = query(demo, "x")
     assert item.actions == ()
     assert item.complete is None
     assert "tickets" in item.title or "config.toml" in item.title
     assert isinstance(run(demo, "", "default"), Show)
-    # Not set up (no file, or only an interval) is silent on home; a wrong config is shown.
-    assert bool(home(demo)) is (config in {"tickets = 5\n", "tickets = ["})
+    assert home(demo)  # a wrong config is a failure and is shown on home
 
 
 def test_a_missing_data_directory_variable_still_serves(
@@ -628,10 +623,11 @@ def test_main_starts_the_poller_when_the_host_describes_and_only_once(
     assert [entry[0] for entry in seen[1:]] == ["started"]
 
 
-def test_main_starts_no_poller_without_a_tickets_setting(
+def test_main_starts_no_poller_when_there_is_no_file_to_poll(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rig(tmp_path, monkeypatch, config="")
+    monkeypatch.delenv("CMD_PLUGIN_DATA")  # no data directory: no sample file either
     seen: list[Any] = []
 
     class FakePoller:
@@ -779,12 +775,16 @@ def test_over_the_protocol_the_description_asks_for_the_home_query(
     assert describe["result"]["home"] is True
 
 
-def test_home_is_empty_until_a_tickets_file_is_set_but_a_broken_one_is_shown(
+def test_home_is_empty_with_nowhere_to_keep_a_sample_but_a_broken_file_is_shown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     unset = rig(tmp_path, monkeypatch, config="")
-    assert home(unset.demo) == ()
-    assert query(unset.demo, "")  # typing the keyword still explains the setup
+    monkeypatch.delenv("CMD_PLUGIN_DATA")
+    bare = start()  # no data directory, so no sample file: nothing to show until configured
+    assert not bare.settings.sample
+    assert home(bare) == ()
+    assert query(bare, "")  # typing the keyword still explains the setup
+    assert unset.demo.settings.sample
     other = tmp_path / "other"
     other.mkdir()
     broken = rig(other, monkeypatch, tickets="broken")
@@ -794,7 +794,90 @@ def test_home_is_empty_until_a_tickets_file_is_set_but_a_broken_one_is_shown(
 def test_enter_on_the_setup_row_says_where_the_config_goes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    r = rig(tmp_path, monkeypatch, config="")
-    effect = run(r.demo, "", "default")
+    rig(tmp_path, monkeypatch, config="")
+    monkeypatch.delenv("CMD_PLUGIN_DATA")
+    demo = start()  # nowhere to keep a sample, so the setup row is what there is
+    effect = run(demo, "", "default")
     assert isinstance(effect, Show)
     assert str(tmp_path / "config" / "config.toml") in effect.text
+
+
+# --- the sample file: the demo works out of the box -----------------------------------------
+
+
+def sample_demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Rig:
+    r = rig(tmp_path, monkeypatch, "tasks", "notify", config="")
+    sample = r.data / "tickets.json"
+    r.tickets = sample
+    r.poller = Poller(
+        sample,
+        INTERVAL,
+        r.demo.store,
+        clock=r.clock,
+        wall=lambda: "2026-10-14T19:00:00",
+    )
+    return r
+
+
+def test_with_no_tickets_setting_the_plugin_makes_and_uses_a_sample_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = sample_demo(tmp_path, monkeypatch)
+    assert r.demo.settings.sample
+    assert r.demo.settings.tickets == str(r.data / "tickets.json")
+    assert [i.id for i in query(r.demo, "demo")][:3] == ["DEMO-1", "DEMO-2", "DEMO-3"]
+    assert [i.id for i in home(r.demo)][-2:] == [MOVE_ID, EDIT_ID]
+    assert not any("tickets" in note for note in r.demo.settings.notes)
+
+
+def test_the_sample_file_is_made_once_and_never_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = sample_demo(tmp_path, monkeypatch)
+    sample = r.data / "tickets.json"
+    sample.write_text('[{"id": "MINE-1", "title": "Mine", "status": "Open"}]', encoding="utf-8")
+    again = start()
+    assert [i.id for i in query(again, "mine")][:1] == ["MINE-1"]
+    assert "DEMO-1" not in sample.read_text(encoding="utf-8")
+
+
+def test_moving_a_watched_ticket_on_is_noticed_and_announced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = sample_demo(tmp_path, monkeypatch)
+    r.watch("DEMO-2")
+    r.poll()
+    assert r.notices() == []
+    effect = run(r.demo, MOVE_ID, "move")
+    assert isinstance(effect, Show)
+    assert "DEMO-2 to Done" in effect.text
+    r.poll()
+    (notice,) = r.notices()
+    assert (notice["id"], notice["body"]) == ("DEMO-2", "In Review -> Done")
+    run(r.demo, MOVE_ID, "move")  # and round again: Done -> Open
+    r.poll()
+    assert [n["body"] for n in r.notices()] == ["In Review -> Done", "Done -> Open"]
+
+
+def test_moving_on_with_nothing_watched_says_to_watch_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = sample_demo(tmp_path, monkeypatch)
+    effect = run(r.demo, MOVE_ID, "move")
+    assert isinstance(effect, Show)
+    assert "Watch a ticket first" in effect.text
+
+
+def test_editing_the_sample_opens_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    r = sample_demo(tmp_path, monkeypatch)
+    effect = run(r.demo, EDIT_ID, "open")
+    assert effect == Open(target=(r.data / "tickets.json").as_uri())
+
+
+def test_a_configured_tickets_file_is_not_a_sample(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = rig(tmp_path, monkeypatch)
+    assert not r.demo.settings.sample
+    assert [i.id for i in query(r.demo, "")][-1:] != [EDIT_ID]
+    assert not (r.data / "tickets.json").exists()

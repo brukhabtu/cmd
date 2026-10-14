@@ -8,11 +8,13 @@ a file that cannot be used becomes a row; ``run`` performs Open, Copy, Watch and
 
 import os
 import sys
+import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from cmd_sdk import (
+    Action,
     Agreement,
     ConfigError,
     Copy,
@@ -23,6 +25,7 @@ from cmd_sdk import (
     Open,
     Plugin,
     Show,
+    SymbolIcon,
     config,
     data_dir,
     serve,
@@ -32,6 +35,7 @@ from watchdemo.keeper import Store
 from watchdemo.options import UNSET, Settings, parse_options
 from watchdemo.poller import Poller, SourceError, read_tickets
 from watchdemo.rows import KEYWORD, home_rows, query_rows
+from watchdemo.sample import SAMPLE_FILE, SAMPLE_TICKETS, moved_on, tickets_text
 from watchdemo.state import unwatch, watch
 from watchdemo.tickets import Ticket
 
@@ -58,7 +62,34 @@ def start() -> Demo:
         settings = parse_options(config())
     except (ConfigError, MissingVariableError) as error:
         settings = Settings(notes=(str(error),))
+    if directory is not None and settings.tickets is None and settings.notes[:1] == (UNSET,):
+        settings = _sample_settings(settings, directory)
     return Demo(settings, store)
+
+
+def _sample_settings(settings: Settings, directory: Path) -> Settings:
+    """With no tickets file configured, work from a sample file in the data directory.
+
+    It is made the first time and never overwritten, so the person can edit it. If it cannot
+    be made the settings stay as they were, and the rows say what to configure.
+    """
+    path = directory / SAMPLE_FILE
+    if not path.exists():
+        try:
+            _write_atomically(path, tickets_text(SAMPLE_TICKETS))
+        except OSError as error:
+            sys.stderr.write(f"watchdemo: could not make the sample tickets: {error}\n")
+            return settings
+    return replace(settings, tickets=str(path), notes=settings.notes[1:], sample=True)
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` so a reader sees the old file or the new, never half."""
+    with tempfile.NamedTemporaryFile(
+        "w", dir=path.parent, prefix=f".{path.name}.", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write(text)
+    Path(handle.name).replace(path)
 
 
 def _tickets(demo: Demo) -> tuple[tuple[Ticket, ...] | None, tuple[str, ...], tuple[str, ...]]:
@@ -72,10 +103,42 @@ def _tickets(demo: Demo) -> tuple[tuple[Ticket, ...] | None, tuple[str, ...], tu
         return None, (str(error), *notes), ()
 
 
+MOVE_ID = "sample:move"
+EDIT_ID = "sample:edit"
+"""The ids of the two rows the sample mode adds; no ticket has these (a ticket id has no colon)."""
+
+
+def _sample_rows(demo: Demo) -> tuple[Item, ...]:
+    """In sample mode, the way to make something move: no tracker is changing under you."""
+    if not demo.settings.sample or demo.settings.tickets is None:
+        return ()
+    return (
+        Item(
+            id=MOVE_ID,
+            title="Move a watched ticket on (demo)",
+            subtitle="Changes its status in the sample file; you are told within a few seconds",
+            score=0.05,
+            actions=(Action("move", "Move it on"),),
+            icon=SymbolIcon("forward"),
+        ),
+        Item(
+            id=EDIT_ID,
+            title="Edit the sample tickets",
+            subtitle=demo.settings.tickets,
+            score=0.04,
+            actions=(Action("open", "Open the file"),),
+            icon=SymbolIcon("doc.text"),
+        ),
+    )
+
+
 def query(demo: Demo, text: str) -> tuple[Item, ...]:
     """The rows for the text after ``watch``."""
     tickets, problems, notes = _tickets(demo)
-    return query_rows(text, tickets, demo.store.state, problems, notes)
+    rows = query_rows(text, tickets, demo.store.state, problems, notes)
+    if text.strip().casefold() in {"", "demo", "move", "edit"}:
+        rows = (*rows, *_sample_rows(demo))
+    return rows
 
 
 def home(demo: Demo) -> tuple[Item, ...]:
@@ -89,7 +152,7 @@ def home(demo: Demo) -> tuple[Item, ...]:
     if demo.settings.tickets is None and demo.settings.notes[:1] == (UNSET,):
         return ()
     tickets, problems, notes = _tickets(demo)
-    return home_rows(tickets, demo.store.state, problems, notes)
+    return (*home_rows(tickets, demo.store.state, problems, notes), *_sample_rows(demo))
 
 
 def run(demo: Demo, item: str, action: str) -> Effect:
@@ -101,6 +164,9 @@ def run(demo: Demo, item: str, action: str) -> Effect:
             text=f'Put tickets = "/path/to/tickets.json" in {target}, then type '
             f"{KEYWORD} and part of a title"
         )
+    sample = _sample_action(demo, item)
+    if sample is not None:
+        return sample
     if action == "copy":
         return Copy(text=item)
     if action == "unwatch":
@@ -109,6 +175,36 @@ def run(demo: Demo, item: str, action: str) -> Effect:
     if action in {"open", "watch"}:
         return _with_ticket(demo, item, action)
     return Show(text=f"watchdemo has no action {action!r}")
+
+
+def _sample_action(demo: Demo, item: str) -> Effect | None:
+    """What Enter does on one of the sample mode's two rows; ``None`` for any other row."""
+    if item == MOVE_ID:
+        return _move_on(demo)
+    if item == EDIT_ID:
+        return Open(target=Path(demo.settings.tickets or "").as_uri())
+    return None
+
+
+def _move_on(demo: Demo) -> Effect:
+    """Move the first watched ticket (in file order) to its next status in the sample file."""
+    tickets, problems, _ = _tickets(demo)
+    if tickets is None or demo.settings.tickets is None:
+        return Show(text=problems[0] if problems else "There is no tickets file to change")
+    chosen = next((t for t in tickets if t.id in demo.store.state.watched), None)
+    if chosen is None:
+        return Show(text="Watch a ticket first: type watch, pick one, press Tab, then Enter")
+    moved = moved_on(tickets, chosen.id)
+    if moved is None:
+        return Show(text=f"{chosen.id} is not in the tickets file")
+    try:
+        _write_atomically(Path(demo.settings.tickets), tickets_text(moved))
+    except OSError as error:
+        return Show(text=f"Could not change the sample file: {error}")
+    now = next(t.status for t in moved if t.id == chosen.id)
+    return Show(
+        text=f"Moved {chosen.id} to {now}; you will be told within {demo.settings.interval:g} s"
+    )
 
 
 def _with_ticket(demo: Demo, item: str, action: str) -> Effect:

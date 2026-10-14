@@ -23,6 +23,8 @@ class Settings:
     tickets: str | None = None
     interval: float = DEFAULT_INTERVAL
     notes: tuple[str, ...] = ()
+    sample: bool = False
+    """True when ``tickets`` is the plugin's own sample file, because none was configured."""
 
 
 UNSET = "config.toml: set `tickets` to the path of the tickets JSON file"

@@ -36,31 +36,9 @@ window open.
 
 ## Try it
 
-1. Write the tickets, anywhere you like:
+It works out of the box: no file to write and no config.
 
-    ```json
-    [
-      {"id": "PROJ-12", "title": "Fix the login page", "status": "Open",
-       "url": "https://example.test/PROJ-12"},
-      {"id": "PROJ-13", "title": "Login emails bounce", "status": "In Review"},
-      {"id": "OPS-7", "title": "Rotate the keys", "status": "Done"}
-    ]
-    ```
-
-    `id`, `title` and `status` are required text; `url` is optional. Ids must be unique. A
-    file that is not a list of such objects is an error you will see (below), not a crash.
-
-2. Point the plugin at it. `config.toml` in
-   `~/Library/Application Support/cmd/plugin-config/watchdemo/`, which you create:
-
-    ```toml
-    tickets = "/Users/you/tickets.json"
-    interval = 5      # seconds between reads; optional, 5 by default, never below 0.5
-    ```
-
-    Saving the file restarts the plugin.
-
-3. Install it and open cmd again (a new plugin starts the next time cmd starts):
+1. Install it and open cmd again (a new plugin starts the next time cmd starts):
 
     ```sh
     cmd plugin install watchdemo
@@ -68,18 +46,49 @@ window open.
 
     From a clone of this repository, `cmd plugin install ./plugins/watchdemo` does the same.
 
-4. Type `watch login`, move to PROJ-12, press Tab (the input becomes `watch PROJ-12 `)
-   and Enter: that is **Watch**. The plugin has now noted it as `Open`.
+2. Type `watch`. Three sample tickets (DEMO-1, DEMO-2 and DEMO-3) are there, from a file the
+   plugin made in its data directory.
 
-5. Edit the file: change PROJ-12's status to `In Review` and save. Within `interval`
-   seconds the plugin notices. Open the window with an empty input: the first row is
-   `PROJ-12: Open -> In Review`, with the time it was seen, and below it the tickets you
-   watch with their status now. Once macOS notifications exist (TASK-6.4) the same change
-   is a notification titled "PROJ-12 moved", and choosing it opens the `url`.
+3. Type `watch DEMO-2`, press Tab (the input becomes `watch DEMO-2 `) and Enter: that is
+   **Watch**. The plugin has noted it as `In Review`.
 
-Several things are worth trying: `watch watching`; Tab on a ticket to narrow to it; Unwatch it (Tab, Enter)
-and edit again (nothing happens); stop and start cmd and edit again (a change is told once,
-and the watch survives).
+4. Type `watch` again and choose **Move a watched ticket on (demo)**. That changes
+   DEMO-2's status in the sample file, the way a tracker would change under you. Within
+   `interval` seconds the plugin notices. Open the window with an empty input: the first row
+   is `DEMO-2: In Review -> Done`, with the time it was seen. Once macOS notifications exist
+   (TASK-6.4) the same change is a notification titled "DEMO-2 moved".
+
+Move it on again and it goes round: Open, In Review, Done, Open. **Edit the sample tickets**
+opens the file, so you can add your own or change a status by hand. The plugin never
+overwrites that file.
+
+Several things are worth trying: `watch watching`; Unwatch DEMO-2 (Tab, Enter) and move
+tickets on again (nothing is told); stop and start cmd and move one on (a change is told
+once, and the watch survives).
+
+### Watching your own file
+
+To watch a file of your own instead, write the tickets anywhere you like:
+
+```json
+[
+  {"id": "PROJ-12", "title": "Fix the login page", "status": "Open",
+   "url": "https://example.test/PROJ-12"},
+  {"id": "PROJ-13", "title": "Login emails bounce", "status": "In Review"}
+]
+```
+
+`id`, `title` and `status` are required text; `url` is optional. Ids must be unique. A file
+that is not a list of such objects is an error you will see (below), not a crash. Then
+point the plugin at it with a `config.toml` in
+`~/Library/Application Support/cmd/plugin-config/watchdemo/`, which you create:
+
+```toml
+tickets = "/Users/you/tickets.json"
+interval = 5      # seconds between reads; optional, 5 by default, never below 0.5
+```
+
+Saving the file restarts the plugin. The sample rows go away, because the file is yours.
 
 ## What is told, and what is not
 
@@ -96,8 +105,9 @@ and the watch survives).
 
 ## When something is wrong
 
-- **No `tickets` in the config, or the config is not TOML:** `watch` shows a row saying
-  what to set, and the window's blank input shows the same. Nothing is polled.
+- **The config is not TOML, or `tickets` is not a path:** `watch` shows a row saying what
+  to set, and the window's blank input shows the same. Nothing is polled. (No `tickets` at
+  all is not a fault: the sample file is used.)
 - **The tickets file is missing, not JSON, or not a list of tickets:** the rows say which
   and name the file, and the plugin reports one task, "Tickets file", as failed on the
   status line. It is reported once, not at every read, and marked done when the file reads
