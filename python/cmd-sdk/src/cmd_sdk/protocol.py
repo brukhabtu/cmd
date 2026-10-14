@@ -62,11 +62,16 @@ class Description:
 
     With a keyword, the plugin sees only queries whose first word is the keyword, and the
     keyword is stripped before ``query`` is called. Without one, it sees every query.
+
+    With ``home`` set, the plugin also wants the window's blank input: when the window opens
+    on an empty input, or the input becomes empty, the host asks it for the home list
+    (``Plugin.home``). Without it the plugin is asked nothing for blank input.
     """
 
     name: str
     version: str
     keyword: str | None = None
+    home: bool = False
 
 
 @dataclass(frozen=True)
@@ -167,12 +172,17 @@ class Plugin:
     arrives, and the ``Description`` it returns is sent in place of ``description``: that is
     how a plugin reads the agreed version and the host's capabilities, and describes itself
     by them.
+
+    ``home``, for a plugin whose description sets ``home``, is called with no arguments when
+    the host asks for the home list (blank input) and returns its items. Without it, a home
+    query calls ``query("")``. A plugin that did not declare ``home`` is never asked.
     """
 
     description: Description
     query: Callable[[str], Sequence[Item]]
     run: Callable[[str, str], Effect]
     describe: Callable[[Agreement], Description] | None = None
+    home: Callable[[], Sequence[Item]] | None = None
 
 
 # --- the wire -------------------------------------------------------------------------
@@ -197,10 +207,15 @@ def agree(describe: Describe) -> Agreement:
 
 @dataclass(frozen=True)
 class Query:
-    """The typed text, already stripped of the plugin's keyword."""
+    """The typed text, already stripped of the plugin's keyword.
+
+    ``home`` is set, with empty text, on the home query that blank input sends to a plugin
+    that declared ``home``.
+    """
 
     id: int
     text: str
+    home: bool = False
 
 
 @dataclass(frozen=True)
@@ -297,7 +312,7 @@ def _decode_params(method: str, request_id: int, params: Mapping[str, Any]) -> R
         case "describe":
             return Describe(request_id, _version(params), _capabilities(params))
         case "query":
-            return Query(request_id, _field(params, "text", str))
+            return Query(request_id, _field(params, "text", str), _flag(params, "home"))
         case "run":
             return Run(request_id, _field(params, "item", str), _field(params, "action", str))
         case _:
@@ -320,7 +335,10 @@ def dispatch(request: Request, plugin: Plugin, agreement: Agreement = BEFORE_DES
         case Describe():
             return Success(request.id, _description_json(plugin, agree(request)))
         case Query():
-            items = plugin.query(request.text)
+            if request.home:
+                items = plugin.query(request.text) if plugin.home is None else plugin.home()
+            else:
+                items = plugin.query(request.text)
             body = [_item_json(item, position, agreement) for position, item in enumerate(items, 1)]
             return Success(request.id, {"items": body})
         case Run():
@@ -362,6 +380,18 @@ def _field[T](params: Mapping[str, Any], name: str, kind: type[T]) -> T:
     value = params.get(name)
     if not isinstance(value, kind) or isinstance(value, bool):
         raise MalformedRequestError(f"params.{name} must be a {kind.__name__}")
+    return value
+
+
+def _flag(params: Mapping[str, Any], name: str) -> bool:
+    """An optional flag in ``params``: absent is false.
+
+    Raises:
+        MalformedRequestError: It is there and is not a bool.
+    """
+    value = params.get(name, False)
+    if not isinstance(value, bool):
+        raise MalformedRequestError(f"params.{name} must be a bool")
     return value
 
 
@@ -445,6 +475,10 @@ def _description_json(plugin: Plugin, agreement: Agreement) -> dict[str, Any]:
     }
     if description.keyword is not None:
         body["keyword"] = _text(description.keyword, "description keyword")
+    if not isinstance(description.home, bool):
+        raise InvalidAnswerError("the description home must be a bool")
+    if description.home:
+        body["home"] = True
     return body
 
 

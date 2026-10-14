@@ -26,6 +26,12 @@
       "host_reads": {"description": {"name": "golden", "version": "1.0.0", "protocol": 0, "keyword": "gold"}}
     },
     {
+      "name": "describe from a plugin that wants the home query (blank input)",
+      "request": {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": ["tasks"]}},
+      "answer": {"id": 1, "result": {"name": "golden", "version": "1.0.0", "protocol": 1, "home": true}},
+      "host_reads": {"description": {"name": "golden", "version": "1.0.0", "protocol": 1, "home": true}}
+    },
+    {
       "name": "a query answered with items of every shape",
       "request": {"id": 2, "method": "query", "params": {"text": "safari"}},
       "answer": {"id": 2, "result": {"items": [
@@ -81,6 +87,22 @@
       "request": {"id": 4, "method": "query", "params": {"text": "boom"}},
       "answer": {"id": 4, "error": {"code": "plugin_error", "message": "RuntimeError: boom"}},
       "host_reads": {"error": {"code": "plugin_error", "message": "RuntimeError: boom"}}
+    },
+    {
+      "name": "the home query, answered with the rows blank input shows",
+      "request": {"id": 5, "method": "query", "params": {"text": "", "home": true}},
+      "answer": {"id": 5, "result": {"items": [
+        {"id": "moved", "title": "Ticket 7 moved to Done", "actions": [{"id": "open", "title": "Open"}]},
+        {"id": "watching", "title": "Watching 3 tickets", "complete": "gold watching"}
+      ]}},
+      "host_reads": {
+        "items": [
+          {"id": "moved", "title": "Ticket 7 moved to Done", "actions": [{"id": "open", "title": "Open"}]},
+          {"id": "watching", "title": "Watching 3 tickets", "complete": "gold watching"}
+        ],
+        "dropped": [],
+        "ranked": ["moved", "watching"]
+      }
     }
   ],
   "events": [

@@ -33,7 +33,12 @@ fn the_fixture_holds_every_kind_of_exchange_the_document_promises() {
         .iter()
         .map(|exchange| exchange["request"]["method"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(names, ["describe", "describe", "query", "run", "query"]);
+    assert_eq!(
+        names,
+        [
+            "describe", "describe", "describe", "query", "run", "query", "query"
+        ]
+    );
 }
 
 #[test]

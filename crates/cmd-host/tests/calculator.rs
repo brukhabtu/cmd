@@ -33,6 +33,7 @@ fn the_real_sdk_answers_a_version_0_host_at_version_0_and_sends_it_no_icon() {
         .call(
             Method::Query {
                 text: "2 + 2".into(),
+                home: false,
             },
             timeouts.query,
         )

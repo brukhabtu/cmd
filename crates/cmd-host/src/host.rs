@@ -149,6 +149,8 @@ enum Command {
     Query {
         generation: u64,
         text: String,
+        /// The home query: `text` is empty (decision 13).
+        home: bool,
     },
     Run {
         generation: u64,
@@ -395,20 +397,45 @@ impl Host {
         let routes = query::route(input, &scopes);
         let asked: Vec<usize> = routes.iter().map(|route| route.plugin).collect();
         for route in routes {
-            let command = Command::Query {
-                generation,
-                text: route.text,
-            };
-            if self.plugins[route.plugin].commands.send(command).is_err() {
-                // The worker is gone; answer for it so the window stops waiting.
-                let _ = self.events.send_blocking(HostEvent::Answered {
-                    generation,
-                    plugin: route.plugin,
-                    result: Err("its worker has stopped".to_string()),
-                });
-            }
+            self.send_query(generation, route.plugin, route.text, false);
         }
         asked
+    }
+
+    /// Ask the plugins that declared `home` for the home query, which the window sends
+    /// when it opens on an empty input and when the input becomes empty. Like [`query`],
+    /// it returns their indices at once and each answers later with a
+    /// [`HostEvent::Answered`] carrying this generation. Plugins that did not declare it
+    /// are not asked.
+    ///
+    /// [`query`]: Host::query
+    pub fn home(&self, generation: u64) -> Vec<usize> {
+        let wanting: Vec<bool> = self
+            .descriptions()
+            .map(|description| description.home)
+            .collect();
+        let routes = query::route_home(&wanting);
+        let asked: Vec<usize> = routes.iter().map(|route| route.plugin).collect();
+        for route in routes {
+            self.send_query(generation, route.plugin, route.text, true);
+        }
+        asked
+    }
+
+    fn send_query(&self, generation: u64, plugin: usize, text: String, home: bool) {
+        let command = Command::Query {
+            generation,
+            text,
+            home,
+        };
+        if self.plugins[plugin].commands.send(command).is_err() {
+            // The worker is gone; answer for it so the window stops waiting.
+            let _ = self.events.send_blocking(HostEvent::Answered {
+                generation,
+                plugin,
+                result: Err("its worker has stopped".to_string()),
+            });
+        }
     }
 
     /// Ask a plugin to run an action. The effect arrives as a [`HostEvent::Ran`] tagged
@@ -661,10 +688,14 @@ impl Worker {
         let plugin = self.plugin;
         match command {
             Command::Reload => unreachable!("reloads are handled before answering"),
-            Command::Query { generation, text } => {
+            Command::Query {
+                generation,
+                text,
+                home,
+            } => {
                 let result = self
                     .process
-                    .call::<Items>(Method::Query { text }, self.timeouts.query);
+                    .call::<Items>(Method::Query { text, home }, self.timeouts.query);
                 let health = health_of(&result);
                 let aside = result
                     .as_ref()

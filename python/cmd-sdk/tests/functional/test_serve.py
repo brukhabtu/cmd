@@ -354,3 +354,28 @@ def test_a_plugin_that_exits_gets_a_plugin_error_and_the_session_goes_on() -> No
 
     assert [a["id"] for a in answers] == [1, 2]
     assert answers[0]["error"] == {"code": "plugin_error", "message": "SystemExit: 2"}
+
+
+def test_a_plugin_that_declared_home_gets_the_home_query_over_the_wire() -> None:
+    seen: list[str] = []
+
+    def home() -> tuple[Item, ...]:
+        seen.append("home")
+        return (Item("recent", "Recent"),)
+
+    plugin = Plugin(
+        Description("p", "1", home=True),
+        lambda t: (Item(t, f"typed {t}"),),
+        lambda i, _a: Copy(i),
+        home=home,
+    )
+    answers = run(
+        plugin,
+        describe(1, {"protocol": 1}),
+        json.dumps({"id": 2, "method": "query", "params": {"text": "", "home": True}}),
+        query(3, "hi"),
+    )
+    assert answers[0]["result"]["home"] is True
+    assert answers[1]["result"] == {"items": [{"id": "recent", "title": "Recent"}]}
+    assert answers[2]["result"] == {"items": [{"id": "hi", "title": "typed hi"}]}
+    assert seen == ["home"]

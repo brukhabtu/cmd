@@ -48,8 +48,13 @@ pub enum Method {
         capabilities: Vec<String>,
     },
     /// The text the person typed, already stripped of the plugin's keyword.
-    /// The plugin answers with [`Items`].
-    Query { text: String },
+    /// The plugin answers with [`Items`]. `home` is set, with blank text, on the home query
+    /// (decision 13), which only a plugin whose [`Description`] has `home` receives.
+    Query {
+        text: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        home: bool,
+    },
     /// The person chose an item and an action. The plugin answers with [`Ran`].
     Run { item: String, action: String },
 }
@@ -75,6 +80,11 @@ pub struct Description {
     /// Without one, it sees every query.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keyword: Option<String>,
+    /// The plugin wants the window's blank input: the host asks it a query with empty text
+    /// and `home` set (decision 13). Optional, no version and no capability: a host that
+    /// does not know the field never asks.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub home: bool,
 }
 
 /// What a row shows beside its text. The window resolves it; a plugin only names it.
@@ -295,12 +305,46 @@ mod tests {
     fn requests_are_one_json_line_with_method_and_params() {
         let line = encode_request(&Request {
             id: 7,
-            method: Method::Query { text: "2+2".into() },
+            method: Method::Query {
+                text: "2+2".into(),
+                home: false,
+            },
         });
         assert_eq!(
             line,
             "{\"id\":7,\"method\":\"query\",\"params\":{\"text\":\"2+2\"}}\n"
         );
+    }
+
+    #[test]
+    fn the_home_query_is_a_query_with_empty_text_and_home_set() {
+        let line = encode_request(&Request {
+            id: 8,
+            method: Method::Query {
+                text: String::new(),
+                home: true,
+            },
+        });
+        assert_eq!(
+            line,
+            "{\"id\":8,\"method\":\"query\",\"params\":{\"text\":\"\",\"home\":true}}\n"
+        );
+        let back: Request = serde_json::from_str(&line).unwrap();
+        assert!(matches!(back.method, Method::Query { home: true, .. }));
+    }
+
+    #[test]
+    fn a_description_says_home_only_when_it_wants_it() {
+        let wants: Description =
+            serde_json::from_str(r#"{"name": "n", "version": "1", "protocol": 1, "home": true}"#)
+                .unwrap();
+        assert!(wants.home);
+        let sent = serde_json::to_string(&wants).unwrap();
+        assert!(sent.contains("\"home\":true"));
+        let silent: Description =
+            serde_json::from_str(r#"{"name": "n", "version": "1", "protocol": 1}"#).unwrap();
+        assert!(!silent.home);
+        assert!(!serde_json::to_string(&silent).unwrap().contains("home"));
     }
 
     #[test]

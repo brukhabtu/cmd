@@ -93,7 +93,7 @@ def expected_request(wire: dict[str, Any]) -> Request:
                 wire["id"], params["protocol"], frozenset(params.get("capabilities", []))
             )
         case "query":
-            return Query(wire["id"], params["text"])
+            return Query(wire["id"], params["text"], params.get("home", False))
         case "run":
             return Run(wire["id"], params["item"], params["action"])
         case other:
@@ -181,7 +181,18 @@ def test_the_sdk_answers_describe_at_the_version_the_fixture_agrees(
     exchange: dict[str, Any],
 ) -> None:
     request = decode_request(json.dumps(exchange["request"]))
-    answer = json.loads(encode_response(dispatch(request, answering([]))))
+    described = exchange["answer"]["result"]
+    plugin = Plugin(
+        Description(
+            described["name"],
+            described["version"],
+            keyword=described.get("keyword"),
+            home=described.get("home", False),
+        ),
+        lambda _t: [],
+        lambda _i, _a: Close(),
+    )
+    answer = json.loads(encode_response(dispatch(request, plugin)))
     assert answer == exchange["answer"]
     assert answer["result"] == exchange["host_reads"]["description"]
 

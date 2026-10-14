@@ -45,7 +45,13 @@ fn query_within(
     text: &str,
     timeout: Duration,
 ) -> Result<Items, CallError> {
-    process.call(Method::Query { text: text.into() }, timeout)
+    process.call(
+        Method::Query {
+            text: text.into(),
+            home: false,
+        },
+        timeout,
+    )
 }
 
 #[test]

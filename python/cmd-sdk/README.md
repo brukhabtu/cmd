@@ -120,6 +120,12 @@ What each part declares:
   without `complete` does nothing on Tab. A row with `complete` and no `actions` is a
   suggestion: Enter does what Tab does, and it sorts after the results unless you give it a
   `score`. The SDK sends `complete` whatever version the host agreed to.
+- `home=True` on the `Description` asks for the window's blank input: when the window opens
+  on an empty input, or the input becomes empty, the host sends this plugin (and only the
+  plugins that asked) a home query, and the rows it returns are the list until the person
+  types. Give `Plugin` a `home` function with no arguments that returns the items; without
+  one, the host's home query calls `query("")`. A plugin without `home=True` is never
+  called for blank input, whatever it has set. Old hosts ignore the field and never ask.
 - `run` returns an `Effect` and the host performs it: `Open` a URL or path, `Copy` text,
   `Show` a line and stay open, or `Close`. A plugin may also do its own work in `run`
   (toggle a setting, say) and then return `Close`.

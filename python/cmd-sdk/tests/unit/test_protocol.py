@@ -1,4 +1,6 @@
 import json
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 from cmd_sdk import (
@@ -286,3 +288,47 @@ def test_a_finite_score_of_any_number_type_is_carried_as_it_is() -> None:
     )
     result = dispatch(Query(1, "x"), plugin).result
     assert [item["score"] for item in result["items"]] == [1, 0.25, 0]
+
+
+def test_a_query_reads_its_home_flag_and_a_missing_one_is_false() -> None:
+    home = '{"id": 2, "method": "query", "params": {"text": "", "home": true}}'
+    assert decode_request(home) == Query(2, "", home=True)
+    typed = decode_request('{"id": 2, "method": "query", "params": {"text": "a"}}')
+    assert typed == Query(2, "a", home=False)
+
+
+def test_a_home_flag_that_is_not_a_bool_is_malformed() -> None:
+    with pytest.raises(MalformedRequestError, match="home"):
+        decode_request('{"id": 2, "method": "query", "params": {"text": "", "home": 1}}')
+
+
+def test_a_description_sends_home_only_when_set() -> None:
+    def described(description: Description) -> Mapping[str, Any]:
+        plugin = Plugin(description, PLUGIN.query, PLUGIN.run)
+        return dispatch(Describe(1, 1), plugin).result
+
+    assert described(Description("p", "1", home=True))["home"] is True
+    assert "home" not in described(Description("p", "1"))
+    assert "home" not in described(Description("p", "1", home=False))
+
+
+def test_a_home_query_calls_the_home_function_and_a_typed_one_calls_query() -> None:
+    plugin = Plugin(
+        Description("p", "1", home=True),
+        lambda text: (Item("q", f"typed {text}"),),
+        PLUGIN.run,
+        home=lambda: (Item("h", "home row"),),
+    )
+    assert dispatch(Query(1, "", home=True), plugin).result == {
+        "items": [{"id": "h", "title": "home row"}]
+    }
+    assert dispatch(Query(2, "x"), plugin).result == {"items": [{"id": "q", "title": "typed x"}]}
+
+
+def test_without_a_home_function_a_home_query_calls_query_with_empty_text() -> None:
+    plugin = Plugin(
+        Description("p", "1", home=True), lambda text: (Item("q", f"[{text}]"),), PLUGIN.run
+    )
+    assert dispatch(Query(1, "", home=True), plugin).result == {
+        "items": [{"id": "q", "title": "[]"}]
+    }

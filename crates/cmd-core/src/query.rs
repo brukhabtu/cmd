@@ -67,6 +67,23 @@ pub fn route(input: &str, scopes: &[Scope]) -> Vec<Route> {
         .collect()
 }
 
+/// Decide which plugins get the home query, the one blank input sends (decision 13).
+///
+/// `wanting` says, per plugin in the host's list, whether its description declared `home`.
+/// Exactly those plugins are asked, whatever their keyword, and each sees empty text. A
+/// plugin that did not declare it gets nothing for blank input.
+pub fn route_home(wanting: &[bool]) -> Vec<Route> {
+    wanting
+        .iter()
+        .enumerate()
+        .filter(|(_, home)| **home)
+        .map(|(plugin, _)| Route {
+            plugin,
+            text: String::new(),
+        })
+        .collect()
+}
+
 /// Merge the answers of several plugins into one list, best first.
 ///
 /// Items without a score come first of all: a definite answer outranks every
@@ -173,6 +190,29 @@ mod tests {
     #[test]
     fn blank_input_reaches_nobody() {
         assert_eq!(route("   ", &scopes()), vec![]);
+    }
+
+    #[test]
+    fn home_asks_exactly_the_plugins_that_declared_it_with_empty_text() {
+        assert_eq!(
+            route_home(&[false, true, false, true]),
+            vec![
+                Route {
+                    plugin: 1,
+                    text: String::new()
+                },
+                Route {
+                    plugin: 3,
+                    text: String::new()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn home_asks_nobody_when_no_plugin_declared_it() {
+        assert_eq!(route_home(&[false, false]), vec![]);
+        assert_eq!(route_home(&[]), vec![]);
     }
 
     #[test]

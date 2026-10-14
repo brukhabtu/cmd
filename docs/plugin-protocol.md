@@ -90,7 +90,7 @@ one is a task report (see Tasks), and the host reads it whenever it arrives.
 | Method | Params | Result | When |
 |---|---|---|---|
 | `describe` | `{"protocol": 1, "capabilities": ["tasks"]}` | Description | Once, right after the process starts |
-| `query` | `{"text": "..."}` | `{"items": [Item]}` | On every change to the typed text that reaches this plugin |
+| `query` | `{"text": "..."}`, or `{"text": "", "home": true}` | `{"items": [Item]}` | On every change to the typed text that reaches this plugin; the `home` form only to a plugin that declared `home` (see Routing) |
 | `run` | `{"item": "...", "action": "..."}` | `{"effect": Effect}` | When the person presses Enter on one of this plugin's items |
 
 ### Description
@@ -100,7 +100,10 @@ one is a task report (see Tasks), and the host reads it whenever it arrives.
 ```
 
 `protocol` is the version the plugin and the host now speak, as agreed below. `keyword` is
-optional; see Routing.
+optional; see Routing. `home` is optional too, `true` or absent: the plugin wants the
+window's blank input (see Routing). It is an answer field with no version and no
+capability (see How the contract grows): a host that does not know it never asks, and a
+plugin that leaves it out is never asked.
 
 ### Negotiation
 
@@ -308,7 +311,18 @@ The host trims the typed text and looks at its first word.
   and it receives the rest of the text. `calc 2+2` reaches the calculator as `2+2`. The
   keyword alone reaches it with an empty string, which is the moment to show defaults.
 - Otherwise every plugin without a keyword is asked, each with the whole text.
-- Blank text reaches nobody.
+- Blank text reaches only the plugins whose description has `home: true`, as the home
+  query below. A plugin that did not declare it gets nothing for blank input.
+
+### The home query
+
+When the window opens with an empty input, and when the input becomes empty, the host asks
+every plugin that declared `home`, in parallel and whatever its `keyword`, as an ordinary
+query with a generation: `{"text": "", "home": true}`. The `home` flag is sent only on this
+query and only to such plugins; a typed query carries no `home` param. The answers are
+merged by the same rules as any query's and are the window's list until the person types,
+which replaces them. Enter and the actions work on a home row as on any other. The Python
+SDK passes the query to `Plugin.home()` when the plugin has one, else to `query("")`.
 
 Answers from several plugins are merged into one list: highest score first, items without a
 score first of all, and ties keep the plugins' order and then each plugin's own order.
@@ -371,7 +385,7 @@ the call is over.
 
 `docs/plugin-protocol.golden.json` holds exchanges both sides are tested against: a
 `describe` from a version 1 host and from a version 0 one, a query answered with items with
-and without icons of both kinds, with scores in and out of range, with an icon of an
+and without icons of both kinds, a `describe` with `home` and the home query, with scores in and out of range, with an icon of an
 unknown kind and with an item the host cannot read, a run, and an error. Each holds the
 request, the answer, and what the host reads from the answer. `crates/cmd-core/tests/golden.rs`
 checks that the host sends the requests and reads the answers as written there, and

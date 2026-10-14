@@ -192,7 +192,11 @@ impl LauncherView {
                 self.host = Some(host);
                 // Every plugin has been reported by now; nothing is left starting.
                 self.starting.clear();
-                if !self.state.text().trim().is_empty() {
+                if self.state.text().trim().is_empty() {
+                    // The window opened before the host was here: its home query is
+                    // asked now (decision 13).
+                    self.ask_home(self.state.generation, cx);
+                } else {
                     let text = self.state.text().to_string();
                     self.ask(self.state.generation, &text, cx);
                 }
@@ -226,6 +230,21 @@ impl LauncherView {
             .as_ref()
             .map(|host| host.query(generation, text))
             .unwrap_or_default();
+        self.asked(generation, plugins, cx);
+    }
+
+    /// Ask the plugins that declared `home` for the blank-input list (decision 13).
+    fn ask_home(&mut self, generation: u64, cx: &mut Context<Self>) {
+        let plugins = self
+            .host
+            .as_ref()
+            .map(|host| host.home(generation))
+            .unwrap_or_default();
+        self.asked(generation, plugins, cx);
+    }
+
+    /// Tell the state whom the host asked, and redraw once they have had their chance.
+    fn asked(&mut self, generation: u64, plugins: Vec<usize>, cx: &mut Context<Self>) {
         self.asked_at = Instant::now();
         self.state.apply(Event::Asked {
             generation,
@@ -364,6 +383,9 @@ impl LauncherView {
     fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shown = true;
         self.tasks.apply(TaskEvent::Shown);
+        // First, because a new query clears the line under the input.
+        let step = self.state.apply(Event::Shown);
+        self.perform(step, cx);
         if let Some(message) = &self.start_trouble {
             self.state.apply(Event::Noted(message.clone()));
         }
@@ -417,6 +439,7 @@ impl LauncherView {
             // Before the host is here nobody is asked, and the text is asked again when it
             // arrives (see `on_startup`).
             Step::Query { generation, text } => self.ask(generation, &text, cx),
+            Step::Home { generation } => self.ask_home(generation, cx),
             Step::Run {
                 generation,
                 plugin,

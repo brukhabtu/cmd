@@ -94,7 +94,13 @@ pub fn examine(request: &Request, timeouts: Timeouts) -> Result<(), String> {
     }
     if let Some(text) = &request.query {
         let items: Items = process
-            .call(Method::Query { text: text.clone() }, timeouts.query)
+            .call(
+                Method::Query {
+                    text: text.clone(),
+                    home: false,
+                },
+                timeouts.query,
+            )
             .map_err(|error| format!("query {text:?}: {error}"))?;
         println!("items for {text:?}: {}", pretty(&items.items));
         if let Some(note) = items.dropped_note() {

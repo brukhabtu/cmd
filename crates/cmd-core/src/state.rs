@@ -111,6 +111,9 @@ pub enum Event {
     },
     /// Something the host wants shown whatever the generation: a plugin restarted, say.
     Noted(String),
+    /// The window came up. With an empty input that starts the home query, in a fresh
+    /// generation so an answer to an earlier home query cannot land on this one.
+    Shown,
 }
 
 /// What the shell must do next.
@@ -119,6 +122,11 @@ pub enum Step {
     Query {
         generation: u64,
         text: String,
+    },
+    /// Ask the plugins that declared `home` for the home query (decision 13): the input is
+    /// empty, and the answers merge into the list like a query's. Never sent for text.
+    Home {
+        generation: u64,
     },
     /// Ask a plugin to run an action. The answer must come back tagged with `generation`.
     Run {
@@ -234,6 +242,13 @@ impl Launcher {
             Event::Noted(message) => {
                 self.message = Some(message);
                 Step::Nothing
+            }
+            Event::Shown => {
+                if self.text().trim().is_empty() {
+                    self.requery()
+                } else {
+                    Step::Nothing
+                }
             }
         }
     }
@@ -425,8 +440,13 @@ impl Launcher {
         self.pending.clear();
         self.answers.clear();
         if self.text().trim().is_empty() {
+            // Blank input is the home list. TASK-6.3 adds the host's recent notices to
+            // `hits` here, ahead of the plugins' home rows; today the list starts empty
+            // and fills as the plugins that declared `home` answer.
             self.hits.clear();
-            return Step::Nothing;
+            return Step::Home {
+                generation: self.generation,
+            };
         }
         Step::Query {
             generation: self.generation,
@@ -520,16 +540,90 @@ mod tests {
     }
 
     #[test]
-    fn blank_text_clears_the_list_and_asks_nothing() {
+    fn blank_text_clears_the_list_and_asks_for_the_home_query_not_a_query() {
         let mut launcher = Launcher::default();
         typed(&mut launcher, "a");
         answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
         assert_eq!(
             launcher.apply(Event::Delete(Motion::PreviousGrapheme)),
-            Step::Nothing
+            Step::Home { generation: 2 }
         );
         assert_eq!(launcher.hits, []);
         assert_eq!(launcher.generation, 2);
+    }
+
+    #[test]
+    fn showing_the_window_on_an_empty_input_asks_for_home_in_a_fresh_generation() {
+        let mut launcher = Launcher::default();
+        assert_eq!(launcher.apply(Event::Shown), Step::Home { generation: 1 });
+        assert_eq!(launcher.generation, 1);
+        assert_eq!(launcher.apply(Event::Shown), Step::Home { generation: 2 });
+    }
+
+    #[test]
+    fn showing_the_window_over_typed_text_asks_nothing_and_keeps_the_list() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
+        assert_eq!(launcher.apply(Event::Shown), Step::Nothing);
+        assert_eq!(launcher.generation, 1);
+        assert_eq!(launcher.hits.len(), 1);
+    }
+
+    #[test]
+    fn home_answers_make_the_list_and_typing_replaces_them() {
+        let mut launcher = Launcher::default();
+        let Step::Home { generation } = launcher.apply(Event::Shown) else {
+            panic!("blank input asks for home");
+        };
+        answered(&mut launcher, generation, &[hit(2, "recent", vec![])]);
+        assert_eq!(launcher.hits[0].item.id, "recent");
+        assert_eq!(
+            launcher.apply(Event::Submit),
+            run(generation, 2, "recent", DEFAULT_ACTION)
+        );
+        launcher.apply(Event::Escape);
+        launcher.apply(Event::Shown);
+        answered(&mut launcher, 3, &[hit(2, "recent", vec![])]);
+        assert_eq!(
+            typed(&mut launcher, "x"),
+            Step::Query {
+                generation: 4,
+                text: "x".into()
+            }
+        );
+        launcher.apply(Event::Asked {
+            generation: 4,
+            plugins: vec![],
+        });
+        assert_eq!(launcher.hits, [], "typing replaces the home list");
+    }
+
+    #[test]
+    fn a_late_home_answer_does_not_land_on_typed_text_or_a_later_show() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Shown);
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "home row", vec![])]);
+        assert_eq!(launcher.hits, [], "the home answer belongs to generation 1");
+        launcher.apply(Event::Escape);
+        launcher.apply(Event::Shown);
+        answered(&mut launcher, 2, &[hit(0, "old home row", vec![])]);
+        assert_eq!(launcher.hits, []);
+    }
+
+    #[test]
+    fn a_home_with_nobody_to_ask_leaves_an_empty_list() {
+        let mut launcher = Launcher::default();
+        let Step::Home { generation } = launcher.apply(Event::Shown) else {
+            panic!("blank input asks for home");
+        };
+        launcher.apply(Event::Asked {
+            generation,
+            plugins: vec![],
+        });
+        assert_eq!(launcher.hits, []);
+        assert_eq!(launcher.pending, Vec::<usize>::new());
     }
 
     #[test]
@@ -913,7 +1007,7 @@ mod tests {
         answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
         assert_eq!(
             launcher.apply(Event::Delete(Motion::LineStart)),
-            Step::Nothing
+            Step::Home { generation: 2 }
         );
         assert_eq!(launcher.text(), "");
         assert_eq!(launcher.hits, []);
