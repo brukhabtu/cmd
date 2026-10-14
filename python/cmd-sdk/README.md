@@ -173,6 +173,25 @@ appear in that line, and editing its files reloads it.
   the first fill); once it is older than `ttl` seconds a daemon thread refreshes it, one at
   a time. A refresh that raises keeps the old value and leaves the exception in `.error`.
   `block_first=True` makes the first `get()` wait for the first value.
+- `report(Task(id, label, state, done, total, detail))` tells the host about background
+  work: an outbox retrying, an index being built. Call it from any thread; the host shows
+  the latest report per `id`. `state` is `"running"` (the default), `"done"` or
+  `"failed"`; `done` and `total` go together, with `done` at most `total`; `label` is short
+  text, and the host cuts text at 160 characters. `report` writes under the lock `serve`
+  uses for answers, so lines never interleave. It is silent before the host's `describe`
+  and when the host did not name the `tasks` capability, so call it unconditionally. A
+  `running` report of one task is sent at most twice a second (the ones in between are
+  dropped), and `done` and `failed` always go. A `Task` the protocol cannot carry raises
+  `InvalidTaskError` in your code, not in the protocol. The host forgets a plugin's tasks
+  when the plugin restarts, so a task still running is reported again by the new process.
+
+```python
+from cmd_sdk import Task, report
+
+report(Task("index", "Indexing notes", done=120, total=900))  # running, 13%
+report(Task("index", "Indexing notes", "done"))
+report(Task("outbox", "Saving to the vault", "failed", detail="Obsidian is not running"))
+```
 
 <!-- --8<-- [start:testing] -->
 ## Testing a plugin

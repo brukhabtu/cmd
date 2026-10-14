@@ -23,7 +23,9 @@ from cmd_sdk.protocol import (
     Show,
     SymbolIcon,
 )
+from cmd_sdk.reporter import report
 from cmd_sdk.serve import serve
+from cmd_sdk.tasks import InvalidTaskError, Task
 
 __all__ = [
     "PROTOCOL",
@@ -36,6 +38,7 @@ __all__ = [
     "Description",
     "Effect",
     "Icon",
+    "InvalidTaskError",
     "Item",
     "MissingVariableError",
     "Open",
@@ -43,9 +46,11 @@ __all__ = [
     "Plugin",
     "Show",
     "SymbolIcon",
+    "Task",
     "TtlCache",
     "call",
     "config",
     "data_dir",
+    "report",
     "serve",
 ]

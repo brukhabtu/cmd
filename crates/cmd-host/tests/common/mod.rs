@@ -14,11 +14,24 @@ use cmd_host::{HostEvent, Located, Manifest};
 /// "described" answers one item whose title is the describe params it was sent, as JSON
 /// with sorted keys. It speaks protocol 0, which the host still loads, so the icon is the
 /// one version 1 field it sends.
+///
+/// It also reports tasks, from a lock so a line from its timer thread never interleaves
+/// with an answer: "task {json}" writes that task event and then answers, "later {json}"
+/// answers and writes the event 200 ms after, "badtask" writes a task event without a
+/// label and answers, "flood N" writes N running updates of one task and a done, then
+/// answers, and "unknown" writes an event the host has no name for, then answers.
 pub const FAKE: &str = r#"
-import json, sys, time
+import json, sys, threading, time
+out = threading.Lock()
+def send(message):
+    with out:
+        sys.stdout.write(json.dumps(message) + "\n")
+        sys.stdout.flush()
+def emit(params):
+    send({"event": "task", "params": params})
 for line in sys.stdin:
     request = json.loads(line)
-    reply = lambda result: print(json.dumps({"id": request["id"], "result": result}), flush=True)
+    reply = lambda result: send({"id": request["id"], "result": result})
     if request["method"] == "describe":
         described = request["params"]
         reply({"name": NAME, "version": "0", "protocol": 0})
@@ -30,6 +43,24 @@ for line in sys.stdin:
             {"id": "untitled"},
             {"id": "odd", "title": "Odd", "score": 3, "icon": {"kind": "emoji", "text": "?"}},
         ]})
+    elif request["method"] == "query" and request["params"]["text"].startswith("task "):
+        emit(json.loads(request["params"]["text"][5:]))
+        reply({"items": [{"id": "after", "title": "after"}]})
+    elif request["method"] == "query" and request["params"]["text"].startswith("later "):
+        reply({"items": [{"id": "later", "title": "later"}]})
+        threading.Timer(0.2, emit, [json.loads(request["params"]["text"][6:])]).start()
+    elif request["method"] == "query" and request["params"]["text"] == "badtask":
+        emit({"id": "x", "state": "running"})
+        reply({"items": [{"id": "after", "title": "after"}]})
+    elif request["method"] == "query" and request["params"]["text"] == "unknown":
+        send({"event": "spinner", "params": {}})
+        reply({"items": [{"id": "after", "title": "after"}]})
+    elif request["method"] == "query" and request["params"]["text"].startswith("flood "):
+        count = int(request["params"]["text"][6:])
+        for done in range(count):
+            emit({"id": "f", "label": "Flood", "state": "running", "done": done, "total": count})
+        emit({"id": "f", "label": "Flood", "state": "done"})
+        reply({"items": [{"id": "after", "title": "after"}]})
     elif request["method"] == "run":
         reply({"effect": {"kind": "copy", "text": request["params"]["item"]}})
     elif request["params"]["text"] == "stall":

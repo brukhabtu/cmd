@@ -7,6 +7,7 @@ use cmd_core::protocol::{
     encode_request, result,
 };
 use cmd_core::query;
+use cmd_core::task::{Event, Incoming, classify};
 use serde_json::{Value, json};
 
 const GOLDEN: &str = include_str!(concat!(
@@ -65,6 +66,29 @@ fn the_describe_this_host_sends_is_the_golden_one() {
     });
     let sent: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(sent, golden["request"]);
+}
+
+#[test]
+fn every_event_line_reads_as_the_fixture_says() {
+    let golden: Value = serde_json::from_str(GOLDEN).expect("the fixture is JSON");
+    let events = golden["events"].as_array().expect("the fixture has events");
+    assert!(events.len() >= 8, "the fixture holds every kind of line");
+    for event in events {
+        let name = &event["name"];
+        let reads = &event["host_reads"];
+        match classify(&event["line"].to_string()) {
+            Incoming::Event(Event::Task(task)) => {
+                assert_eq!(&as_json(&task), &reads["task"], "{name}");
+            }
+            Incoming::Event(Event::Invalid(why)) => {
+                let want = reads["invalid"].as_str().unwrap_or_else(|| {
+                    panic!("{name}: the host dropped a line the fixture says it reads: {why}")
+                });
+                assert!(why.contains(want), "{name}: {why}");
+            }
+            Incoming::Other => assert_eq!(reads, &json!({"other": true}), "{name}"),
+        }
+    }
 }
 
 #[test]

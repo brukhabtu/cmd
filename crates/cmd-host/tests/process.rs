@@ -121,3 +121,38 @@ fn an_exited_plugin_is_reported_as_exited() {
     let error = query(&mut process, "quit").unwrap_err();
     assert!(matches!(error, CallError::Exited), "{error}");
 }
+
+/// Writes an event, then the answer, then another event after the answer.
+const EVENTFUL: &str = r#"
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    task = lambda n: print(json.dumps({"event": "task", "params": {"id": n, "label": n, "state": "running"}}), flush=True)
+    task("before")
+    print(json.dumps({"id": request["id"], "result": {"items": [{"id": "i", "title": "t"}]}}), flush=True)
+    task("after")
+"#;
+
+#[test]
+fn events_go_to_the_callback_as_they_arrive_and_never_to_a_call() {
+    let (sender, received) = std::sync::mpsc::channel();
+    let command = vec![
+        "python3".to_string(),
+        "-c".to_string(),
+        EVENTFUL.to_string(),
+    ];
+    let mut process = PluginProcess::spawn_with(&command, Path::new("."), &[], move |event| {
+        let _ = sender.send(event);
+    })
+    .expect("python3 is on PATH");
+    let items = query(&mut process, "x").expect("the events did not fail the call");
+    assert_eq!(items.items[0].title, "t");
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        match received.recv_timeout(Duration::from_secs(5)) {
+            Ok(cmd_core::task::Event::Task(task)) => ids.push(task.id),
+            other => panic!("expected a task event, got {other:?}"),
+        }
+    }
+    assert_eq!(ids, ["before", "after"]);
+}

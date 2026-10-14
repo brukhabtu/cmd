@@ -271,6 +271,9 @@ impl LauncherView {
             HostEvent::Reloaded { plugin } => {
                 Event::Noted(format!("{} reloaded", self.plugin_name(plugin)))
             }
+            // Background tasks reach the status line in TASK-8; until then the host's own
+            // latest-per-task record (`Host::tasks`) is all there is, and the event is ignored.
+            HostEvent::Task { .. } => return,
         };
         self.handle(event, cx);
     }

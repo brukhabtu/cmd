@@ -17,6 +17,7 @@ from cmd_sdk.protocol import (
     dispatch,
     encode_response,
 )
+from cmd_sdk.reporter import Reporter, installed
 
 
 def serve(plugin: Plugin, source: TextIO | None = None, sink: TextIO | None = None) -> None:
@@ -37,6 +38,10 @@ def serve(plugin: Plugin, source: TextIO | None = None, sink: TextIO | None = No
     ``describe`` sets the version and the capabilities every later answer holds to: the
     lower of the host's version and the SDK's, and the names the host sent.
 
+    ``serve`` owns the stream: answers are written under the lock that ``report`` takes for a
+    task, so a plugin's background threads can call ``cmd_sdk.report`` while a request is
+    answered and no two lines interleave.
+
     While serving to stdout, ``print`` writes to stderr instead: stdout belongs to the
     protocol, and a line on it the host cannot read costs the answer it landed in.
     """
@@ -50,19 +55,23 @@ def serve(plugin: Plugin, source: TextIO | None = None, sink: TextIO | None = No
 
 
 def _loop(plugin: Plugin, source: TextIO, sink: TextIO) -> None:
+    reporter = Reporter(sink)
     agreement = BEFORE_DESCRIBE
-    for line in source:
-        if not line.strip():
-            continue
-        answer, agreement = _answer(line, plugin, agreement)
-        sink.write(answer)
-        sink.flush()
+    with installed(reporter):
+        for line in source:
+            if not line.strip():
+                continue
+            answer, agreement = _answer(line, plugin, agreement, reporter)
+            reporter.write(answer)
 
 
-def _answer(line: str, plugin: Plugin, agreement: Agreement) -> tuple[str, Agreement]:
+def _answer(
+    line: str, plugin: Plugin, agreement: Agreement, reporter: Reporter
+) -> tuple[str, Agreement]:
     """The line to write for one request line, and the agreement from then on.
 
-    It is always an answer and never raises.
+    It is always an answer and never raises. The reporter learns the agreement before the
+    plugin's ``describe`` runs, so a thread that function starts can report at once.
     """
     try:
         request = decode_request(line)
@@ -72,6 +81,7 @@ def _answer(line: str, plugin: Plugin, agreement: Agreement) -> tuple[str, Agree
         return encode_response(Failure(error.request_id, "bad_request", str(error))), agreement
     if isinstance(request, Describe):
         agreement = agree(request)
+        reporter.agree(agreement)
     try:
         # Encoding is inside the guard: a value JSON cannot carry fails here, as an answer,
         # and not on the write, as the end of the session.

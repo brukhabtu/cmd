@@ -8,6 +8,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use cmd_core::protocol::{self, DecodeError, Method, Outcome, Request};
+use cmd_core::task::{self, Event, Incoming};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -54,6 +55,19 @@ impl PluginProcess {
         cwd: &Path,
         env: &[(OsString, OsString)],
     ) -> io::Result<Self> {
+        Self::spawn_with(command, cwd, env, |_| {})
+    }
+
+    /// [`PluginProcess::spawn_in`] that also hands every line the plugin starts, an
+    /// event with no `id`, to `on_event` from the reader thread as it arrives, whether
+    /// or not a call is in flight. Such a line never reaches a call. `on_event` runs on
+    /// the thread that reads the pipe, so it must not block.
+    pub fn spawn_with(
+        command: &[String],
+        cwd: &Path,
+        env: &[(OsString, OsString)],
+        mut on_event: impl FnMut(Event) + Send + 'static,
+    ) -> io::Result<Self> {
         let (program, args) = command
             .split_first()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "empty command"))?;
@@ -77,11 +91,14 @@ impl PluginProcess {
                     let mut line = String::new();
                     match reader.read_line(&mut line) {
                         Ok(0) => break,
-                        Ok(_) => {
-                            if sender.send(Ok(line)).is_err() {
-                                break;
+                        Ok(_) => match task::classify(&line) {
+                            Incoming::Event(event) => on_event(event),
+                            Incoming::Other => {
+                                if sender.send(Ok(line)).is_err() {
+                                    break;
+                                }
                             }
-                        }
+                        },
                         Err(error) => {
                             let _ = sender.send(Err(error));
                             break;

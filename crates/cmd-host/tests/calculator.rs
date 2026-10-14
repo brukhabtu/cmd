@@ -9,7 +9,8 @@ use std::path::PathBuf;
 
 use cmd_core::protocol::{Description, Effect, Icon, Items, Method, VERSION};
 use cmd_core::state::DEFAULT_ACTION;
-use cmd_host::{Host, PluginProcess, Timeouts, manifest};
+use cmd_core::task::TaskState;
+use cmd_host::{Host, HostEvent, PluginProcess, Timeouts, manifest};
 use common::{answer_from, effect_from};
 
 fn plugins_dir() -> PathBuf {
@@ -85,6 +86,62 @@ fn the_calculator_answers_through_the_real_process() {
 
     host.query(2, "not arithmetic");
     assert_eq!(answer_from(&events, calculator, 2), []);
+}
+
+/// A plugin written against the real SDK that reports a task from inside a query and, from
+/// a thread of its own, after the query has been answered.
+const REPORTER: &str = r#"
+import threading
+from cmd_sdk import Close, Description, Item, Plugin, Task, report, serve
+
+def query(text):
+    report(Task("index", "Indexing notes", "running", 1, 3))
+    threading.Timer(0.2, report, [Task("index", "Indexing notes", "done")]).start()
+    return (Item("a", "a"),)
+
+serve(Plugin(Description("reporter", "1"), query, lambda item, action: Close()))
+"#;
+
+#[test]
+fn a_task_the_real_sdk_reports_reaches_the_host_during_and_between_calls() {
+    let root = plugins_dir().join("..");
+    let located = cmd_host::Located {
+        dir: root.clone(),
+        manifest: cmd_host::Manifest {
+            name: "reporter".into(),
+            command: [
+                "uv",
+                "run",
+                "--quiet",
+                "--project",
+                "python/cmd-sdk",
+                "python",
+                "-c",
+                REPORTER,
+            ]
+            .map(String::from)
+            .to_vec(),
+        },
+    };
+    let (host, errors) = Host::start(vec![located], Timeouts::default());
+    assert!(errors.is_empty(), "{errors:?}");
+    host.query(1, "go");
+    let events = host.events();
+    let (mut answered, mut running, mut finished) = (false, false, false);
+    while !(answered && running && finished) {
+        match events.recv_blocking().unwrap() {
+            HostEvent::Answered { result: Ok(_), .. } => answered = true,
+            HostEvent::Task { task, .. } if task.state == TaskState::Running => {
+                assert_eq!((task.done, task.total), (Some(1), Some(3)));
+                running = true;
+            }
+            HostEvent::Task { task, .. } if task.state == TaskState::Done => {
+                assert_eq!(task.label, "Indexing notes");
+                finished = true;
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
 }
 
 #[test]

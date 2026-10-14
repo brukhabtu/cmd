@@ -73,7 +73,10 @@ fn next_within(host: &Host, limit: Duration) -> HostEvent {
 fn generation_of(event: &HostEvent) -> u64 {
     match event {
         HostEvent::Answered { generation, .. } | HostEvent::Ran { generation, .. } => *generation,
-        HostEvent::Restarted { .. } | HostEvent::Reloaded { .. } | HostEvent::Trouble { .. } => {
+        HostEvent::Restarted { .. }
+        | HostEvent::Reloaded { .. }
+        | HostEvent::Trouble { .. }
+        | HostEvent::Task { .. } => {
             panic!("no restart was expected")
         }
     }
@@ -89,7 +92,8 @@ fn answers_arrive_as_events_with_their_generation_and_plugin() {
         | HostEvent::Ran { plugin, .. }
         | HostEvent::Restarted { plugin, .. }
         | HostEvent::Reloaded { plugin, .. }
-        | HostEvent::Trouble { plugin, .. } => *plugin,
+        | HostEvent::Trouble { plugin, .. }
+        | HostEvent::Task { plugin, .. } => *plugin,
     });
     let titles: Vec<String> = answers
         .into_iter()
@@ -426,11 +430,11 @@ fn an_item_s_icon_arrives_typed() {
 }
 
 #[test]
-fn describe_sends_the_host_s_version_and_an_empty_list_of_capabilities() {
+fn describe_sends_the_host_s_version_and_the_capabilities_it_names() {
     let host = host(&[("a", false)]);
     assert_eq!(
         ask(&host, 1, "described"),
-        r#"{"capabilities": [], "protocol": 1}"#
+        r#"{"capabilities": ["tasks"], "protocol": 1}"#
     );
 }
 

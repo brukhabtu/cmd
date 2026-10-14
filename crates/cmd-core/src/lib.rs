@@ -9,3 +9,4 @@ pub mod placement;
 pub mod protocol;
 pub mod query;
 pub mod state;
+pub mod task;

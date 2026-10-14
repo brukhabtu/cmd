@@ -16,6 +16,7 @@ pub mod index;
 pub mod install;
 pub mod manifest;
 pub mod process;
+pub mod tasks;
 
 pub use bundle::Bundle;
 pub use cli::Env;

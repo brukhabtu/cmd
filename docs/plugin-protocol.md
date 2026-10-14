@@ -24,7 +24,8 @@ command = ["uv", "run", "--quiet", "calculator"]
 
 The host runs `command` with the plugin directory as the working directory, stdin and stdout
 piped, and stderr inherited. A plugin logs to stderr. Stdout belongs to the protocol: any
-line on it that is not a protocol message is reported as an error that quotes the line.
+line on it that is not a protocol message (an answer or an event) is reported as an error
+that quotes the line.
 The Python SDK keeps the real stdout for the protocol and points `sys.stdout` at stderr
 while it serves, so a stray `print` is logged instead; a program the plugin starts still
 inherits the real stdout unless the plugin gives it somewhere else.
@@ -81,13 +82,14 @@ or an error:
 
 Ids increase for the life of the process. The host sends one request at a time and waits
 for its answer, so a plugin can be a plain loop. An answer that arrives after the host gave
-up is dropped.
+up is dropped. A plugin may also start a line of its own, an event with no `id`; the only
+one is a task report (see Tasks), and the host reads it whenever it arrives.
 
 ## Methods
 
 | Method | Params | Result | When |
 |---|---|---|---|
-| `describe` | `{"protocol": 1, "capabilities": []}` | Description | Once, right after the process starts |
+| `describe` | `{"protocol": 1, "capabilities": ["tasks"]}` | Description | Once, right after the process starts |
 | `query` | `{"text": "..."}` | `{"items": [Item]}` | On every change to the typed text that reaches this plugin |
 | `run` | `{"item": "...", "action": "..."}` | `{"effect": Effect}` | When the person presses Enter on one of this plugin's items |
 
@@ -105,7 +107,8 @@ optional; see Routing.
 The params of `describe` carry `protocol`, the version the host speaks, and
 `capabilities`, a list of names for behaviour the host supports beyond its version. A
 missing list is an empty one, as from a host older than the list. This host speaks 1 and
-names no capability yet, so it sends `{"protocol": 1, "capabilities": []}`.
+names one capability, `tasks` (see Tasks), so it sends
+`{"protocol": 1, "capabilities": ["tasks"]}`.
 
 The plugin answers with the lower of the host's version and its own, and from then on
 sends only what that version and those capabilities allow. The host loads a plugin that
@@ -128,6 +131,7 @@ then:
   sent a line it cannot read. No kind is newer than version 1 yet, so this guards version 2.
 - gives the plugin the agreed version and the host's capabilities: `Plugin(describe=...)`
   is called with them before the description is sent, and its answer is sent instead.
+- writes a task report only when the host named `tasks` (see Tasks).
 
 ### How the contract grows
 
@@ -139,10 +143,15 @@ Every change to the contract is one of three kinds (decision 9).
 2. **A capability.** The plugin must behave differently when the host does not read the
    field. The host names it in `capabilities`, and the plugin uses it only then, falling
    back otherwise. A capability is named only where a plugin has a fallback to choose. The
-   first will be `keywords`, for a plugin with several keywords.
+   first is `tasks` (see Tasks); `keywords`, for a plugin with several keywords, will be
+   another.
 3. **A new version.** Anything the host must decode to keep working, or that changes what
    an existing message means: a new effect kind, a new icon kind, a new method, a message
-   in a new direction, a field that becomes required or changes meaning.
+   in a new direction, a field that becomes required or changes meaning. One exception
+   (decision 12): a message the plugin starts, sent only to a host that named it in
+   `capabilities` and left unsent otherwise, is a capability, because the plugin has the
+   choice not to send it. A message in a new direction is a capability when the plugin has
+   that choice, and a new version when the sender has none.
 
 Version 1 added `icon` to an item (decision 6), which decision 9 would now call an optional
 field; its kinds are versioned like any other kind. The host decodes an answer item by
@@ -238,6 +247,59 @@ The host hands an `open` target to the system as given, so a file or an applicat
 as a `file://` URL (`Path.as_uri()` in Python), with its scheme and percent-encoding; a bare
 path has no scheme for the system to dispatch on.
 
+## Tasks
+
+A plugin that works between calls (an outbox retrying, an index being built, a cache
+refresh) reports it as a **task**, and the host keeps the latest state of each (decision
+12). It is the one message a plugin starts. It is a line with an `event` key and no `id`,
+written whenever the plugin likes, between calls or in the middle of one:
+
+```json
+{"event": "task", "params": {"id": "index", "label": "Indexing notes", "state": "running", "done": 120, "total": 900, "detail": "meetings/2026"}}
+```
+
+| Field | | |
+|---|---|---|
+| `id` | required | Names the task within the plugin, so a later line replaces an earlier one |
+| `label` | required | Short text for the person |
+| `state` | required | `running`, `done` or `failed` |
+| `done`, `total` | optional | Whole numbers of 0 or more, given together, with `done` at most `total`. With neither, there is no progress to show |
+| `detail` | optional | Text, one line |
+
+**The capability.** A plugin sends the line only to a host that named `tasks` in the
+`capabilities` of `describe`, and sends nothing to one that did not. The protocol stays at
+1: the plugin has the choice not to send, which is what makes this a capability and not a
+version (decision 9, third kind).
+
+**What the host does with a line.** The reader of the plugin's stdout sorts each line as
+it arrives, not when a call asks: a line with an `event` and no `id` is an event, and
+any other line goes to the call in flight as before (a line that is neither JSON nor an
+event is still reported as not a protocol message). So an event never fails a call and a
+call never waits for one. The host:
+
+- cleans the text of `id`, `label` and `detail` (control characters out, cut at 160
+  characters) and checks the shape above. A line it cannot use, a task without a `label`
+  or a `state`, a `done` above `total`, an event of another name, is dropped and
+  noted for that plugin like any other trouble with it. It never fails a call, and the
+  notes for one plugin are limited so a loop of bad lines cannot fill the window.
+- keeps the latest state per task `id` per plugin, and tells the window about a task
+  whose state changed as a `Task` event, at most every 50 ms. A flood of lines costs the
+  reading of them and one report per task. The host keeps at most 64 tasks per plugin; a
+  new one over that replaces a `done` one, or is dropped and noted.
+- forgets a plugin's tasks when the plugin starts again, after a crash, a hang or a
+  change to its files. A plugin reports again after `describe`.
+
+What the window shows, and for how long, is the window's business: `running` until
+replaced, `done` briefly, `failed` until dismissed.
+
+**In the SDK**, `report(Task(...))` may be called from any thread. It writes its line
+under the same lock `serve` takes for answers, so lines never interleave. It does nothing,
+without error, before the host's `describe` or when the host did not name `tasks`. A
+`running` report of one task is sent at most twice a second (a report inside the
+half second is dropped, not held back, so the last `running` update may never be sent);
+a change of state, `done` and `failed` are always sent. A task that cannot be carried
+raises `InvalidTaskError` to the caller, whatever the host is.
+
 ## Routing
 
 The host trims the typed text and looks at its first word.
@@ -276,7 +338,7 @@ is treated the same way. A change to any file under the plugin's directory, othe
 hidden files, `__pycache__` and `uv.lock`, starts it again on the new code and the
 window says "reloaded"; the manifest is read again too, so a changed `command` takes
 effect. Every restart begins with `describe`, and the new description replaces the old
-one. A plugin that cannot be started again, or started at all, is reported in the
+one; the plugin's tasks are cleared, and it reports them again. A plugin that cannot be started again, or started at all, is reported in the
 window, and the old process keeps answering while a reload fails.
 
 ## Errors
@@ -293,13 +355,17 @@ whose `id` is 0 answers the request in flight, since the host sends one request 
 ## A full exchange
 
 ```
-→ {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": []}}
+→ {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": ["tasks"]}}
 ← {"id": 1, "result": {"name": "calculator", "version": "0.1.0", "protocol": 1}}
 → {"id": 2, "method": "query", "params": {"text": "2 + 2 * 3"}}
 ← {"id": 2, "result": {"items": [{"id": "8", "title": "8", "subtitle": "Press Enter to copy", "icon": {"kind": "symbol", "name": "equal"}}]}}
 → {"id": 3, "method": "run", "params": {"item": "8", "action": "default"}}
 ← {"id": 3, "result": {"effect": {"kind": "copy", "text": "8"}}}
+← {"event": "task", "params": {"id": "cache", "label": "Refreshing the cache", "state": "done"}}
 ```
+
+The last line is a plugin's own: a task report, which may come at any moment, here after
+the call is over.
 
 ## Golden exchanges
 
@@ -311,6 +377,15 @@ request, the answer, and what the host reads from the answer. `crates/cmd-core/t
 checks that the host sends the requests and reads the answers as written there, and
 `python/cmd-sdk/tests/unit/test_golden.py` that the SDK reads the requests and writes the
 answers. A plugin in another language can test itself against the same file.
+
+The same file holds `events`, the lines a plugin starts: a task running, done and failed,
+text that the host cleans, lines it drops and notes (no label, `done` above `total`, an
+unknown state, an event of another name), and lines that are not events at all (an answer,
+a line with both an `event` and an `id`). Each holds the line and what the host reads from
+it; the SDK writes the lines it can as written and refuses the rest. The host side is
+`cmd-core`'s `task::classify`, a pure function the reader thread calls on each line, and
+`crates/cmd-host/tests/calculator.rs` also drives a task from the real SDK through the real
+host.
 
 ## Writing one in Python
 

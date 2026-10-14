@@ -15,11 +15,13 @@ use std::time::{Duration, Instant};
 
 use cmd_core::protocol::{ACCEPTED, Description, Effect, Item, Items, Method, Ran};
 use cmd_core::query::{self, Scope};
+use cmd_core::task::Task;
 use notify::{RecursiveMode, Watcher};
 use thiserror::Error;
 
 use crate::manifest::{self, LoadError, Located};
 use crate::process::{CallError, PluginProcess};
+use crate::tasks::TaskBoard;
 
 /// How long a worker waits on each kind of call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,6 +138,11 @@ pub enum HostEvent {
     /// Something the window should say about the plugin: it could not be started again,
     /// or its answer had items the host could not read, which are left out.
     Trouble { plugin: usize, message: String },
+    /// The plugin reported a task: its latest state, since the last event for that task.
+    /// Reports arrive whenever the plugin sends them, between calls as well as during
+    /// one, and the host sends at most one event per task every 50 ms. A `Restarted` or
+    /// `Reloaded` for the plugin means its earlier tasks are gone (decision 12).
+    Task { plugin: usize, task: Task },
 }
 
 enum Command {
@@ -158,6 +165,7 @@ struct Plugin {
     /// Shared with the worker, which replaces it when the plugin starts again.
     description: Arc<RwLock<Description>>,
     commands: mpsc::Sender<Command>,
+    tasks: Arc<TaskBoard>,
 }
 
 /// How long to wait after a file changed before starting the plugin on the new code.
@@ -290,11 +298,13 @@ impl Host {
                     continue;
                 }
             };
-            match handshake(located, &env, timeouts.describe) {
-                Ok((located, description, process)) => {
+            let plugin = started.len();
+            let tasks = TaskBoard::new(plugin, events.clone());
+            match handshake(located, &env, timeouts.describe, &tasks) {
+                Ok((located, description, process, token)) => {
+                    tasks.activate(token);
                     let (commands, work) = mpsc::channel();
                     let reports = events.clone();
-                    let plugin = started.len();
                     let name = located.manifest.name.clone();
                     let description = Arc::new(RwLock::new(description));
                     let worker = Worker {
@@ -306,16 +316,20 @@ impl Host {
                         timeouts,
                         restarts: Restarts::default(),
                         timeouts_in_a_row: 0,
+                        tasks: Arc::clone(&tasks),
                     };
-                    let spawned = thread::Builder::new()
-                        .name(format!("plugin:{name}"))
-                        .spawn(move || worker.serve(&work, &reports));
+                    let spawned = tasks.spawn_flusher().and_then(|()| {
+                        thread::Builder::new()
+                            .name(format!("plugin:{name}"))
+                            .spawn(move || worker.serve(&work, &reports))
+                    });
                     match spawned {
                         Ok(_handle) => {
                             started.push(Plugin {
                                 located,
                                 description,
                                 commands,
+                                tasks,
                             });
                             report(Startup::Up { plugin, name });
                         }
@@ -355,6 +369,15 @@ impl Host {
         self.descriptions()
             .nth(plugin)
             .map(|description| description.name)
+    }
+
+    /// The latest state of every task the plugin at this index has reported, in id order.
+    /// Empty for an index that is not a plugin, and right after the plugin restarts.
+    pub fn tasks(&self, plugin: usize) -> Vec<Task> {
+        self.plugins
+            .get(plugin)
+            .map(|plugin| plugin.tasks.snapshot())
+            .unwrap_or_default()
     }
 
     /// The directories of the running plugins, for diagnostics.
@@ -451,13 +474,36 @@ pub(crate) fn plugin_env(
     Ok(env)
 }
 
+/// Start the plugin and shake hands with it. On success the token names the process to the
+/// task board, which keeps the process's reports aside until the caller activates it; on
+/// failure the board has already forgotten them.
 fn handshake(
     located: Located,
     env: &[(OsString, OsString)],
     timeout: Duration,
+    tasks: &Arc<TaskBoard>,
+) -> Result<(Located, Description, PluginProcess, u64), StartError> {
+    let token = tasks.begin();
+    let started = handshake_with(located, env, timeout, tasks, token);
+    if started.is_err() {
+        tasks.abandon(token);
+    }
+    started.map(|(located, description, process)| (located, description, process, token))
+}
+
+fn handshake_with(
+    located: Located,
+    env: &[(OsString, OsString)],
+    timeout: Duration,
+    tasks: &Arc<TaskBoard>,
+    token: u64,
 ) -> Result<(Located, Description, PluginProcess), StartError> {
     let name = located.manifest.name.clone();
-    let mut process = PluginProcess::spawn_in(&located.manifest.command, &located.dir, env)
+    let board = Arc::clone(tasks);
+    let mut process =
+        PluginProcess::spawn_with(&located.manifest.command, &located.dir, env, move |event| {
+            board.offer(token, event);
+        })
         .map_err(|source| StartError::Spawn {
             name: name.clone(),
             source,
@@ -509,6 +555,15 @@ struct Worker {
     timeouts: Timeouts,
     restarts: Restarts,
     timeouts_in_a_row: u32,
+    /// The tasks the plugin reports. Replaced by the new process's on every start, so a
+    /// restart clears them.
+    tasks: Arc<TaskBoard>,
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.tasks.close();
+    }
 }
 
 impl Worker {
@@ -591,6 +646,7 @@ impl Worker {
         if !gone {
             return true;
         }
+        self.tasks.clear();
         thread::sleep(self.restarts.delay());
         let attempt = self.restarts.record();
         let plugin = self.plugin;
@@ -697,11 +753,12 @@ impl Worker {
             .manifest_now()
             .map_err(|error| error.to_string())
             .and_then(|located| {
-                handshake(located, &self.env, self.timeouts.describe)
+                handshake(located, &self.env, self.timeouts.describe, &self.tasks)
                     .map_err(|error| error.to_string())
             });
         match started {
-            Ok((located, description, process)) => {
+            Ok((located, description, process, token)) => {
+                self.tasks.activate(token);
                 self.home = located;
                 *self
                     .description

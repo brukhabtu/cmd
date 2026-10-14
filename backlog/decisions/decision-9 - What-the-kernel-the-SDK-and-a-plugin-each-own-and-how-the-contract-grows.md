@@ -61,8 +61,11 @@ Every change to the contract is one of three kinds.
 3. **A new version.** Anything the host must decode to keep working, or that changes what
    an existing message means: a new effect kind (paste, set-input), a new icon kind, a new
    method, a message in a new direction, a field that becomes required or changes meaning.
-   (Decision 12 proposes an exception: a plugin-to-host message that the plugin sends only to
-   a host that named it in `capabilities`, and leaves unsent otherwise, is a capability.)
+   One exception, settled by decision 12: a message the plugin starts, which it sends only
+   to a host that named it in `capabilities` and leaves unsent otherwise, is a capability
+   (kind 2), because the plugin has the choice not to send it. So a message in a new
+   direction is a capability when the plugin has that choice, and a new version when the
+   sender has none. The first is the `task` event behind `tasks`.
    Kinds stay versioned after task 2.3 makes the host decode item by item: that limits the
    damage of a mistake and is no licence to send a kind the host does not know.
 
@@ -115,7 +118,8 @@ fields of `tasks format=json`, whether `daily:append` creates the daily note) sh
 - **Messages a plugin starts.** One answer to each request, one request at a time, is what
   lets a plugin be a plain loop and lets the host treat any other line on stdout as an
   error. A message from the plugin needs a host reader for lines between calls, an SDK
-  that serialises writes from several threads, and a new version. Nothing in task 2
+  that serialises writes from several threads, and a new version (decision 12 built it
+  as a capability instead, see the third kind). Nothing in task 2
   needs it: the outbox and the provider cache work inside the plugin.
 - **Background-task indicators** (draft 4). Work a plugin does between calls can only
   reach the window as a message the plugin starts. Calls in flight need no protocol, but

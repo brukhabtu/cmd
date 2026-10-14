@@ -11,7 +11,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from cmd_sdk import Action, Close, Copy, Description, Effect, Icon, Item, Open, Plugin, Show
+from cmd_sdk import (
+    Action,
+    Close,
+    Copy,
+    Description,
+    Effect,
+    Icon,
+    InvalidTaskError,
+    Item,
+    Open,
+    Plugin,
+    Show,
+    Task,
+)
 from cmd_sdk.protocol import (
     Describe,
     Failure,
@@ -26,6 +39,7 @@ from cmd_sdk.protocol import (
     dispatch,
     encode_response,
 )
+from cmd_sdk.tasks import encode_event
 
 GOLDEN = Path(__file__).parents[4] / "docs" / "plugin-protocol.golden.json"
 EXCHANGES: list[dict[str, Any]] = json.loads(GOLDEN.read_text(encoding="utf-8"))["exchanges"]
@@ -115,6 +129,45 @@ def named(kind: str) -> list[dict[str, Any]]:
 
 
 BY_NAME = operator.itemgetter("name")
+
+EVENTS: list[dict[str, Any]] = json.loads(GOLDEN.read_text(encoding="utf-8"))["events"]
+
+
+def task_from(params: dict[str, Any]) -> Task:
+    """A Task from an event's params, with whatever is missing or odd left as it is."""
+    return Task(
+        id=params.get("id"),  # type: ignore[arg-type]
+        label=params.get("label"),  # type: ignore[arg-type]
+        state=params.get("state"),  # type: ignore[arg-type]
+        done=params.get("done"),
+        total=params.get("total"),
+        detail=params.get("detail"),
+    )
+
+
+@pytest.mark.parametrize("event", EVENTS, ids=BY_NAME)
+def test_the_sdk_writes_each_event_line_as_written_or_refuses_to(event: dict[str, Any]) -> None:
+    line = event["line"]
+    if event.get("sdk_never_sends"):
+        with pytest.raises(InvalidTaskError):
+            encode_event(task_from(line.get("params", {})))
+        return
+    assert json.loads(encode_event(task_from(line["params"]))) == line
+
+
+@pytest.mark.parametrize(
+    "event", [event for event in EVENTS if "task" in event["host_reads"]], ids=BY_NAME
+)
+def test_an_event_the_sdk_sends_has_the_task_the_host_reads_up_to_cleaning(
+    event: dict[str, Any],
+) -> None:
+    sent = event["line"]["params"]
+    read = event["host_reads"]["task"]
+    assert sent["id"] == read["id"]
+    assert sent["state"] == read["state"]
+    assert {key: value for key, value in sent.items() if key in {"done", "total"}} == {
+        key: value for key, value in read.items() if key in {"done", "total"}
+    }
 
 
 @pytest.mark.parametrize("exchange", EXCHANGES, ids=BY_NAME)
