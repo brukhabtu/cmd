@@ -83,6 +83,12 @@ impl Input {
         self.splice(self.clamped(range), text)
     }
 
+    /// Make `text` the whole text, with the cursor at the end and no selection or
+    /// composition: what completing a row does. Returns whether the text changed.
+    pub fn set(&mut self, text: &str) -> bool {
+        self.splice(0..self.text.len(), text)
+    }
+
     /// Insert pasted text as one line: a query has no lines, so each line break becomes
     /// a space. Returns whether the text changed.
     pub fn paste(&mut self, text: &str) -> bool {
@@ -525,5 +531,17 @@ mod tests {
         assert_eq!(input.range_to_utf16(&input.marked().unwrap()), 1..4);
         assert_eq!(utf16_to_byte("\u{1D11E}\u{3042}", 2), 4);
         assert_eq!(utf16_to_byte("\u{1D11E}\u{3042}", 3), 7);
+    }
+
+    #[test]
+    fn set_replaces_everything_with_the_cursor_at_the_end() {
+        let mut input = Input::default();
+        input.insert("abc");
+        input.select_all();
+        assert!(input.set("jira PROJ-1"));
+        assert_eq!(input.text(), "jira PROJ-1");
+        assert_eq!(input.cursor(), 11);
+        assert_eq!(input.selection(), 11..11);
+        assert!(!input.set("jira PROJ-1"));
     }
 }

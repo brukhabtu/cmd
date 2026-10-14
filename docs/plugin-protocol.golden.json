@@ -34,9 +34,14 @@
          "icon": {"kind": "emoji", "text": "*"}},
         {"id": "loud", "title": "A score above 1", "score": 7.5},
         {"id": "low", "title": "A score below 0", "score": -0.5},
-        {"id": "untitled"}
+        {"id": "untitled"},
+        {"id": "numbered", "title": "A complete that is not text", "complete": 7},
+        {"id": "hint", "title": "A suggestion", "complete": "gold more"},
+        {"id": "hot", "title": "A scored suggestion", "score": 0.9, "complete": "gold hot"},
+        {"id": "issue", "title": "A result that completes", "complete": "gold issue",
+         "actions": [{"id": "open", "title": "Open"}]}
       ]}},
-      "sdk_never_sends": ["sparkle", "untitled"],
+      "sdk_never_sends": ["sparkle", "untitled", "numbered"],
       "host_reads": {
         "items": [
           {"id": "plain", "title": "Plain"},
@@ -47,10 +52,17 @@
            "icon": {"kind": "symbol", "name": "globe"}},
           {"id": "sparkle", "title": "An icon of a kind this host does not know"},
           {"id": "loud", "title": "A score above 1", "score": 1.0},
-          {"id": "low", "title": "A score below 0", "score": 0.0}
+          {"id": "low", "title": "A score below 0", "score": 0.0},
+          {"id": "hint", "title": "A suggestion", "complete": "gold more"},
+          {"id": "hot", "title": "A scored suggestion", "score": 0.9, "complete": "gold hot"},
+          {"id": "issue", "title": "A result that completes", "complete": "gold issue",
+           "actions": [{"id": "open", "title": "Open"}]}
         ],
-        "dropped": ["item 7 (\"untitled\"): missing field `title`"],
-        "ranked": ["plain", "sparkle", "search", "loud", "app", "low"]
+        "dropped": [
+          "item 7 (\"untitled\"): missing field `title`",
+          "item 8 (\"numbered\"): invalid type: integer `7`"
+        ],
+        "ranked": ["plain", "sparkle", "issue", "search", "loud", "hot", "app", "low", "hint"]
       }
     },
     {

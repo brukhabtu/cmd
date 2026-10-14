@@ -76,6 +76,9 @@ pub enum Event {
     Up,
     Down,
     Submit,
+    /// Tab: the selected row's `complete` text becomes the whole input, cursor at the end,
+    /// and the window stays open. A row without `complete` does nothing.
+    Complete,
     /// Cmd-1 to Cmd-9: run the item at this position, counted from zero.
     Pick(usize),
     Escape,
@@ -171,6 +174,7 @@ impl Launcher {
                 Step::Nothing
             }
             Event::Submit => self.run_at(self.selected),
+            Event::Complete => self.complete_at(self.selected),
             Event::Pick(position) => self.pick(position),
             Event::Escape => {
                 self.reset();
@@ -285,6 +289,14 @@ impl Launcher {
     /// Run the first action of the item at `index`, or nothing when there is no such item
     /// or a run is already in flight.
     fn run_at(&mut self, index: usize) -> Step {
+        // A suggestion row stands for no item, so running it is completing it.
+        if self
+            .hits
+            .get(index)
+            .is_some_and(|hit| hit.item.is_suggestion())
+        {
+            return self.complete_at(index);
+        }
         if self.busy {
             return Step::Nothing;
         }
@@ -304,6 +316,21 @@ impl Launcher {
             }
             None => Step::Nothing,
         }
+    }
+
+    /// Put the `complete` text of the row at `index` in the input and ask the plugins about
+    /// it, as typing it would. A row without one, or text the input already holds, changes
+    /// nothing.
+    fn complete_at(&mut self, index: usize) -> Step {
+        let Some(text) = self
+            .hits
+            .get(index)
+            .and_then(|hit| hit.item.complete.clone())
+        else {
+            return Step::Nothing;
+        };
+        let changed = self.input.set(&text);
+        self.requery_if(changed)
     }
 
     fn finish(&mut self, effect: Effect) -> Step {
@@ -433,6 +460,7 @@ mod tests {
                 score: None,
                 actions,
                 icon: None,
+                complete: None,
             },
         }
     }
@@ -1119,5 +1147,152 @@ mod tests {
         launcher.apply(Event::Down);
         assert_eq!(launcher.selected, 1);
         assert_eq!(launcher.first_visible, 0);
+    }
+
+    fn completing(plugin: usize, id: &str, complete: &str, actions: Vec<Action>) -> Hit {
+        let mut hit = hit(plugin, id, actions);
+        hit.item.complete = Some(complete.into());
+        hit
+    }
+
+    fn copy_action() -> Action {
+        Action {
+            id: "copy".into(),
+            title: "Copy".into(),
+        }
+    }
+
+    #[test]
+    fn tab_puts_the_selected_rows_complete_text_in_the_input_and_asks_again() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "jira pr");
+        answered(
+            &mut launcher,
+            1,
+            &[
+                hit(0, "plain", vec![copy_action()]),
+                completing(0, "issue", "jira PROJ-12", vec![copy_action()]),
+            ],
+        );
+        launcher.apply(Event::Down);
+        assert_eq!(
+            launcher.apply(Event::Complete),
+            Step::Query {
+                generation: 2,
+                text: "jira PROJ-12".into()
+            }
+        );
+        assert_eq!(launcher.text(), "jira PROJ-12");
+        assert_eq!(launcher.input.cursor(), "jira PROJ-12".len());
+        assert_eq!(launcher.input.selection(), 12..12);
+        assert_eq!(launcher.selected, 0);
+        assert!(!launcher.busy);
+    }
+
+    #[test]
+    fn tab_replaces_a_selection_and_a_composition_with_the_whole_text() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "ab");
+        answered(&mut launcher, 1, &[completing(0, "x", "abc def", vec![])]);
+        launcher.apply(Event::SelectAll);
+        launcher.apply(Event::Complete);
+        assert_eq!(launcher.text(), "abc def");
+        assert_eq!(launcher.input.selection(), 7..7);
+        assert_eq!(launcher.input.marked(), None);
+    }
+
+    #[test]
+    fn tab_on_a_row_without_complete_does_nothing() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "plain", vec![copy_action()])]);
+        let before = launcher.clone();
+        assert_eq!(launcher.apply(Event::Complete), Step::Nothing);
+        assert_eq!(launcher, before);
+        let mut empty = Launcher::default();
+        assert_eq!(empty.apply(Event::Complete), Step::Nothing);
+    }
+
+    #[test]
+    fn tab_acts_only_on_the_selected_row() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(
+            &mut launcher,
+            1,
+            &[
+                hit(0, "plain", vec![copy_action()]),
+                completing(0, "other", "elsewhere", vec![copy_action()]),
+            ],
+        );
+        assert_eq!(launcher.apply(Event::Complete), Step::Nothing);
+        assert_eq!(launcher.text(), "a");
+    }
+
+    #[test]
+    fn tab_with_the_text_already_there_keeps_the_generation() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "same");
+        answered(&mut launcher, 1, &[completing(0, "x", "same", vec![])]);
+        assert_eq!(launcher.apply(Event::Complete), Step::Nothing);
+        assert_eq!(launcher.generation, 1);
+        assert_eq!(launcher.hits.len(), 1);
+    }
+
+    #[test]
+    fn enter_on_a_suggestion_row_does_what_tab_does_and_runs_nothing() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "demo");
+        answered(
+            &mut launcher,
+            1,
+            &[completing(0, "s", "demo watching", vec![])],
+        );
+        assert_eq!(
+            launcher.apply(Event::Submit),
+            Step::Query {
+                generation: 2,
+                text: "demo watching".into()
+            }
+        );
+        assert_eq!(launcher.text(), "demo watching");
+        assert!(!launcher.busy);
+    }
+
+    #[test]
+    fn cmd_number_on_a_suggestion_row_completes_it_too() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "demo");
+        answered(
+            &mut launcher,
+            1,
+            &[completing(0, "s", "demo watching", vec![])],
+        );
+        assert!(matches!(launcher.apply(Event::Pick(0)), Step::Query { .. }));
+        assert_eq!(launcher.text(), "demo watching");
+    }
+
+    #[test]
+    fn enter_on_a_row_with_actions_still_runs_even_with_complete() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(
+            &mut launcher,
+            1,
+            &[completing(2, "issue", "jira A-1", vec![copy_action()])],
+        );
+        assert_eq!(launcher.apply(Event::Submit), run(1, 2, "issue", "copy"));
+        assert_eq!(launcher.text(), "a");
+    }
+
+    #[test]
+    fn enter_on_a_row_without_actions_or_complete_still_runs_the_default() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "x", vec![])]);
+        assert_eq!(
+            launcher.apply(Event::Submit),
+            run(1, 0, "x", DEFAULT_ACTION)
+        );
     }
 }

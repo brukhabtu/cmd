@@ -73,18 +73,33 @@ pub fn route(input: &str, scopes: &[Scope]) -> Vec<Route> {
 /// fuzzy match, even one scored a full 1.0, so a calculator's `2` sits above
 /// an application named `1+1`. Then items by score, highest first. The sort is
 /// stable, so ties keep plugin order and then the plugin's own order.
+///
+/// A suggestion row (see [`Item::is_suggestion`]) without a score goes after every other
+/// row, scored or not: it continues the typing and answers nothing yet. With a score it
+/// ranks by that score like any fuzzy match, so a plugin raises it by scoring it higher.
 pub fn merge(batches: impl IntoIterator<Item = (usize, Vec<Item>)>) -> Vec<Hit> {
     let mut hits: Vec<Hit> = batches
         .into_iter()
         .flat_map(|(plugin, items)| items.into_iter().map(move |item| Hit { plugin, item }))
         .collect();
-    hits.sort_by(|a, b| match (a.item.score, b.item.score) {
-        (None, None) => std::cmp::Ordering::Equal,
-        (None, Some(_)) => std::cmp::Ordering::Less,
-        (Some(_), None) => std::cmp::Ordering::Greater,
-        (Some(a), Some(b)) => b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal),
+    hits.sort_by(|a, b| {
+        rank(a)
+            .cmp(&rank(b))
+            .then_with(|| match (a.item.score, b.item.score) {
+                (Some(a), Some(b)) => b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal),
+                _ => std::cmp::Ordering::Equal,
+            })
     });
     hits
+}
+
+/// The tier of a hit: definite answers, then scored rows, then unscored suggestions.
+fn rank(hit: &Hit) -> u8 {
+    match (hit.item.score, hit.item.is_suggestion()) {
+        (None, false) => 0,
+        (Some(_), _) => 1,
+        (None, true) => 2,
+    }
 }
 
 #[cfg(test)]
@@ -103,6 +118,7 @@ mod tests {
             score,
             actions: Vec::new(),
             icon: None,
+            complete: None,
         }
     }
 
@@ -200,5 +216,45 @@ mod tests {
         ]);
         let titles: Vec<&str> = hits.iter().map(|h| h.item.title.as_str()).collect();
         assert_eq!(titles, vec!["2", "1+1 app"]);
+    }
+
+    fn suggestion(title: &str, score: Option<f64>) -> Item {
+        Item {
+            complete: Some(format!("{title} more")),
+            ..item(title, score)
+        }
+    }
+
+    fn titles(hits: &[Hit]) -> Vec<&str> {
+        hits.iter().map(|h| h.item.title.as_str()).collect()
+    }
+
+    #[test]
+    fn an_unscored_suggestion_sorts_after_results_scored_or_not() {
+        let hits = merge(vec![
+            (0, vec![suggestion("hint", None)]),
+            (1, vec![item("fuzzy", Some(0.1)), item("definite", None)]),
+        ]);
+        assert_eq!(titles(&hits), vec!["definite", "fuzzy", "hint"]);
+    }
+
+    #[test]
+    fn a_scored_suggestion_ranks_by_its_score_like_any_fuzzy_row() {
+        let hits = merge(vec![
+            (0, vec![suggestion("hint", Some(0.9))]),
+            (1, vec![item("fuzzy", Some(0.5)), item("definite", None)]),
+        ]);
+        assert_eq!(titles(&hits), vec!["definite", "hint", "fuzzy"]);
+    }
+
+    #[test]
+    fn a_row_with_complete_and_actions_is_a_result_not_a_suggestion() {
+        let mut result = suggestion("issue", None);
+        result.actions = vec![crate::protocol::Action {
+            id: "open".into(),
+            title: "Open".into(),
+        }];
+        let hits = merge(vec![(0, vec![suggestion("hint", None)]), (1, vec![result])]);
+        assert_eq!(titles(&hits), vec!["issue", "hint"]);
     }
 }

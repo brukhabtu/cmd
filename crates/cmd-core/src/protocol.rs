@@ -119,6 +119,18 @@ pub struct Item {
         deserialize_with = "readable_icon"
     )]
     pub icon: Option<Icon>,
+    /// The text Tab puts in the input (decision 13). Optional with no version and no
+    /// capability: a host that ignores it loses only Tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complete: Option<String>,
+}
+
+impl Item {
+    /// A suggestion row: it has `complete` and no action of its own, so it stands for no
+    /// item and Enter does what Tab does.
+    pub fn is_suggestion(&self) -> bool {
+        self.complete.is_some() && self.actions.is_empty()
+    }
 }
 
 /// A score as sent, clamped into `0.0..=1.0`. JSON has no NaN to clamp.
@@ -473,5 +485,38 @@ mod tests {
     #[test]
     fn a_response_with_neither_result_nor_error_is_rejected() {
         assert!(decode_response(r#"{"id": 1}"#).is_err());
+    }
+
+    #[test]
+    fn complete_round_trips_and_is_left_out_when_unset() {
+        let wire = r#"{"id":"s","title":"S","complete":"demo watching"}"#;
+        let item: Item = serde_json::from_str(wire).unwrap();
+        assert_eq!(item.complete.as_deref(), Some("demo watching"));
+        assert_eq!(serde_json::to_string(&item).unwrap(), wire);
+        let plain: Item = serde_json::from_str(r#"{"id":"p","title":"P"}"#).unwrap();
+        assert_eq!(plain.complete, None);
+        assert!(!serde_json::to_string(&plain).unwrap().contains("complete"));
+    }
+
+    #[test]
+    fn a_suggestion_has_complete_and_no_actions() {
+        let item = |wire: &str| serde_json::from_str::<Item>(wire).unwrap();
+        assert!(item(r#"{"id":"a","title":"A","complete":"x"}"#).is_suggestion());
+        assert!(!item(r#"{"id":"a","title":"A"}"#).is_suggestion());
+        assert!(
+            !item(r#"{"id":"a","title":"A","complete":"x","actions":[{"id":"o","title":"O"}]}"#)
+                .is_suggestion()
+        );
+    }
+
+    #[test]
+    fn a_complete_that_is_not_text_loses_that_item_only() {
+        let items: Items = serde_json::from_str(
+            r#"{"items":[{"id":"a","title":"A","complete":7},{"id":"b","title":"B"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(items.items.len(), 1);
+        assert_eq!(items.dropped.len(), 1);
+        assert!(items.dropped[0].starts_with("item 1 (\"a\")"));
     }
 }

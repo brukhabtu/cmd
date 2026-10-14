@@ -257,6 +257,11 @@ def test_a_bad_request_with_an_id_is_answered_with_that_id() -> None:
             id="a title that is not text",
         ),
         pytest.param(
+            Item("a", "A", complete=7),  # type: ignore[arg-type]
+            "item 1 ('a'): complete must be a str, not int",
+            id="a complete that is not text",
+        ),
+        pytest.param(
             Item(5, "five"),  # type: ignore[arg-type]
             "item 1: id must be a str, not int",
             id="an id that is not text",

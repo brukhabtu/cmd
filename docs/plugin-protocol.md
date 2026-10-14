@@ -158,11 +158,13 @@ send one.
   "subtitle": "Press Enter to copy",
   "score": 0.8,
   "actions": [{"id": "copy", "title": "Copy"}],
-  "icon": {"kind": "symbol", "name": "equal"}
+  "icon": {"kind": "symbol", "name": "equal"},
+  "complete": "calc 4"
 }
 ```
 
-`id` is what comes back in `run`. `subtitle`, `score`, `actions` and `icon` are optional.
+`id` is what comes back in `run`. `subtitle`, `score`, `actions`, `icon` and `complete` are
+optional.
 
 The host decodes the items of an answer one by one. An item it cannot read, one without a
 `title` say, is left out on its own: the rest are shown, and the window says how many
@@ -177,6 +179,27 @@ outrank another plugin's 1.
 
 `actions` are what Enter can do. The first is the default. With no actions the host sends
 `run` with action `"default"`.
+
+`complete` is the text Tab puts in the input (decision 13). Tab replaces the whole input
+with it, puts the cursor at the end and keeps the window open; the input has then changed,
+so the host asks the plugins about the new text exactly as if the person had typed it.
+There is no second request for completions: one query returns the results and the rows
+that continue the typing. Tab acts only on the selected row, and a row without `complete`
+does nothing on Tab. Give the row that is the thing its own `complete`; do not return the
+thing and a second row that completes to it.
+
+A row with `complete` and no `actions` is a suggestion: it stands for no item, so there is
+nothing for Enter to run, and Enter (or Cmd and a number) does what Tab does. A row with
+actions keeps Enter for its first action even when it has `complete`. Suggestions rank
+after results: a suggestion without a `score` sorts below every other row, scored or not,
+and a plugin raises one by giving it a `score`, when it ranks by that score like any fuzzy
+match. Among suggestions without a score the plugin's order holds.
+
+`complete` is an optional field in the sense of decision 9, kind 1: no version and no
+capability. The SDK sends it whatever version the host agreed to, since a host that ignores
+it loses only Tab. It must be text. The host reads an item whose `complete` is not text as
+unreadable and leaves out that item alone, and the SDK answers it with a `plugin_error`
+naming the item.
 
 `icon` is what the row shows beside its text, in one of two kinds:
 
@@ -262,7 +285,7 @@ window, and the old process keeps answering while a reload fails.
 |---|---|---|
 | `bad_request` | SDK | The host sent a line the SDK could not read, such as a `describe` whose `capabilities` is not a list of names. `id` is the request's own, or 0 when the line had none |
 | `unknown_method` | SDK | The host sent a well-formed request for a method the SDK does not have, as a newer protocol might. `id` is the request's own |
-| `plugin_error` | SDK | The plugin's own code raised, or returned what the protocol cannot carry: a score that is NaN, an icon path that is not text, a kind the agreed version lacks. `message` names the exception, and for a bad item the item |
+| `plugin_error` | SDK | The plugin's own code raised, or returned what the protocol cannot carry: a score that is NaN, an icon path or a `complete` that is not text, a kind the agreed version lacks. `message` names the exception, and for a bad item the item |
 
 Plugins may invent further codes. The host shows `code: message` to the person. An error
 whose `id` is 0 answers the request in flight, since the host sends one request at a time.

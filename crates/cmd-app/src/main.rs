@@ -440,6 +440,7 @@ fn key(keystroke: &Keystroke) -> Key {
         "up" => Event::Up,
         "down" => Event::Down,
         "enter" => Event::Submit,
+        "tab" => Event::Complete,
         "escape" => Event::Escape,
         digit @ ("1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9") if command => {
             match digit.parse::<usize>() {
@@ -997,6 +998,8 @@ mod tests {
         assert_eq!(pressed("up"), Key::Owned(Event::Up));
         assert_eq!(pressed("cmd-down"), Key::Owned(Event::Down));
         assert_eq!(pressed("enter"), Key::Owned(Event::Submit));
+        assert_eq!(pressed("tab"), Key::Owned(Event::Complete));
+        assert_eq!(pressed("shift-tab"), Key::Owned(Event::Complete));
         assert_eq!(pressed("escape"), Key::Owned(Event::Escape));
         assert_eq!(pressed("cmd-3"), Key::Owned(Event::Pick(2)));
     }

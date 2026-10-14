@@ -168,6 +168,23 @@ def test_query_serialises_items_with_only_the_fields_that_are_set() -> None:
     assert dispatch(Query(3, "x"), bare).result == {"items": [{"id": "x", "title": "X"}]}
 
 
+@pytest.mark.parametrize("protocol", [0, 1])
+def test_complete_is_sent_whatever_the_agreed_version_and_left_out_when_unset(
+    protocol: int,
+) -> None:
+    plugin = Plugin(
+        Description("c", "0"),
+        lambda _: (Item("s", "S", complete="demo watching"), Item("p", "P")),
+        lambda _i, _a: Close(),
+    )
+    assert dispatch(Query(8, "x"), plugin, Agreement(protocol)).result == {
+        "items": [
+            {"id": "s", "title": "S", "complete": "demo watching"},
+            {"id": "p", "title": "P"},
+        ]
+    }
+
+
 @pytest.mark.parametrize(
     ("icon", "wire"),
     [

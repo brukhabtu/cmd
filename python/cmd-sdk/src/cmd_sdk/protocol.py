@@ -110,7 +110,9 @@ class Item:
     definite answer, which the host ranks above every fuzzy one. The first action is the
     one Enter runs; with no actions the host sends ``DEFAULT_ACTION``. ``icon`` is the
     one field version 1 added, so it comes last: a plugin written against version 0
-    constructs an item positionally and still does.
+    constructs an item positionally and still does. ``complete`` is the text Tab puts in
+    the input; a row with it and no actions is a suggestion, and Enter does what Tab does.
+    It is an optional field with no version, so it is sent whatever the host is.
     """
 
     id: str
@@ -119,6 +121,7 @@ class Item:
     score: float | None = None
     actions: tuple[Action, ...] = ()
     icon: Icon | None = None
+    complete: str | None = None
 
 
 @dataclass(frozen=True)
@@ -483,6 +486,8 @@ def _checked_item_json(item: Item, agreement: Agreement) -> dict[str, Any]:
         if agreement.protocol >= ICON_FIELD_SINCE:
             _within(agreement, f"icon kind {icon['kind']!r}", ICON_KIND_SINCE[icon["kind"]])
             body["icon"] = icon
+    if item.complete is not None:
+        body["complete"] = _text(item.complete, "complete")
     return body
 
 

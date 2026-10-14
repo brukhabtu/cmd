@@ -115,6 +115,11 @@ What each part declares:
   icon the system shows for whatever sits at that absolute path, an app, a document or a
   folder. A name or path the system cannot resolve leaves the row without an icon; it is
   never an error. Leave it out and the row is text alone.
+- `complete` is the text Tab puts in the input, with the window staying open; the host then
+  asks about the new text as if it had been typed. Tab acts on the selected row, and a row
+  without `complete` does nothing on Tab. A row with `complete` and no `actions` is a
+  suggestion: Enter does what Tab does, and it sorts after the results unless you give it a
+  `score`. The SDK sends `complete` whatever version the host agreed to.
 - `run` returns an `Effect` and the host performs it: `Open` a URL or path, `Copy` text,
   `Show` a line and stay open, or `Close`. A plugin may also do its own work in `run`
   (toggle a setting, say) and then return `Close`.
@@ -123,7 +128,7 @@ What each part declares:
   nothing. A program you start does not follow: it writes to the real stdout unless you
   give it somewhere else, as `subprocess.run(..., capture_output=True)` does.
 - Return what the protocol can carry. An item with a title that is not text, a `score` that
-  is NaN or infinite, or a `PathIcon` holding a `pathlib.Path` instead of a string gets a
+  is NaN or infinite, a `complete` that is not a string, or a `PathIcon` holding a `pathlib.Path` instead of a string gets a
   `plugin_error` that names the item, and the plugin keeps serving. Use `str(path)`.
 
 **4. Try it without the app.** `cmd plugin doctor` runs a plugin directory the way the

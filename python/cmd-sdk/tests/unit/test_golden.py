@@ -52,6 +52,7 @@ def item_from(wire: dict[str, Any]) -> Item:
         score=wire.get("score"),
         actions=tuple(Action(action["id"], action["title"]) for action in wire.get("actions", [])),
         icon=None if icon is None else icon_from(icon),
+        complete=wire.get("complete"),
     )
 
 

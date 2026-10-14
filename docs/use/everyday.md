@@ -9,7 +9,8 @@
 | ++option+space++ | Show the launcher, or hide it if it is showing |
 | Typing | Asks every plugin that answers the text, as you type |
 | ++up++ / ++down++ | Move the selection; the list scrolls past seven rows |
-| ++enter++ | Run the selected row |
+| ++enter++ | Run the selected row; on a suggestion row, fill it into the input |
+| ++tab++ | Complete the selected row: put its completion in the input and keep going. Rows with no completion ignore it |
 | ++cmd+1++ to ++cmd+9++ | Run the first to ninth row on screen |
 | ++escape++ | Hide the launcher (or cancel what an input method is composing) |
 | ++cmd+backspace++ | Delete everything before the cursor |

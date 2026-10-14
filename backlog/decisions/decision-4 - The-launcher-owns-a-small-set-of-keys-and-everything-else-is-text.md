@@ -19,6 +19,7 @@ The launcher owns these keys and no others:
 |---|---|---|
 | Escape | hide | Clears the text; the next show starts empty |
 | Enter | run the selected item's first action | Enter with nothing selected does nothing |
+| Tab | complete the selected row | Amended by decision 13. Puts the row's `complete` text in the input, cursor at the end, and the window stays open; the plugins are asked about the new text. Acts only on the selected row; a row without `complete` does nothing, and Tab never types a tab character or moves focus. Enter on a suggestion row (a `complete` and no actions) does the same |
 | Up, Down | move the selection | Clamped to the list |
 | Backspace | delete the selection, else the grapheme before the cursor | Option-Backspace deletes the word before the cursor; Cmd-Backspace everything before the cursor, which is the whole text when the cursor is at the end |
 | Left, Right | move the cursor | Shift extends the selection; Option moves by word; Cmd moves to the start or the end |
@@ -61,5 +62,6 @@ the id of the item and action the person chose.
 - Option-Backspace and Option-Left and Right are owned although Option is otherwise
   text, because on macOS they produce no character; each key the view takes stops
   propagation, so the input method never sees it as well.
-- A plugin that wants a key of its own (Tab to complete, say) is a protocol change, and a
-  candidate for protocol v1 (task 1.16), not a view hack.
+- A plugin that wants a key of its own is a protocol change, not a view hack. Tab to
+  complete was the first (decision 13, task 6.2): the item field `complete`, and a key the
+  launcher owns that acts only on the selected row.
