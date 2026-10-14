@@ -1,13 +1,15 @@
 ---
-id: DRAFT-20
+id: TASK-6.3
 title: 'Plugin notify capability: host event, SDK notify(), recent list'
-status: Draft
+status: To Do
 assignee: []
 created_date: '2026-10-14 18:32'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-3
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-7
 parent_task_id: TASK-6
 ---
 

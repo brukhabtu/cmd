@@ -1,11 +1,11 @@
 ---
 id: TASK-6
 title: Watch things from the launcher and be told when they move
-status: To Do
+status: In Progress
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-14 18:32'
-updated_date: '2026-10-14 18:32'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-8
 milestone: m-3

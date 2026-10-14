@@ -4,7 +4,7 @@ title: >-
   Watchers: items with a Watch action, completion on Tab, and a notify
   capability
 date: '2026-10-14 18:31'
-status: proposed
+status: accepted
 ---
 ## Context
 

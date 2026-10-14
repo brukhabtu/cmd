@@ -1,11 +1,12 @@
 ---
-id: DRAFT-15
+id: TASK-7
 title: >-
   Protocol: plugin-to-host task lines, behind a tasks capability (host reader,
   SDK writer, golden fixture)
-status: Draft
+status: In Progress
 assignee: []
 created_date: '2026-10-10 18:30'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-5
 milestone: m-3

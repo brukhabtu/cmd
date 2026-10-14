@@ -1,9 +1,10 @@
 ---
-id: DRAFT-19
+id: TASK-6.2
 title: 'Item field complete, and Tab in the window'
-status: Draft
+status: In Progress
 assignee: []
 created_date: '2026-10-14 18:32'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-3
 milestone: m-3

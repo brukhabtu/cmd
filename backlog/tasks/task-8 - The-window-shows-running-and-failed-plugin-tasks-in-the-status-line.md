@@ -1,13 +1,15 @@
 ---
-id: DRAFT-16
+id: TASK-8
 title: The window shows running and failed plugin tasks in the status line
-status: Draft
+status: To Do
 assignee: []
 created_date: '2026-10-10 18:30'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-3
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-7
 ---
 
 ## Description

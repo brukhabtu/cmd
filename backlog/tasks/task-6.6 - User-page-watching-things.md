@@ -1,7 +1,7 @@
 ---
-id: DRAFT-23
+id: TASK-6.6
 title: 'User page: watching things'
-status: Draft
+status: To Do
 assignee: []
 created_date: '2026-10-14 18:32'
 labels:

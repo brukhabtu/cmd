@@ -1,9 +1,10 @@
 ---
-id: DRAFT-5
+id: TASK-2.9
 title: Several keywords and a home query for blank input
-status: Draft
+status: To Do
 assignee: []
 created_date: '2026-10-08 13:47'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-3
 dependencies:
@@ -24,3 +25,9 @@ Optional `describe` fields: `keywords` (several) and a flag that a plugin wants 
 - [ ] #2 Blank input reaches the plugins that asked for it and nobody else
 - [ ] #3 A keyword clash is shown in the window
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-14: decision 13 needs only the home query from this task (the home flag); that piece ships first as part of TASK-6, several keywords stay here.
+<!-- SECTION:NOTES:END -->

@@ -1,13 +1,16 @@
 ---
-id: DRAFT-21
+id: TASK-6.4
 title: 'Post a macOS notification for a notify line, and open its target on click'
-status: Draft
+status: To Do
 assignee: []
 created_date: '2026-10-14 18:32'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-2
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-6.1
+  - TASK-6.3
 parent_task_id: TASK-6
 ---
 

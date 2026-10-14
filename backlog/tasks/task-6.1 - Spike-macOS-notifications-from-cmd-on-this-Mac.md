@@ -1,7 +1,7 @@
 ---
-id: DRAFT-18
+id: TASK-6.1
 title: 'Spike: macOS notifications from cmd on this Mac'
-status: Draft
+status: To Do
 assignee: []
 created_date: '2026-10-14 18:32'
 labels:

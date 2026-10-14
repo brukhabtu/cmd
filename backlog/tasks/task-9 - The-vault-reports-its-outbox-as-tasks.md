@@ -1,13 +1,15 @@
 ---
-id: DRAFT-17
+id: TASK-9
 title: The vault reports its outbox as tasks
-status: Draft
+status: To Do
 assignee: []
 created_date: '2026-10-10 18:30'
+updated_date: '2026-10-14 19:13'
 labels:
   - size-2
 milestone: m-3
-dependencies: []
+dependencies:
+  - TASK-7
 ---
 
 ## Description

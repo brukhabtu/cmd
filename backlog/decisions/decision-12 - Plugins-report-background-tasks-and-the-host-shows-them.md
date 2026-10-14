@@ -2,7 +2,7 @@
 id: decision-12
 title: 'Plugins report background tasks, and the host shows them'
 date: '2026-10-10 16:43'
-status: proposed
+status: accepted
 ---
 ## Context
 
