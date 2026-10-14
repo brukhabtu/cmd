@@ -140,7 +140,8 @@ fn queries_that_piled_up_behind_a_slow_call_collapse_to_the_newest() {
     host.query(1, "a");
     host.query(2, "b");
     host.query(3, "c");
-    // Generation 1 is answered only if the worker had already picked it up; 2 never is.
+    // The worker takes whatever has piled up when it wakes and asks only the newest of it:
+    // 1 alone (it woke first), 2 (1 and 2 were both waiting), or neither before 3.
     let mut generations = Vec::new();
     loop {
         let generation = generation_of(&next(&host));
@@ -150,7 +151,7 @@ fn queries_that_piled_up_behind_a_slow_call_collapse_to_the_newest() {
         }
     }
     assert!(
-        generations == [1, 3] || generations == [3],
+        generations == [1, 3] || generations == [2, 3] || generations == [3],
         "{generations:?}"
     );
     host.query(4, "d");
