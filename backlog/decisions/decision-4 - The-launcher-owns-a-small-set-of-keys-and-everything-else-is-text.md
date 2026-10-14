@@ -19,7 +19,7 @@ The launcher owns these keys and no others:
 |---|---|---|
 | Escape | hide | Clears the text; the next show starts empty |
 | Enter | run the selected item's first action | Enter with nothing selected does nothing |
-| Tab | complete the selected row | Amended by decision 13. Puts the row's `complete` text in the input, cursor at the end, and the window stays open; the plugins are asked about the new text. Acts only on the selected row; a row without `complete` does nothing, and Tab never types a tab character or moves focus. Enter on a suggestion row (a `complete` and no actions) does the same |
+| Tab | complete the selected row | Amended by decision 13. Puts the row's `complete` text in the input, cursor at the end, and the window stays open; the plugins are asked about the new text. Tab and Shift-Tab act only on the selected row; a row without `complete` does nothing, and Tab never types a tab character or moves focus. Enter on a suggestion row (a `complete` and no actions) does the same |
 | Up, Down | move the selection | Clamped to the list |
 | Backspace | delete the selection, else the grapheme before the cursor | Option-Backspace deletes the word before the cursor; Cmd-Backspace everything before the cursor, which is the whole text when the cursor is at the end |
 | Left, Right | move the cursor | Shift extends the selection; Option moves by word; Cmd moves to the start or the end |
