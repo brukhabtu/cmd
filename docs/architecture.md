@@ -37,7 +37,10 @@ generation of the text it answers, so a late answer to an older query is dropped
 slow plugin delays only its own rows. Nor does it wait at start-up: the plugins are found
 on the main thread, the window opens, and only then are they started on a thread beside
 it, each reported as it comes up, so a first launch says which plugins it is still
-waiting on. A plugin whose process dies or hangs is started
+waiting on. Plugins also report background tasks (decision 12), which reach the window as
+events between calls; the window keeps the latest line per task and shares the status
+line with start trouble and the waiting line in a fixed order (`cmd_core::status`).
+A plugin whose process dies or hangs is started
 again with back-off, a plugin whose files change is started again on the new code, and
 the window says so each time. `cmd plugin doctor` runs the same process layer from the
 command line for plugin authors, and `cmd plugin install`, `update`, `remove` and `list`

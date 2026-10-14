@@ -32,8 +32,23 @@ arithmetic, and the system plugin answers `sleep`, `lock`, `trash` and `dark`.
 
 ## The line under the input
 
-A single line under the input says what is going on: a plugin's error, which plugins are
-still answering, or which are still starting.
+A single line under the input says what is going on: a plugin's error, the background work
+plugins report, which plugins are still answering, or which are still starting. When
+several have something to say, the line shows the first of these:
+
+1. A message: a plugin's error, or trouble starting plugins (in the warning colour).
+2. A failed task, such as `vault: Saving capture failed`, also in the warning colour.
+3. A running task, such as `search: Indexing notes 120/900`, with a detail after it when
+   the plugin gives one and it fits. A task that finished shows for five seconds, then goes.
+4. The plugins you are waiting on, or that are still starting.
+
+With more than one task the line shows the most important and counts the rest: `+2`.
+The line updates at most four times a second.
+
+A failed task stays until you have seen it: it goes the next time the launcher is hidden
+after it was on the line. There is no key for it, since the keys the launcher owns are
+fixed (decision 4). A plugin that restarts or reloads takes its tasks off the line; it
+reports them again if it still has them.
 
 ![The line under the input while the plugins start](../assets/screenshots/launcher-starting.png){ width="640" }
 

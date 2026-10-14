@@ -22,6 +22,7 @@ use cmd_core::input::Motion;
 use cmd_core::placement::{self, Placement};
 use cmd_core::query::Hit;
 use cmd_core::state::{Event, Launcher, Step};
+use cmd_core::status::{self, TaskEvent, Tasks, Tone};
 use cmd_host::{Bundle, Host, HostEvent, Located, Startup, Timeouts, bundle, manifest};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
@@ -53,6 +54,8 @@ const PLACEHOLDER: &str = "Search, or type a keyword";
 const DEFAULT_HOTKEY: &str = "alt+Space";
 /// How long a plugin may keep the person waiting before the window says so.
 const PATIENCE: Duration = Duration::from_millis(300);
+/// Task reports redraw the window at most this often (decision 12), however fast they come.
+const TASK_REDRAW: Duration = Duration::from_millis(250);
 /// Stands first in the starting list while uv fetches the plugins' Python, so the line needs
 /// no state of its own. Only a manifest that spelt out a NUL in its name could clash.
 const FETCHING_PYTHON: &str = "\0python";
@@ -109,6 +112,12 @@ struct LauncherView {
     /// What went wrong finding and starting plugins, shown under the input on every show
     /// until the person has pressed a key at the window.
     start_trouble: Option<String>,
+    /// The plugin tasks the status line shows (decision 12). Time reaches it as `Duration`s
+    /// since `started`.
+    tasks: Tasks,
+    started: Instant,
+    /// A redraw for task reports is already waiting on its timer.
+    task_redraw_waiting: bool,
     /// The query line as last drawn and where, for the input method to place its
     /// candidates. The text itself is the state machine's.
     last_line: Option<ShapedLine>,
@@ -135,6 +144,9 @@ impl LauncherView {
             shown: true,
             asked_at: Instant::now(),
             start_trouble,
+            tasks: Tasks::default(),
+            started: Instant::now(),
+            task_redraw_waiting: false,
             last_line: None,
             last_bounds: None,
         }
@@ -261,21 +273,65 @@ impl LauncherView {
                 generation,
                 message: format!("{}: {error}", self.plugin_name(plugin)),
             },
-            HostEvent::Restarted { plugin, attempt } => Event::Noted(format!(
-                "{} started again (restart {attempt})",
-                self.plugin_name(plugin)
-            )),
+            HostEvent::Restarted { plugin, attempt } => {
+                self.tasks.apply(TaskEvent::Cleared { plugin });
+                self.redraw_for_tasks(cx);
+                Event::Noted(format!(
+                    "{} started again (restart {attempt})",
+                    self.plugin_name(plugin)
+                ))
+            }
             HostEvent::Trouble { plugin, message } => {
                 Event::Noted(format!("{}: {message}", self.plugin_name(plugin)))
             }
             HostEvent::Reloaded { plugin } => {
+                self.tasks.apply(TaskEvent::Cleared { plugin });
+                self.redraw_for_tasks(cx);
                 Event::Noted(format!("{} reloaded", self.plugin_name(plugin)))
             }
-            // Background tasks reach the status line in TASK-8; until then the host's own
-            // latest-per-task record (`Host::tasks`) is all there is, and the event is ignored.
-            HostEvent::Task { .. } => return,
+            // The state machine's `message` is not involved: tasks have a line of their own
+            // (see `cmd_core::status`), and the redraw is coalesced.
+            HostEvent::Task { plugin, task } => {
+                let name = self.plugin_name(plugin);
+                let at = self.started.elapsed();
+                self.tasks.apply(TaskEvent::Reported {
+                    plugin,
+                    name,
+                    task,
+                    at,
+                });
+                self.redraw_for_tasks(cx);
+                return;
+            }
         };
         self.handle(event, cx);
+    }
+
+    /// Redraw for a change in the tasks, at most every [`TASK_REDRAW`]: the first change
+    /// starts a timer and the redraw happens when it ends, with whatever the tasks are then.
+    /// A `done` task that will drop by itself gets its own redraw at its deadline.
+    fn redraw_for_tasks(&mut self, cx: &mut Context<Self>) {
+        if let Some(expiry) = self.tasks.next_expiry(self.started.elapsed()) {
+            cx.spawn(async move |view, cx| {
+                cx.background_executor()
+                    .timer(expiry + Duration::from_millis(50))
+                    .await;
+                let _ = view.update(cx, |_, cx| cx.notify());
+            })
+            .detach();
+        }
+        if self.task_redraw_waiting {
+            return;
+        }
+        self.task_redraw_waiting = true;
+        cx.spawn(async move |view, cx| {
+            cx.background_executor().timer(TASK_REDRAW).await;
+            let _ = view.update(cx, |view, cx| {
+                view.task_redraw_waiting = false;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn plugin_name(&self, plugin: usize) -> String {
@@ -307,6 +363,7 @@ impl LauncherView {
     /// while that is still unseen.
     fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shown = true;
+        self.tasks.apply(TaskEvent::Shown);
         if let Some(message) = &self.start_trouble {
             self.state.apply(Event::Noted(message.clone()));
         }
@@ -319,6 +376,7 @@ impl LauncherView {
     /// Put the window away. The state resets, so the next show starts empty.
     fn hide(&mut self, cx: &mut Context<Self>) {
         self.shown = false;
+        self.tasks.apply(TaskEvent::Hidden);
         let step = self.state.apply(Event::Escape);
         debug_assert_eq!(step, Step::Hide);
         cx.hide();
@@ -396,6 +454,7 @@ impl LauncherView {
     /// The state machine already reset itself; only the window is left to hide.
     fn put_away(&mut self, cx: &mut Context<Self>) {
         self.shown = false;
+        self.tasks.apply(TaskEvent::Hidden);
         cx.hide();
     }
 }
@@ -471,14 +530,17 @@ fn input_row(view: Entity<LauncherView>, palette: &Palette) -> Div {
         })
 }
 
-/// A message from a plugin or the host wins over the waiting line; both are under the
-/// input, and the strip stays the same height when there is nothing to say.
-fn status_line(message: Option<String>, waiting: Option<String>, palette: &Palette) -> Div {
-    let line = match (message, waiting) {
-        (Some(message), _) => Some((message, palette.warning)),
-        (None, Some(waiting)) => Some((waiting, palette.muted)),
-        (None, None) => None,
-    };
+/// The one line under the input, chosen by [`status::status_line`] (message, failed task,
+/// running task, waiting line); the strip stays the same height when there is nothing to
+/// say.
+fn status_line(line: Option<(String, Tone)>, palette: &Palette) -> Div {
+    let line = line.map(|(text, tone)| {
+        let colour = match tone {
+            Tone::Warning => palette.warning,
+            Tone::Muted => palette.muted,
+        };
+        (text, colour)
+    });
     div()
         .h(px(STATUS_HEIGHT))
         .px(px(18.0))
@@ -561,8 +623,11 @@ impl Render for LauncherView {
             .overflow_hidden()
             .child(input_row(cx.entity(), &palette))
             .child(status_line(
-                self.state.message.clone(),
-                self.waiting_on(),
+                status::status_line(
+                    self.state.message.clone(),
+                    self.tasks.line(self.started.elapsed()),
+                    self.waiting_on(),
+                ),
                 &palette,
             ))
             .children(visible.iter().enumerate().map(|(position, hit)| {
