@@ -55,3 +55,10 @@ summary = "Search your notes and documents through providers you configure, qmd 
 source = "https://github.com/brukhabtu/cmd"
 ref = "6646fbf3b3018cb230c0a7791b0e9b6cf6b74d4b"
 subdirectory = "plugins/search"
+
+[[plugin]]
+name = "watchdemo"
+summary = "Watch fake tickets in a local JSON file and be told when one moves; the demo of watchers, with no network and no credential."
+source = "https://github.com/brukhabtu/cmd"
+ref = "e324cbb07fc182dcbd7a2790132d122080b995e4"
+subdirectory = "plugins/watchdemo"

@@ -68,7 +68,7 @@ convention = "google"
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:plugins/applications/src:plugins/vault/src:plugins/search/src:scripts"
+mypy_path = "python/cmd-sdk/src:plugins/calculator/src:plugins/websearch/src:plugins/files/src:plugins/system/src:plugins/applications/src:plugins/vault/src:plugins/search/src:plugins/watchdemo/src:scripts"
 files = ["python", "plugins", "scripts"]
 
 [tool.pytest.ini_options]
@@ -83,6 +83,7 @@ testpaths = [
   "plugins/applications/tests",
   "plugins/vault/tests",
   "plugins/search/tests",
+  "plugins/watchdemo/tests",
   "scripts/tests",
 ]
 
@@ -96,6 +97,7 @@ src = [
   "plugins/applications/src",
   "plugins/vault/src",
   "plugins/search/src",
+  "plugins/watchdemo/src",
 ]
 rules = [
   "import-boundaries",
@@ -120,10 +122,13 @@ rules = [
 # progress (the outbox as a reported task) is pure and tracker is its shell. In the search plugin,
 # hits (the values a provider returns) and values (checks on one config value) are pure, a kind
 # imports only them, settings the kinds, merge the settings, and replies the merge; memory (the
-# caches) may import merge's types, and plugin is the shell and imports what it likes. An import that
-# crosses source roots (the SDK importing a plugin, or a plugin another plugin) is invisible
-# to this rule; scripts/import_boundaries.py gates those, right after this check in
-# scripts/check.sh.
+# caches) may import merge's types, and plugin is the shell and imports what it likes. In the
+# watchdemo plugin, tickets (the file's content and how text matches it), options (the config),
+# state (what is remembered) are pure and import nothing of ours; diff (what a poll decides) and
+# rows (what is shown) are pure and import those; keeper (the state on disk), poller (the
+# thread) and plugin are the shell. An import that crosses source roots (the SDK importing a
+# plugin, or a plugin another plugin) is invisible to this rule; scripts/import_boundaries.py
+# gates those, right after this check in scripts/check.sh.
 [tool.pypeeker.import-boundaries]
-allow = { protocol = [], locate = [], expiry = [], environment = ["locate"], calls = [], cache = ["expiry"], tasks = [], notices = [], reporter = ["protocol", "tasks", "notices"], serve = ["protocol", "reporter"], arithmetic = [], search = [], commands = [], scan = [], matching = [], schema = [], outbox = ["schema"], invocations = ["outbox", "schema"], answers = ["invocations", "outbox", "schema"], progress = ["outbox"], hits = [], values = ["hits"], kinds = ["hits", "values"], settings = ["hits", "kinds", "values"], merge = ["hits", "kinds", "settings"], replies = ["merge", "settings"], memory = ["merge"] }
+allow = { protocol = [], locate = [], expiry = [], environment = ["locate"], calls = [], cache = ["expiry"], tasks = [], notices = [], reporter = ["protocol", "tasks", "notices"], serve = ["protocol", "reporter"], arithmetic = [], search = [], commands = [], scan = [], matching = [], schema = [], outbox = ["schema"], invocations = ["outbox", "schema"], answers = ["invocations", "outbox", "schema"], progress = ["outbox"], hits = [], values = ["hits"], kinds = ["hits", "values"], settings = ["hits", "kinds", "values"], merge = ["hits", "kinds", "settings"], replies = ["merge", "settings"], memory = ["merge"], tickets = [], options = [], state = [], diff = ["state", "tickets"], rows = ["state", "tickets"] }
 report-unused-allowances = true

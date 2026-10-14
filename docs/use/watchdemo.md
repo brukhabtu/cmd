@@ -1,0 +1,117 @@
+# The watchdemo plugin
+
+Watch tickets that move, from the launcher, without a network or an account. The tickets
+are a JSON file you edit by hand; the plugin reads it every few seconds and tells you when a
+ticket you watch changes status. It is the demonstration of decision 13 (watchers, Tab to
+complete, notices and the home list), and the same shape serves a real tracker once
+something other than a file feeds it.
+
+!!! warning "Notifications do not reach macOS yet"
+    The plugin sends a notice to the host when a ticket moves, and the host keeps the last
+    twenty in its recent list. Posting a macOS notification is TASK-6.4 and is not built, so
+    until it is, **the place to see that something moved is the home list** (open the
+    window with an empty input). The plugin also needs a host that names the `notify`
+    capability; one that does not is sent nothing, and the home list still shows the change.
+
+## What it does
+
+| You type | You see | Enter | Tab |
+|---|---|---|---|
+| `watch` | every ticket, then a "Watching (N)" suggestion | the ticket's first action | completes the selected row |
+| `watch login` | tickets whose id or title contains it, the closest first | opens the ticket | completes it |
+| `watch PROJ-12 ` | that ticket alone (an id and a space) | watches it, or unwatches it | |
+| `watch watching` | the tickets you watch, each with its status now | opens the ticket | completes it |
+| nothing (the window opens) | what moved, newest first, then what you watch | | |
+
+A ticket row has three actions. The first is **Open**, which goes to the ticket's `url`; a
+ticket with no `url` has **Copy id** first instead. The second is **Watch**, or **Unwatch**
+on one you already watch. The last is **Copy id**. Watching shows a line and keeps the
+window open.
+
+!!! note "Only a row's first action is reachable today"
+    The window runs the first action on Enter and has no menu for the others yet (Cmd-K is
+    DRAFT-6). So that the demo works anyway, a ticket you have narrowed to, by Tab or by
+    typing its id and a space, puts **Watch** (or **Unwatch**) first: Tab, then Enter. In
+    any longer list Open is first. Open and Copy id on a narrowed ticket wait for the menu.
+
+## Try it
+
+1. Write the tickets, anywhere you like:
+
+    ```json
+    [
+      {"id": "PROJ-12", "title": "Fix the login page", "status": "Open",
+       "url": "https://example.test/PROJ-12"},
+      {"id": "PROJ-13", "title": "Login emails bounce", "status": "In Review"},
+      {"id": "OPS-7", "title": "Rotate the keys", "status": "Done"}
+    ]
+    ```
+
+    `id`, `title` and `status` are required text; `url` is optional. Ids must be unique. A
+    file that is not a list of such objects is an error you will see (below), not a crash.
+
+2. Point the plugin at it. `config.toml` in
+   `~/Library/Application Support/cmd/plugin-config/watchdemo/`, which you create:
+
+    ```toml
+    tickets = "/Users/you/tickets.json"
+    interval = 5      # seconds between reads; optional, 5 by default, never below 0.5
+    ```
+
+    Saving the file restarts the plugin.
+
+3. Install it and open cmd again (a new plugin starts the next time cmd starts):
+
+    ```sh
+    cmd plugin install watchdemo
+    ```
+
+    From a clone of this repository, `cmd plugin install ./plugins/watchdemo` does the same.
+
+4. Type `watch login`, move to PROJ-12, press Tab (the input becomes `watch PROJ-12 `)
+   and Enter: that is **Watch**. The plugin has now noted it as `Open`.
+
+5. Edit the file: change PROJ-12's status to `In Review` and save. Within `interval`
+   seconds the plugin notices. Open the window with an empty input: the first row is
+   `PROJ-12: Open -> In Review`, with the time it was seen, and below it the tickets you
+   watch with their status now. Once macOS notifications exist (TASK-6.4) the same change
+   is a notification titled "PROJ-12 moved", and choosing it opens the `url`.
+
+Several things are worth trying: `watch watching`; Tab on a ticket to narrow to it; Unwatch it (Tab, Enter)
+and edit again (nothing happens); stop and start cmd and edit again (a change is told once,
+and the watch survives).
+
+## What is told, and what is not
+
+- Only tickets you watch are told. The first time the plugin sees a watched ticket it
+  records the status and says nothing; a change after that is one notice, "PROJ-12 moved",
+  `In Review -> Done`.
+- A ticket that disappears from the file keeps its place in the list (`watch watching`
+  shows "not in the tickets file", and Unwatch drops it); if it comes back at a new status,
+  that is a change.
+- After the Mac has slept, or the plugin was stopped, for more than three intervals, and
+  more than three tickets moved meanwhile, you get one notice, "N tickets moved", naming
+  the first few. Each is still on the home list.
+- The list of changes holds the last fifty.
+
+## When something is wrong
+
+- **No `tickets` in the config, or the config is not TOML:** `watch` shows a row saying
+  what to set, and the window's blank input shows the same. Nothing is polled.
+- **The tickets file is missing, not JSON, or not a list of tickets:** the rows say which
+  and name the file, and the plugin reports one task, "Tickets file", as failed on the
+  status line. It is reported once, not at every read, and marked done when the file reads
+  again. No notice is sent for it.
+- **The saved state is damaged:** the plugin sets `state.json` aside as
+  `state.json.corrupt` in its data directory
+  (`~/Library/Application Support/cmd/plugin-data/watchdemo/`), starts with nothing
+  watched, and says so once in its log and on the blank-input list.
+
+## Design
+
+Decision 13. The plugin is a pure core (`tickets`, `options`, `state`, `diff`, `rows`)
+with a thin shell (`keeper` for the file, `poller` for the thread, `plugin` for the
+protocol); the diff is a function from the old state, the tickets just read and the
+watched set to the changes and the new state, so it is tested without threads or files. The
+polling thread is a daemon that calls `cmd_sdk.notify` and `cmd_sdk.report`; the host does
+not schedule polls. State is written to a temporary file and renamed into place.

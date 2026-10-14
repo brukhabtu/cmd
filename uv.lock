@@ -12,6 +12,7 @@ members = [
     "search",
     "system",
     "vault",
+    "watchdemo",
     "websearch",
 ]
 
@@ -837,6 +838,17 @@ wheels = [
 name = "vault"
 version = "0.1.0"
 source = { editable = "plugins/vault" }
+dependencies = [
+    { name = "cmd-sdk" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "cmd-sdk", editable = "python/cmd-sdk" }]
+
+[[package]]
+name = "watchdemo"
+version = "0.1.0"
+source = { editable = "plugins/watchdemo" }
 dependencies = [
     { name = "cmd-sdk" },
 ]

@@ -75,6 +75,7 @@ plugins:
             - plugins/applications/src
             - plugins/vault/src
             - plugins/search/src
+            - plugins/watchdemo/src
           options:
             docstring_style: google
             show_source: false
@@ -123,6 +124,7 @@ nav:
       - Plugins in the index: use/catalogue.md
       - The vault plugin: use/vault.md
       - The search plugin: use/search.md
+      - The watchdemo plugin: use/watchdemo.md
       - Troubleshooting: use/troubleshooting.md
   - Write a plugin:
       - plugins/index.md

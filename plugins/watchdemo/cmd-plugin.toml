@@ -1,0 +1,2 @@
+name = "watchdemo"
+command = ["uv", "run", "--quiet", "watchdemo"]
