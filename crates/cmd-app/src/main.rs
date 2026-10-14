@@ -674,7 +674,8 @@ impl Render for LauncherView {
         // `TaskEvent::Displayed`).
         self.tasks.apply(TaskEvent::Displayed {
             now: self.started.elapsed(),
-            covered: self.state.message.is_some(),
+            // A window that is put away is covered too: a draw while hidden shows nothing.
+            covered: self.state.message.is_some() || !self.shown,
         });
         let selected = self.state.selected;
         let first_visible = self.state.first_visible;
