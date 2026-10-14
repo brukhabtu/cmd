@@ -4,7 +4,7 @@ title: 'The watchdemo plugin: watch tickets in a local JSON file'
 status: Done
 assignee: []
 created_date: '2026-10-14 18:32'
-updated_date: '2026-10-14 20:36'
+updated_date: '2026-10-14 21:25'
 labels:
   - size-3
 milestone: m-3
@@ -24,4 +24,6 @@ Decision 13. plugins/watchdemo: tickets (id, title, status) from a file named in
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-14: closed on review by a read-only reviewer who did not do the work, who also drove the real plugin over the protocol (unprompted notify on a status edit, one failed task for a corrupt file, silent without the capabilities, no re-announce after a restart). One defect found and fixed: the poller started before the host's describe, so a first-poll change was dropped; it now starts from the describe hook. Owed on the Mac: the doc's try-it steps in the real app.
+
+2026-10-14 (owner: ship the demo so it works out of the box): with no tickets setting the plugin makes tickets.json in its data directory (DEMO-1..3, never overwritten) and uses it; the rows 'Move a watched ticket on (demo)' and 'Edit the sample tickets' make something move with no editing. A configured file replaces the sample. Driven over the protocol with empty data and config dirs: watch DEMO-2, move on, a notify arrives within the interval.
 <!-- SECTION:NOTES:END -->
