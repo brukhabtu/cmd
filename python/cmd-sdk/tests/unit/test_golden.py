@@ -18,6 +18,7 @@ from cmd_sdk import (
     Description,
     Effect,
     Icon,
+    InvalidNoticeError,
     InvalidTaskError,
     Item,
     Open,
@@ -25,6 +26,7 @@ from cmd_sdk import (
     Show,
     Task,
 )
+from cmd_sdk.notices import encode_event as encode_notice
 from cmd_sdk.protocol import (
     Describe,
     Failure,
@@ -145,14 +147,37 @@ def task_from(params: dict[str, Any]) -> Task:
     )
 
 
+def encoded(line: dict[str, Any]) -> str:
+    """The line the SDK writes for the event's params, whichever event it is."""
+    params = line.get("params", {})
+    if line.get("event") == "notify":
+        return encode_notice(
+            params.get("id"), params.get("title"), params.get("body"), params.get("open")
+        )
+    return encode_event(task_from(params))
+
+
 @pytest.mark.parametrize("event", EVENTS, ids=BY_NAME)
 def test_the_sdk_writes_each_event_line_as_written_or_refuses_to(event: dict[str, Any]) -> None:
     line = event["line"]
     if event.get("sdk_never_sends"):
-        with pytest.raises(InvalidTaskError):
-            encode_event(task_from(line.get("params", {})))
+        with pytest.raises((InvalidTaskError, InvalidNoticeError)):
+            encoded(line)
         return
-    assert json.loads(encode_event(task_from(line["params"]))) == line
+    assert json.loads(encoded(line)) == line
+
+
+@pytest.mark.parametrize(
+    "event", [event for event in EVENTS if "notice" in event["host_reads"]], ids=BY_NAME
+)
+def test_an_event_the_sdk_sends_has_the_notice_the_host_reads_up_to_cleaning(
+    event: dict[str, Any],
+) -> None:
+    sent = event["line"]["params"]
+    read = event["host_reads"]["notice"]
+    assert sent["id"] == read["id"]
+    assert sent.get("open") == read.get("open")
+    assert ("body" in sent) == ("body" in read)
 
 
 @pytest.mark.parametrize(

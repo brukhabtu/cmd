@@ -23,9 +23,10 @@ pub const ACCEPTED: RangeInclusive<u32> = 0..=VERSION;
 
 /// The capabilities this host names in `describe`: behaviour a plugin may use only when
 /// the host names it, because without it the plugin falls back to something else
-/// (decision 9). Only `tasks` so far (decision 12): a plugin reports background tasks
-/// ([`crate::task`]) only to a host that names it.
-pub const CAPABILITIES: &[&str] = &[crate::task::CAPABILITY];
+/// (decision 9). `tasks` (decision 12): a plugin reports background tasks
+/// ([`crate::task`]) only to a host that names it. `notify` (decision 13): a plugin sends
+/// notices ([`crate::notice`]) only to a host that names it.
+pub const CAPABILITIES: &[&str] = &[crate::task::CAPABILITY, crate::notice::CAPABILITY];
 
 /// One call from the host to a plugin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -355,7 +356,7 @@ mod tests {
         });
         assert_eq!(
             line,
-            "{\"id\":1,\"method\":\"describe\",\"params\":{\"protocol\":1,\"capabilities\":[\"tasks\"]}}\n"
+            "{\"id\":1,\"method\":\"describe\",\"params\":{\"protocol\":1,\"capabilities\":[\"tasks\",\"notify\"]}}\n"
         );
     }
 

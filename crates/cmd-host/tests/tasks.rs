@@ -2,11 +2,13 @@
 //! calls arrives, one reported during a call does not fail it, an unreadable one is
 //! trouble, only the latest state per task is kept, and a restart clears the plugin's
 //! tasks. The fake plugin writes the lines on request (see `common::FAKE`).
+//! The same reader takes the `notify` lines of decision 13, tested at the end.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
+use cmd_core::notice::Notice;
 use cmd_core::task::{Task, TaskState};
 use cmd_host::{Host, HostEvent, Timeouts};
 
@@ -240,4 +242,141 @@ fn a_restart_clears_the_plugin_s_tasks_and_the_new_process_reports_again() {
     let seen = gather(&host, &[is_answer, is_task]);
     assert_eq!(tasks_in(&seen)[0].id, "index");
     assert_eq!(host.tasks(0).len(), 1);
+}
+
+// Notices (decision 13): the same reader, a second event name.
+
+fn notices_in(events: &[HostEvent]) -> Vec<&Notice> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            HostEvent::Notice { notice, .. } => Some(notice),
+            _ => None,
+        })
+        .collect()
+}
+
+fn is_notice(event: &HostEvent) -> bool {
+    matches!(event, HostEvent::Notice { .. })
+}
+
+/// Whatever else has arrived once the flusher has had time to send it.
+fn settle(host: &Host, seen: &mut Vec<HostEvent>) {
+    std::thread::sleep(Duration::from_millis(300));
+    while let Ok(event) = host.events().try_recv() {
+        seen.push(event);
+    }
+}
+
+const MOVED: &str = r#"{"id": "PROJ-12", "title": "PROJ-12 moved", "body": "In Review", "open": "https://example.test/PROJ-12"}"#;
+
+#[test]
+fn a_notice_sent_between_calls_is_received_cleaned() {
+    let host = host(&["a"]);
+    host.query(1, r#"laternotice {"id": "i", "title": "Moved\u0007\nnow"}"#);
+    let answer = gather(&host, &[is_answer]);
+    assert!(
+        notices_in(&answer).is_empty(),
+        "the plugin has not sent yet"
+    );
+    let seen = gather(&host, &[is_notice]);
+    let HostEvent::Notice { plugin, notice } = seen.last().unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(*plugin, 0);
+    assert_eq!(
+        (notice.id.as_str(), notice.title.as_str()),
+        ("i", "Moved now")
+    );
+    assert_eq!(
+        (notice.body.as_deref(), notice.open.as_deref()),
+        (None, None)
+    );
+}
+
+#[test]
+fn a_notice_sent_during_a_call_does_not_fail_it() {
+    let host = host(&["a"]);
+    host.query(1, &format!("notice {MOVED}"));
+    let seen = gather(&host, &[is_answer, is_notice]);
+    assert!(answered_ok(&seen), "{seen:?}");
+    let notice = notices_in(&seen)[0];
+    assert_eq!(notice.title, "PROJ-12 moved");
+    assert_eq!(notice.body.as_deref(), Some("In Review"));
+    assert_eq!(notice.open.as_deref(), Some("https://example.test/PROJ-12"));
+}
+
+#[test]
+fn an_invalid_notice_is_trouble_for_that_plugin_and_never_a_failed_call() {
+    let host = host(&["a"]);
+    host.query(1, "badnotice");
+    let seen = gather(&host, &[is_answer, is_trouble]);
+    assert!(answered_ok(&seen), "{seen:?}");
+    assert!(
+        seen.iter().any(|event| matches!(
+            event,
+            HostEvent::Trouble { plugin: 0, message } if message.contains("title is required")
+        )),
+        "{seen:?}"
+    );
+    assert_eq!(notices_in(&seen), Vec::<&Notice>::new());
+}
+
+#[test]
+fn notices_above_five_in_ten_seconds_are_dropped_with_one_note() {
+    let host = host(&["a"]);
+    let started = Instant::now();
+    host.query(1, "notices 300");
+    let mut seen = gather(&host, &[is_answer, is_trouble]);
+    settle(&host, &mut seen);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(
+        answered_ok(&seen),
+        "a flood does not fail the call: {seen:?}"
+    );
+    let ids: Vec<&str> = notices_in(&seen).iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(ids, ["n0", "n1", "n2", "n3", "n4"]);
+    let notes: Vec<&HostEvent> = seen.iter().filter(|e| is_trouble(e)).collect();
+    assert_eq!(notes.len(), 1, "one note for the window: {seen:?}");
+    assert!(matches!(
+        notes[0],
+        HostEvent::Trouble { plugin: 0, message } if message.contains("more than 5 notices")
+    ));
+}
+
+#[test]
+fn the_rate_is_per_plugin() {
+    let host = host(&["a", "b"]);
+    host.query(1, "notices 8");
+    let mut seen = gather(
+        &host,
+        &[
+            |event| matches!(event, HostEvent::Trouble { plugin: 0, .. }),
+            |event| matches!(event, HostEvent::Trouble { plugin: 1, .. }),
+        ],
+    );
+    settle(&host, &mut seen);
+    for plugin in [0, 1] {
+        let count = seen
+            .iter()
+            .filter(|event| matches!(event, HostEvent::Notice { plugin: p, .. } if *p == plugin))
+            .count();
+        assert_eq!(count, 5, "plugin {plugin}");
+    }
+}
+
+#[test]
+fn a_restart_does_not_stop_the_plugin_s_notices_arriving() {
+    let host = host(&["a"]);
+    host.query(1, &format!("notice {MOVED}"));
+    gather(&host, &[is_answer, is_notice]);
+    host.query(2, "quit");
+    gather(&host, &[is_restart]);
+    host.query(3, &format!("notice {MOVED}"));
+    let seen = gather(&host, &[is_answer, is_notice]);
+    assert_eq!(
+        notices_in(&seen).len(),
+        1,
+        "the new process's notice arrives"
+    );
 }

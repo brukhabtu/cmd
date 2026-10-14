@@ -199,6 +199,24 @@ report(Task("index", "Indexing notes", "done"))
 report(Task("outbox", "Saving to the vault", "failed", detail="Obsidian is not running"))
 ```
 
+- `notify(id, title, body=None, open=None)` tells the person something: a ticket moved, a
+  build finished. Call it from any thread. `id` names the thing, and a later notice with the
+  same `id` replaces the earlier one in the host's list of the last twenty notices; `title`
+  is short text, `body` a second line, and `open` a URL or path the host opens when the
+  person chooses the notice. The host cuts `title` and `body` at 160 characters. Like
+  `report`, it writes under the lock `serve` uses for answers, and it is silent before
+  `describe` and when the host did not name the `notify` capability, so call it
+  unconditionally; a missing `id` or `title`, or text that is not text, raises
+  `InvalidNoticeError` in your code. The SDK does not throttle: send one notice per change,
+  and one summary after a wake with many, because the host drops a plugin's notices above 5
+  in 10 seconds. A restart of your plugin does not take back the notices already delivered.
+
+```python
+from cmd_sdk import notify
+
+notify("PROJ-12", "PROJ-12 moved", "In Review", open="https://example.test/PROJ-12")
+```
+
 <!-- --8<-- [start:testing] -->
 ## Testing a plugin
 

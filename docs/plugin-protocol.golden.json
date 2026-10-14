@@ -7,15 +7,16 @@
     "newer or careless plugin might send and this SDK never would; sdk_never_sends names those",
     "items by id. A dropped entry is the start of the host's note about an item it left out.",
     "The events are lines a plugin starts, with no id, sent only to a host that names the",
-    "tasks capability. Each holds the line, and what the host reads from it: a task (cleaned),",
-    "an invalid line (the start of the host's note, with the line dropped), or other (a line",
+    "tasks capability (task) or the notify capability (notify). Each holds the line, and what",
+    "the host reads from it: a task or a notice (cleaned), an invalid line (the start of the",
+    "host's note, with the line dropped), or other (a line",
     "that is not an event, which goes to the call in flight). sdk_never_sends marks a line the",
     "SDK refuses to write; the others the SDK writes as they are, up to key order."
   ],
   "exchanges": [
     {
-      "name": "describe from a version 1 host, which names the tasks capability",
-      "request": {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": ["tasks"]}},
+      "name": "describe from a version 1 host, which names the tasks and notify capabilities",
+      "request": {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": ["tasks", "notify"]}},
       "answer": {"id": 1, "result": {"name": "golden", "version": "1.0.0", "protocol": 1, "keyword": "gold"}},
       "host_reads": {"description": {"name": "golden", "version": "1.0.0", "protocol": 1, "keyword": "gold"}}
     },
@@ -143,6 +144,39 @@
       "line": {"event": "task", "params": {"id": "index", "label": "Indexing", "state": "paused"}},
       "sdk_never_sends": true,
       "host_reads": {"invalid": "state must be running, done or failed"}
+    },
+    {
+      "name": "a notice with a body and a target to open",
+      "line": {"event": "notify", "params": {"id": "PROJ-12", "title": "PROJ-12 moved", "body": "In Review", "open": "https://example.test/PROJ-12"}},
+      "host_reads": {"notice": {"id": "PROJ-12", "title": "PROJ-12 moved", "body": "In Review", "open": "https://example.test/PROJ-12"}}
+    },
+    {
+      "name": "a notice with only an id and a title",
+      "line": {"event": "notify", "params": {"id": "build", "title": "The build finished"}},
+      "host_reads": {"notice": {"id": "build", "title": "The build finished"}}
+    },
+    {
+      "name": "a notice's text is cleaned and cut at 160 characters, its target is kept whole",
+      "line": {"event": "notify", "params": {"id": "PROJ-13", "title": "Moved\u0007\nnow", "body": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "open": "file:///Users/me/notes/PROJ-13.md"}},
+      "host_reads": {"notice": {"id": "PROJ-13", "title": "Moved now", "body": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "open": "file:///Users/me/notes/PROJ-13.md"}}
+    },
+    {
+      "name": "a notice without a title is dropped and noted",
+      "line": {"event": "notify", "params": {"id": "PROJ-12"}},
+      "sdk_never_sends": true,
+      "host_reads": {"invalid": "title is required"}
+    },
+    {
+      "name": "a notice with an empty target is dropped and noted",
+      "line": {"event": "notify", "params": {"id": "PROJ-12", "title": "Moved", "open": ""}},
+      "sdk_never_sends": true,
+      "host_reads": {"invalid": "open must not be empty"}
+    },
+    {
+      "name": "a line with a notify event and an id is not an event",
+      "line": {"id": 4, "event": "notify", "params": {}},
+      "sdk_never_sends": true,
+      "host_reads": {"other": true}
     },
     {
       "name": "an event of another name is dropped and noted",

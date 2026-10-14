@@ -1,4 +1,5 @@
-//! Lines a plugin starts: the reader's classification and the `task` event (decision 12).
+//! Lines a plugin starts: the reader's classification and the `task` event (decision 12),
+//! which also knows the `notify` event ([`crate::notice`], decision 13).
 //!
 //! A line from a plugin with an `event` key and no `id` is an event; any other line is
 //! a response, or not a protocol message, and the call in flight decides which. Both
@@ -7,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::notice::{Notice, decode_notice};
 
 /// The name of the capability a plugin needs the host to name before it reports a task.
 pub const CAPABILITY: &str = "tasks";
@@ -56,6 +59,8 @@ pub enum Incoming {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Task(Task),
+    /// A notice for the person (decision 13).
+    Notice(Notice),
     /// An event the host could not use, and why. The host notes it as trouble for the
     /// plugin and drops the line; it never fails a call.
     Invalid(String),
@@ -78,6 +83,10 @@ pub fn classify(line: &str) -> Incoming {
         Some("task") => match object.get("params") {
             Some(params) => decode_task(params).map_or_else(Event::Invalid, Event::Task),
             None => Event::Invalid("a task event has no params".to_string()),
+        },
+        Some("notify") => match object.get("params") {
+            Some(params) => decode_notice(params).map_or_else(Event::Invalid, Event::Notice),
+            None => Event::Invalid("a notify event has no params".to_string()),
         },
         Some(other) => Event::Invalid(format!("unknown event {:?}", clean(other))),
         None => Event::Invalid("an event's name must be text".to_string()),
@@ -314,12 +323,33 @@ mod tests {
             r#"{"event": "spinner", "params": {}}"#,
             r#"{"event": 3}"#,
             r#"{"event": "task"}"#,
+            r#"{"event": "notify"}"#,
         ] {
             assert!(
                 matches!(classify(line), Incoming::Event(Event::Invalid(_))),
                 "{line}"
             );
         }
+    }
+
+    #[test]
+    fn a_notify_event_is_a_notice_or_invalid_and_names_stay_exact() {
+        let line =
+            r#"{"event": "notify", "params": {"id": "a", "title": "T", "body": "B", "open": "x"}}"#;
+        let Incoming::Event(Event::Notice(notice)) = classify(line) else {
+            panic!("expected a notice");
+        };
+        assert_eq!(notice.id, "a");
+        assert_eq!(notice.open.as_deref(), Some("x"));
+        let bad = classify(r#"{"event": "notify", "params": {"id": "a"}}"#);
+        assert!(matches!(&bad, Incoming::Event(Event::Invalid(why)) if why.contains("title")));
+        let with_id =
+            classify(r#"{"event": "notify", "id": 2, "params": {"id": "a", "title": "T"}}"#);
+        assert_eq!(with_id, Incoming::Other, "a line with an id is a response");
+        let unknown = classify(r#"{"event": "notification", "params": {}}"#);
+        assert!(
+            matches!(&unknown, Incoming::Event(Event::Invalid(why)) if why.contains("unknown event"))
+        );
     }
 
     #[test]

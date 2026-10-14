@@ -5,11 +5,17 @@
 //! [`HostEvent`]s at most every [`FLUSH_GAP`], so a plugin that reports a thousand times a
 //! second costs the host the reading of those lines and one event per task per gap, and
 //! nothing ever waits on the window (decision 12).
+//!
+//! The board also takes the plugin's notices (decision 13). A notice is not a state but an
+//! occurrence, so none is coalesced: the board passes on each one the plugin's
+//! [`RateLimit`] allows and makes one note about the rest of that window. Notices are
+//! history once sent, so a restart of the plugin does not take back those not yet flushed.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use cmd_core::notice::{Notice, RATE_COUNT, RATE_WINDOW, RateLimit, Verdict};
 use cmd_core::task::{Event, Task, TaskState};
 
 use crate::host::HostEvent;
@@ -33,12 +39,16 @@ struct Book {
     pending: BTreeSet<String>,
     troubles: Vec<String>,
     troubles_left: Option<usize>,
+    /// Notices passed by the rate limit and not yet flushed, oldest first.
+    notices: Vec<Notice>,
 }
 
 impl Book {
     fn offer(&mut self, event: Event) {
         match event {
-            Event::Invalid(why) => self.trouble(format!("ignored a task report: {why}")),
+            Event::Invalid(why) => self.trouble(format!("ignored a report: {why}")),
+            // The board judges a notice before the book sees it.
+            Event::Notice(notice) => self.notices.push(notice),
             Event::Task(task) => {
                 if !self.latest.contains_key(&task.id) && self.latest.len() >= MAX_TASKS {
                     let finished = self
@@ -48,7 +58,7 @@ impl Book {
                         .map(|(id, _)| id.clone());
                     let Some(finished) = finished else {
                         self.trouble(format!(
-                            "ignored a task report: it already has {MAX_TASKS} tasks"
+                            "ignored a report: it already has {MAX_TASKS} tasks"
                         ));
                         return;
                     };
@@ -68,7 +78,7 @@ impl Book {
             1 => {
                 *left = 0;
                 self.troubles
-                    .push("no more problems with its task reports will be shown".to_string());
+                    .push("no more problems with its reports will be shown".to_string());
             }
             _ => {
                 *left -= 1;
@@ -78,7 +88,7 @@ impl Book {
     }
 
     fn has_news(&self) -> bool {
-        !self.pending.is_empty() || !self.troubles.is_empty()
+        !self.pending.is_empty() || !self.troubles.is_empty() || !self.notices.is_empty()
     }
 }
 
@@ -87,6 +97,8 @@ struct Inner {
     /// The process whose reports count. 0 before any process has been activated.
     current: u64,
     book: Book,
+    /// How many notices of the plugin's, across its restarts, the host passes on.
+    limit: RateLimit,
     /// A process that has been started but not yet taken over from the old one: its
     /// reports wait here, so one sent right after its `describe` is not lost, and so a
     /// process that fails its handshake leaves the old one's tasks alone.
@@ -133,18 +145,45 @@ impl TaskBoard {
     /// The reader thread of the process with this token read an event. Reports from a
     /// process that is neither the current one nor the one starting are ignored.
     pub fn offer(&self, token: u64, event: Event) {
+        self.offer_at(token, event, Instant::now());
+    }
+
+    fn offer_at(&self, token: u64, event: Event, now: Instant) {
         let mut inner = self.lock();
         if inner.closed {
             return;
         }
-        if token == inner.current {
-            inner.book.offer(event);
-            drop(inner);
-            self.wake.notify_one();
-        } else if let Some((staged, book)) = inner.staged.as_mut()
+        let Inner {
+            current,
+            book,
+            limit,
+            staged,
+            ..
+        } = &mut *inner;
+        let is_current = token == *current;
+        let target = if is_current {
+            book
+        } else if let Some((staged, book)) = staged.as_mut()
             && *staged == token
         {
-            book.offer(event);
+            book
+        } else {
+            return;
+        };
+        match event {
+            Event::Notice(notice) => match limit.check(now) {
+                Verdict::Keep => target.notices.push(notice),
+                Verdict::Drop { note: true } => target.troubles.push(format!(
+                    "sent more than {RATE_COUNT} notices in {} seconds; the host drops the rest",
+                    RATE_WINDOW.as_secs()
+                )),
+                Verdict::Drop { note: false } => {}
+            },
+            other => target.offer(other),
+        }
+        if is_current {
+            drop(inner);
+            self.wake.notify_one();
         }
     }
 
@@ -160,7 +199,11 @@ impl TaskBoard {
             return;
         }
         inner.current = token;
+        // What the old process sent and the flusher has not yet passed on is still owed.
+        let mut owed = std::mem::take(&mut inner.book.notices);
         inner.book = book;
+        owed.append(&mut inner.book.notices);
+        inner.book.notices = owed;
         drop(inner);
         self.wake.notify_one();
     }
@@ -175,7 +218,12 @@ impl TaskBoard {
 
     /// The current process is gone: it has no tasks.
     pub fn clear(&self) {
-        self.lock().book = Book::default();
+        let mut inner = self.lock();
+        let owed = std::mem::take(&mut inner.book.notices);
+        inner.book = Book {
+            notices: owed,
+            ..Book::default()
+        };
     }
 
     /// The latest state of every task the plugin has reported, in id order.
@@ -224,6 +272,12 @@ impl TaskBoard {
                         task: task.clone(),
                     });
                 }
+            }
+            for notice in std::mem::take(&mut book.notices) {
+                sent.push(HostEvent::Notice {
+                    plugin: self.plugin,
+                    notice,
+                });
             }
             for message in std::mem::take(&mut book.troubles) {
                 sent.push(HostEvent::Trouble {
@@ -349,6 +403,125 @@ mod tests {
         board.offer(failed, running("never", 2));
         let ids: Vec<String> = board.snapshot().into_iter().map(|t| t.id).collect();
         assert_eq!(ids, ["kept"]);
+    }
+
+    fn notice(id: &str) -> Event {
+        Event::Notice(Notice {
+            id: id.into(),
+            title: "Moved".into(),
+            body: None,
+            open: None,
+        })
+    }
+
+    /// Everything the flusher sends within a moment, in order.
+    fn drain(
+        board: &Arc<TaskBoard>,
+        events: &async_channel::Receiver<HostEvent>,
+    ) -> Vec<HostEvent> {
+        board.spawn_flusher().unwrap();
+        std::thread::sleep(FLUSH_GAP * 4);
+        let mut seen = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            seen.push(event);
+        }
+        board.close();
+        seen
+    }
+
+    fn notice_ids(seen: &[HostEvent]) -> Vec<String> {
+        seen.iter()
+            .filter_map(|event| match event {
+                HostEvent::Notice { notice, .. } => Some(notice.id.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn troubles(seen: &[HostEvent]) -> Vec<&str> {
+        seen.iter()
+            .filter_map(|event| match event {
+                HostEvent::Trouble { message, .. } => Some(message.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn notices_are_passed_on_one_each_and_never_coalesced() {
+        let (board, events) = board();
+        let token = board.begin();
+        board.activate(token);
+        for n in 0..2 {
+            board.offer(token, notice("same"));
+            board.offer(token, notice(&format!("other{n}")));
+        }
+        let seen = drain(&board, &events);
+        assert_eq!(
+            notice_ids(&seen),
+            ["same", "other0", "same", "other1"],
+            "{seen:?}"
+        );
+        assert!(
+            seen.iter()
+                .all(|event| matches!(event, HostEvent::Notice { plugin: 3, .. }))
+        );
+    }
+
+    #[test]
+    fn notices_above_the_rate_are_dropped_with_one_note_for_the_window() {
+        let (board, events) = board();
+        let token = board.begin();
+        board.activate(token);
+        let now = Instant::now();
+        for n in 0..50 {
+            board.offer_at(token, notice(&format!("n{n}")), now);
+        }
+        let seen = drain(&board, &events);
+        assert_eq!(notice_ids(&seen).len(), RATE_COUNT);
+        let notes = troubles(&seen);
+        assert_eq!(notes.len(), 1, "{seen:?}");
+        assert!(
+            notes[0].contains("more than 5 notices in 10 seconds"),
+            "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn a_restart_does_not_take_back_notices_not_yet_flushed_and_the_limit_spans_it() {
+        let (board, events) = board();
+        let first = board.begin();
+        board.activate(first);
+        let now = Instant::now();
+        for n in 0..3 {
+            board.offer_at(first, notice(&format!("old{n}")), now);
+        }
+        board.clear();
+        let second = board.begin();
+        board.offer_at(second, notice("early"), now);
+        board.activate(second);
+        for n in 0..5 {
+            board.offer_at(second, notice(&format!("new{n}")), now);
+        }
+        let seen = drain(&board, &events);
+        assert_eq!(notice_ids(&seen), ["old0", "old1", "old2", "early", "new0"]);
+        assert_eq!(
+            troubles(&seen).len(),
+            1,
+            "the rate is the plugin's, not the process's"
+        );
+    }
+
+    #[test]
+    fn a_process_that_never_came_up_has_its_notices_dropped() {
+        let (board, events) = board();
+        let first = board.begin();
+        board.activate(first);
+        let failed = board.begin();
+        board.offer(failed, notice("never"));
+        board.abandon(failed);
+        board.offer(failed, notice("never"));
+        assert_eq!(drain(&board, &events).len(), 0);
     }
 
     #[test]

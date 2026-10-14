@@ -13,6 +13,7 @@ use std::sync::{Arc, PoisonError, RwLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use cmd_core::notice::Notice;
 use cmd_core::protocol::{ACCEPTED, Description, Effect, Item, Items, Method, Ran};
 use cmd_core::query::{self, Scope};
 use cmd_core::task::Task;
@@ -143,6 +144,11 @@ pub enum HostEvent {
     /// one, and the host sends at most one event per task every 50 ms. A `Restarted` or
     /// `Reloaded` for the plugin means its earlier tasks are gone (decision 12).
     Task { plugin: usize, task: Task },
+    /// The plugin sent a notice the host passed on (decision 13). Every notice arrives, in
+    /// the order the plugin sent them, not coalesced; the host has already dropped those
+    /// above 5 in 10 seconds and said so in a `Trouble`. A restart of the plugin does not
+    /// take notices back.
+    Notice { plugin: usize, notice: Notice },
 }
 
 enum Command {

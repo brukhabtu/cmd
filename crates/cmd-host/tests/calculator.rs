@@ -103,13 +103,12 @@ def query(text):
 serve(Plugin(Description("reporter", "1"), query, lambda item, action: Close()))
 "#;
 
-#[test]
-fn a_task_the_real_sdk_reports_reaches_the_host_during_and_between_calls() {
-    let root = plugins_dir().join("..");
-    let located = cmd_host::Located {
-        dir: root.clone(),
+/// A plugin whose code is `code`, run by the real SDK from this repository's workspace.
+fn sdk_plugin(name: &str, code: &str) -> cmd_host::Located {
+    cmd_host::Located {
+        dir: plugins_dir().join(".."),
         manifest: cmd_host::Manifest {
-            name: "reporter".into(),
+            name: name.into(),
             command: [
                 "uv",
                 "run",
@@ -118,12 +117,17 @@ fn a_task_the_real_sdk_reports_reaches_the_host_during_and_between_calls() {
                 "python/cmd-sdk",
                 "python",
                 "-c",
-                REPORTER,
+                code,
             ]
             .map(String::from)
             .to_vec(),
         },
-    };
+    }
+}
+
+#[test]
+fn a_task_the_real_sdk_reports_reaches_the_host_during_and_between_calls() {
+    let located = sdk_plugin("reporter", REPORTER);
     let (host, errors) = Host::start(vec![located], Timeouts::default());
     assert!(errors.is_empty(), "{errors:?}");
     host.query(1, "go");
@@ -143,6 +147,47 @@ fn a_task_the_real_sdk_reports_reaches_the_host_during_and_between_calls() {
             other => panic!("unexpected {other:?}"),
         }
     }
+}
+
+/// A plugin written against the real SDK that sends a notice from inside a query and, from a
+/// thread of its own, after the query has been answered.
+const NOTIFIER: &str = r#"
+import threading
+from cmd_sdk import Close, Description, Item, Plugin, notify, serve
+
+def query(text):
+    notify("PROJ-12", "PROJ-12 moved", "In Review", "https://example.test/PROJ-12")
+    threading.Timer(0.2, notify, ["PROJ-13", "PROJ-13 moved"]).start()
+    return (Item("a", "a"),)
+
+serve(Plugin(Description("notifier", "1"), query, lambda item, action: Close()))
+"#;
+
+#[test]
+fn a_notice_the_real_sdk_sends_reaches_the_host_during_and_between_calls() {
+    let (host, errors) = Host::start(vec![sdk_plugin("notifier", NOTIFIER)], Timeouts::default());
+    assert!(errors.is_empty(), "{errors:?}");
+    host.query(1, "go");
+    let events = host.events();
+    let (mut answered, mut notices) = (false, Vec::new());
+    while !(answered && notices.len() == 2) {
+        match events.recv_blocking().unwrap() {
+            HostEvent::Answered { result: Ok(_), .. } => answered = true,
+            HostEvent::Notice { notice, .. } => notices.push(notice),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(notices[0].id, "PROJ-12");
+    assert_eq!(notices[0].body.as_deref(), Some("In Review"));
+    assert_eq!(
+        notices[0].open.as_deref(),
+        Some("https://example.test/PROJ-12")
+    );
+    assert_eq!(notices[1].title, "PROJ-13 moved");
+    assert_eq!(
+        (notices[1].body.as_deref(), notices[1].open.as_deref()),
+        (None, None)
+    );
 }
 
 #[test]

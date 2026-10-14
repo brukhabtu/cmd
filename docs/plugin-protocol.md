@@ -82,14 +82,15 @@ or an error:
 
 Ids increase for the life of the process. The host sends one request at a time and waits
 for its answer, so a plugin can be a plain loop. An answer that arrives after the host gave
-up is dropped. A plugin may also start a line of its own, an event with no `id`; the only
-one is a task report (see Tasks), and the host reads it whenever it arrives.
+up is dropped. A plugin may also start a line of its own, an event with no `id`; there are
+two, a task report (see Tasks) and a notice (see Notifications), and the host reads either
+whenever it arrives.
 
 ## Methods
 
 | Method | Params | Result | When |
 |---|---|---|---|
-| `describe` | `{"protocol": 1, "capabilities": ["tasks"]}` | Description | Once, right after the process starts |
+| `describe` | `{"protocol": 1, "capabilities": ["tasks", "notify"]}` | Description | Once, right after the process starts |
 | `query` | `{"text": "..."}`, or `{"text": "", "home": true}` | `{"items": [Item]}` | On every change to the typed text that reaches this plugin; the `home` form only to a plugin that declared `home` (see Routing) |
 | `run` | `{"item": "...", "action": "..."}` | `{"effect": Effect}` | When the person presses Enter on one of this plugin's items |
 
@@ -110,8 +111,8 @@ plugin that leaves it out is never asked.
 The params of `describe` carry `protocol`, the version the host speaks, and
 `capabilities`, a list of names for behaviour the host supports beyond its version. A
 missing list is an empty one, as from a host older than the list. This host speaks 1 and
-names one capability, `tasks` (see Tasks), so it sends
-`{"protocol": 1, "capabilities": ["tasks"]}`.
+names two capabilities, `tasks` (see Tasks) and `notify` (see Notifications), so it sends
+`{"protocol": 1, "capabilities": ["tasks", "notify"]}`.
 
 The plugin answers with the lower of the host's version and its own, and from then on
 sends only what that version and those capabilities allow. The host loads a plugin that
@@ -134,7 +135,8 @@ then:
   sent a line it cannot read. No kind is newer than version 1 yet, so this guards version 2.
 - gives the plugin the agreed version and the host's capabilities: `Plugin(describe=...)`
   is called with them before the description is sent, and its answer is sent instead.
-- writes a task report only when the host named `tasks` (see Tasks).
+- writes a task report only when the host named `tasks` (see Tasks), and a notice only when
+  it named `notify` (see Notifications).
 
 ### How the contract grows
 
@@ -146,8 +148,8 @@ Every change to the contract is one of three kinds (decision 9).
 2. **A capability.** The plugin must behave differently when the host does not read the
    field. The host names it in `capabilities`, and the plugin uses it only then, falling
    back otherwise. A capability is named only where a plugin has a fallback to choose. The
-   first is `tasks` (see Tasks); `keywords`, for a plugin with several keywords, will be
-   another.
+   first are `tasks` (see Tasks) and `notify` (see Notifications); `keywords`, for a plugin
+   with several keywords, will be another.
 3. **A new version.** Anything the host must decode to keep working, or that changes what
    an existing message means: a new effect kind, a new icon kind, a new method, a message
    in a new direction, a field that becomes required or changes meaning. One exception
@@ -303,6 +305,66 @@ half second is dropped, not held back, so the last `running` update may never be
 a change of state, `done` and `failed` are always sent. A task that cannot be carried
 raises `InvalidTaskError` to the caller, whatever the host is.
 
+## Notifications
+
+A plugin that watches something (a ticket changing status, a build finishing) tells the person
+with a **notice** (decision 13). It is the second line a plugin starts: an `event` key and no
+`id`, written whenever the plugin likes, and read by the same reader as a task report:
+
+```json
+{"event": "notify", "params": {"id": "PROJ-12", "title": "PROJ-12 moved", "body": "In Review", "open": "https://example.test/PROJ-12"}}
+```
+
+| Field | | |
+|---|---|---|
+| `id` | required | Names the thing within the plugin: a later notice with the same `id` replaces the earlier one in the recent list |
+| `title` | required | Short text for the person |
+| `body` | optional | Text, a second line |
+| `open` | optional | A target the host opens when the person chooses the notice, as it opens an `Open` effect: text, not empty. The host applies no policy to it here |
+
+**The capability.** A plugin sends the line only to a host that named `notify` in the
+`capabilities` of `describe`, and sends nothing to one that did not. Like `tasks`, it is a
+capability and not a version because the plugin has the choice not to send (decision 9,
+third kind, with decision 12's exception). With a host that did not name it, the plugin
+reports nothing, and the recent list is then the only place to see what moved. `tasks` and
+`notify` are independent: naming one says nothing of the other.
+
+**What the host does with a line.** It sorts the line as it arrives, like a task report, so
+a notice never fails a call and a call never waits for one. The host:
+
+- cleans `id`, `title` and `body` (control characters out, cut at 160 characters, as task
+  text) and checks the shape above. A notice without an `id` or a `title`, or with an `open`
+  that is not text or is empty, is dropped and noted for that plugin like any other trouble
+  with it. `open` is kept as sent, because cutting a target breaks it.
+- drops a plugin's notices above a rate: more than 5 in 10 seconds. The excess is dropped, and
+  the host makes one note about the plugin for each window of 10 seconds in which it
+  dropped, so a bug cannot flood the person with notices or with notes. A plugin should send
+  one notice per change, and one summary after a wake with many. The rate is the plugin's, not
+  the process's, so a restart does not give it a new allowance.
+- passes each notice that is kept to the window as a `Notice` event, in the order the plugin
+  sent them. Notices are not coalesced: each is something that happened.
+- leaves the rest to the app, which does two things with a `Notice`: it posts a system
+  notification (not built yet; the app has a `deliver` function for the purpose), and it
+  records the notice in the **recent list**.
+
+**The recent list** holds the last 20 notices across plugins, newest first. A notice with the
+same plugin and `id` as one already there replaces it, and moves to the newest place. The
+list lives in memory: it is empty when the app starts and gone when it quits. A plugin's
+restart does not clear it, because what was delivered is history; unlike a plugin's tasks,
+which are cleared. It is pure logic in `cmd-core` (`notice::Recent`), as is the rate limit
+(`notice::RateLimit`).
+
+A failing watch (unreachable, unauthorised) is a task that stays until dismissed, not a
+notice at every poll.
+
+**In the SDK**, `notify(id, title, body=None, open=None)` may be called from any thread. It
+writes its line under the same lock `serve` takes for answers, so lines never interleave. It
+does nothing, without error, before the host's `describe` or when the host did not name
+`notify`. It does not throttle: the plugin sends one notice per change, and the host drops
+what is above 5 in 10 seconds. A notice that cannot be carried (`id` or `title` missing,
+empty or not text, `body` or `open` not text, `open` empty) raises `InvalidNoticeError` to the
+caller, whatever the host is.
+
 ## Routing
 
 The host trims the typed text and looks at its first word.
@@ -352,8 +414,10 @@ is treated the same way. A change to any file under the plugin's directory, othe
 hidden files, `__pycache__` and `uv.lock`, starts it again on the new code and the
 window says "reloaded"; the manifest is read again too, so a changed `command` takes
 effect. Every restart begins with `describe`, and the new description replaces the old
-one; the plugin's tasks are cleared, and it reports them again. A plugin that cannot be started again, or started at all, is reported in the
-window, and the old process keeps answering while a reload fails.
+one; the plugin's tasks are cleared, and it reports them again. Its notices are not: those
+already delivered are history, and stay in the recent list. A plugin that cannot be started
+again, or started at all, is reported in the window, and the old process keeps answering
+while a reload fails.
 
 ## Errors
 
@@ -369,7 +433,7 @@ whose `id` is 0 answers the request in flight, since the host sends one request 
 ## A full exchange
 
 ```
-→ {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": ["tasks"]}}
+→ {"id": 1, "method": "describe", "params": {"protocol": 1, "capabilities": ["tasks", "notify"]}}
 ← {"id": 1, "result": {"name": "calculator", "version": "0.1.0", "protocol": 1}}
 → {"id": 2, "method": "query", "params": {"text": "2 + 2 * 3"}}
 ← {"id": 2, "result": {"items": [{"id": "8", "title": "8", "subtitle": "Press Enter to copy", "icon": {"kind": "symbol", "name": "equal"}}]}}
@@ -379,7 +443,7 @@ whose `id` is 0 answers the request in flight, since the host sends one request 
 ```
 
 The last line is a plugin's own: a task report, which may come at any moment, here after
-the call is over.
+the call is over. A notice (`{"event": "notify", "params": {...}}`) is another.
 
 ## Golden exchanges
 
@@ -395,11 +459,13 @@ answers. A plugin in another language can test itself against the same file.
 The same file holds `events`, the lines a plugin starts: a task running, done and failed,
 text that the host cleans, lines it drops and notes (no label, `done` above `total`, an
 unknown state, an event of another name), and lines that are not events at all (an answer,
-a line with both an `event` and an `id`). Each holds the line and what the host reads from
+a line with both an `event` and an `id`). It also holds notices: with and without a body
+and a target, text the host cleans, and ones it drops and notes (no title, an empty target).
+Each holds the line and what the host reads from
 it; the SDK writes the lines it can as written and refuses the rest. The host side is
 `cmd-core`'s `task::classify`, a pure function the reader thread calls on each line, and
-`crates/cmd-host/tests/calculator.rs` also drives a task from the real SDK through the real
-host.
+`crates/cmd-host/tests/calculator.rs` also drives a task and a notice from the real SDK
+through the real host.
 
 ## Writing one in Python
 

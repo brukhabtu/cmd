@@ -19,7 +19,10 @@ use cmd_host::{HostEvent, Located, Manifest};
 /// with an answer: "task {json}" writes that task event and then answers, "later {json}"
 /// answers and writes the event 200 ms after, "badtask" writes a task event without a
 /// label and answers, "flood N" writes N running updates of one task and a done, then
-/// answers, and "unknown" writes an event the host has no name for, then answers.
+/// answers, and "unknown" writes an event the host has no name for, then answers. For
+/// notices: "notice {json}" writes that notify event and then answers, "notices N" writes N
+/// notices with ids n0.. and then answers, "laternotice {json}" answers and writes the
+/// notice 200 ms after, and "badnotice" writes a notify event without a title and answers.
 pub const FAKE: &str = r#"
 import json, sys, threading, time
 out = threading.Lock()
@@ -49,6 +52,19 @@ for line in sys.stdin:
     elif request["method"] == "query" and request["params"]["text"].startswith("later "):
         reply({"items": [{"id": "later", "title": "later"}]})
         threading.Timer(0.2, emit, [json.loads(request["params"]["text"][6:])]).start()
+    elif request["method"] == "query" and request["params"]["text"].startswith("notice "):
+        send({"event": "notify", "params": json.loads(request["params"]["text"][7:])})
+        reply({"items": [{"id": "after", "title": "after"}]})
+    elif request["method"] == "query" and request["params"]["text"].startswith("laternotice "):
+        reply({"items": [{"id": "later", "title": "later"}]})
+        threading.Timer(0.2, send, [{"event": "notify", "params": json.loads(request["params"]["text"][12:])}]).start()
+    elif request["method"] == "query" and request["params"]["text"].startswith("notices "):
+        for n in range(int(request["params"]["text"][8:])):
+            send({"event": "notify", "params": {"id": "n%d" % n, "title": "Notice %d" % n}})
+        reply({"items": [{"id": "after", "title": "after"}]})
+    elif request["method"] == "query" and request["params"]["text"] == "badnotice":
+        send({"event": "notify", "params": {"id": "x"}})
+        reply({"items": [{"id": "after", "title": "after"}]})
     elif request["method"] == "query" and request["params"]["text"] == "badtask":
         emit({"id": "x", "state": "running"})
         reply({"items": [{"id": "after", "title": "after"}]})

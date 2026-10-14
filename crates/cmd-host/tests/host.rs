@@ -76,7 +76,8 @@ fn generation_of(event: &HostEvent) -> u64 {
         HostEvent::Restarted { .. }
         | HostEvent::Reloaded { .. }
         | HostEvent::Trouble { .. }
-        | HostEvent::Task { .. } => {
+        | HostEvent::Task { .. }
+        | HostEvent::Notice { .. } => {
             panic!("no restart was expected")
         }
     }
@@ -93,7 +94,8 @@ fn answers_arrive_as_events_with_their_generation_and_plugin() {
         | HostEvent::Restarted { plugin, .. }
         | HostEvent::Reloaded { plugin, .. }
         | HostEvent::Trouble { plugin, .. }
-        | HostEvent::Task { plugin, .. } => *plugin,
+        | HostEvent::Task { plugin, .. }
+        | HostEvent::Notice { plugin, .. } => *plugin,
     });
     let titles: Vec<String> = answers
         .into_iter()
@@ -434,7 +436,7 @@ fn describe_sends_the_host_s_version_and_the_capabilities_it_names() {
     let host = host(&[("a", false)]);
     assert_eq!(
         ask(&host, 1, "described"),
-        r#"{"capabilities": ["tasks"], "protocol": 1}"#
+        r#"{"capabilities": ["tasks", "notify"], "protocol": 1}"#
     );
 }
 

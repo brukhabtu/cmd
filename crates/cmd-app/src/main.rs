@@ -8,6 +8,7 @@
 //! The window is opened again on the display under the pointer when that has changed; the
 //! view, with the host and the state, outlives it.
 
+mod deliver;
 mod displays;
 mod icons;
 mod input;
@@ -19,6 +20,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cmd_core::input::Motion;
+use cmd_core::notice::Recent;
 use cmd_core::placement::{self, Placement};
 use cmd_core::query::Hit;
 use cmd_core::state::{Event, Launcher, Step};
@@ -122,6 +124,14 @@ struct LauncherView {
     /// candidates. The text itself is the state machine's.
     last_line: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
+    /// The last notices plugins sent, newest first. Memory only: gone when the app quits, and
+    /// untouched by a plugin's restart.
+    // The home query (decision 13) is its reader; until it lands nothing reads it.
+    #[allow(
+        dead_code,
+        reason = "read by the home query, which is a task of its own"
+    )]
+    recent_notices: Recent,
 }
 
 impl LauncherView {
@@ -149,6 +159,7 @@ impl LauncherView {
             task_redraw_waiting: false,
             last_line: None,
             last_bounds: None,
+            recent_notices: Recent::default(),
         }
     }
 
@@ -320,6 +331,12 @@ impl LauncherView {
                     at,
                 });
                 self.redraw_for_tasks(cx);
+                return;
+            }
+            // A notice is recorded and then delivered; it is not a state-machine event.
+            HostEvent::Notice { plugin, notice } => {
+                self.recent_notices.push(plugin, notice.clone());
+                deliver::deliver(&notice);
                 return;
             }
         };

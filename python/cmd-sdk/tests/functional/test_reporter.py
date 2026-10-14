@@ -7,7 +7,18 @@ import time
 from typing import Any
 
 import pytest
-from cmd_sdk import Close, Description, InvalidTaskError, Item, Plugin, Task, report, serve
+from cmd_sdk import (
+    Close,
+    Description,
+    InvalidNoticeError,
+    InvalidTaskError,
+    Item,
+    Plugin,
+    Task,
+    notify,
+    report,
+    serve,
+)
 from cmd_sdk.protocol import Agreement
 from cmd_sdk.reporter import Reporter, installed
 
@@ -253,3 +264,161 @@ def test_installed_restores_the_previous_reporter() -> None:
         report(Task("b", "B", "done"))
     assert len(lines(inner_sink)) == 1
     assert [line["params"]["id"] for line in lines(outer_sink)] == ["b"]
+
+
+# Notices (decision 13): the same reporter, the same lock, a second capability.
+
+
+def test_a_notice_is_written_when_the_host_named_notify() -> None:
+    reporter, sink, _ = reporter_for("notify")
+    reporter.notify("PROJ-12", "PROJ-12 moved", "In Review", "https://example.test/PROJ-12")
+    assert lines(sink) == [
+        {
+            "event": "notify",
+            "params": {
+                "id": "PROJ-12",
+                "title": "PROJ-12 moved",
+                "body": "In Review",
+                "open": "https://example.test/PROJ-12",
+            },
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "capabilities", [(), ("tasks",), ("keywords",)], ids=["none", "tasks only", "others only"]
+)
+def test_a_notice_is_silent_when_the_host_did_not_name_notify(
+    capabilities: tuple[str, ...],
+) -> None:
+    reporter, sink, _ = reporter_for(*capabilities)
+    reporter.notify("a", "A")
+    assert not sink.getvalue()
+
+
+def test_notify_does_not_open_the_gate_for_tasks() -> None:
+    reporter, sink, _ = reporter_for("notify")
+    reporter.report(Task("a", "A", "done"))
+    assert not sink.getvalue()
+
+
+def test_a_notice_is_silent_before_any_describe() -> None:
+    sink = io.StringIO()
+    Reporter(sink).notify("a", "A")
+    assert not sink.getvalue()
+
+
+def test_a_silent_notice_still_checks_it() -> None:
+    reporter, sink, _ = reporter_for()
+    with pytest.raises(InvalidNoticeError, match="title must not be empty"):
+        reporter.notify("a", "")
+    assert not sink.getvalue()
+
+
+def test_an_invalid_notice_writes_nothing_when_the_host_reads_notices() -> None:
+    reporter, sink, _ = reporter_for("notify")
+    with pytest.raises(InvalidNoticeError):
+        reporter.notify("a", "A", open="")
+    assert not sink.getvalue()
+
+
+def test_the_sdk_does_not_throttle_notices() -> None:
+    reporter, sink, _ = reporter_for("notify")
+    for number in range(30):
+        reporter.notify(f"n{number}", "Same title")
+    assert len(lines(sink)) == 30, "one notice per change is the plugin's job; the host drops"
+
+
+def test_a_closed_stream_is_dropped_not_raised_into_the_plugin_for_a_notice() -> None:
+    reporter, sink, _ = reporter_for("notify")
+    sink.close()
+    reporter.notify("a", "A")
+
+
+def test_answers_and_notices_from_two_threads_never_interleave() -> None:
+    sink = SlowSink()
+    reporter = Reporter(sink)
+    reporter.agree(Agreement(1, frozenset({"notify"})))
+    answer = json.dumps({"id": 1, "result": {"items": [{"id": "a", "title": "x" * 40}]}}) + "\n"
+
+    def answering() -> None:
+        for _ in range(60):
+            reporter.write(answer)
+
+    def notifying() -> None:
+        for number in range(60):
+            reporter.notify(f"n{number}", "A notice with a title")
+
+    threads = [threading.Thread(target=answering), threading.Thread(target=notifying)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sink.overlaps == 0, "two writes were in the stream at once"
+    parsed = [json.loads(line) for line in sink.getvalue().splitlines()]
+    assert len(parsed) == 120
+    assert sum(line.get("event") == "notify" for line in parsed) == 60
+
+
+def notifying_plugin() -> Plugin:
+    def query(text: str) -> tuple[Item, ...]:
+        notify("PROJ-12", "PROJ-12 moved", "In Review")
+        worker = threading.Thread(target=notify, args=("PROJ-13", "PROJ-13 moved"))
+        worker.start()
+        worker.join()
+        return (Item(text, text),)
+
+    return Plugin(Description("notifier", "1"), query, lambda _i, _a: Close())
+
+
+def test_serve_writes_a_plugin_s_notices_between_the_describe_and_its_answers() -> None:
+    written = serve_lines(
+        notifying_plugin(),
+        request(1, "describe", {"protocol": 1, "capabilities": ["tasks", "notify"]}),
+        request(2, "query", {"text": "go"}),
+    )
+    assert [line.get("event", line.get("id")) for line in written] == [1, "notify", "notify", 2]
+    assert [line["params"]["id"] for line in written if "event" in line] == ["PROJ-12", "PROJ-13"]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"protocol": 1, "capabilities": ["tasks"]},
+        {"protocol": 1},
+        {"protocol": 0},
+    ],
+    ids=["tasks only", "a host older than capabilities", "version 0"],
+)
+def test_serve_sends_a_host_that_did_not_name_notify_only_answers(params: dict[str, Any]) -> None:
+    written = serve_lines(
+        notifying_plugin(),
+        request(1, "describe", params),
+        request(2, "query", {"text": "go"}),
+    )
+    assert [line["id"] for line in written] == [1, 2]
+    assert all("event" not in line for line in written)
+
+
+def test_a_plugin_that_sends_an_invalid_notice_gets_a_plugin_error_and_serve_goes_on() -> None:
+    def query(text: str) -> tuple[Item, ...]:
+        if text == "bad":
+            notify("a", "")
+        return (Item(text, text),)
+
+    written = serve_lines(
+        Plugin(Description("p", "1"), query, lambda _i, _a: Close()),
+        request(1, "describe", {"protocol": 1, "capabilities": ["notify"]}),
+        request(2, "query", {"text": "bad"}),
+        request(3, "query", {"text": "fine"}),
+    )
+    assert [line["id"] for line in written] == [1, 2, 3]
+    assert written[1]["error"]["code"] == "plugin_error"
+    assert "InvalidNoticeError" in written[1]["error"]["message"]
+    assert "result" in written[2]
+
+
+def test_notify_outside_serve_checks_the_notice_and_writes_nothing() -> None:
+    notify("a", "A")
+    with pytest.raises(InvalidNoticeError):
+        notify("a", 3)  # type: ignore[arg-type]

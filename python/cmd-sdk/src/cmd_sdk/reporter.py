@@ -1,7 +1,8 @@
-"""The shell around task reports: one lock for everything written to the protocol stream.
+"""The shell around task reports and notices: one lock for everything written to the stream.
 
 ``serve`` writes answers from its own thread and a plugin's background threads call
-``report``; both write under the one lock here, so lines never interleave (decision 12).
+``report`` and ``notify``; all write under the one lock here, so lines never interleave
+(decisions 12 and 13).
 """
 
 import contextlib
@@ -10,12 +11,14 @@ import time
 from collections.abc import Callable, Generator
 from typing import TextIO
 
+from cmd_sdk.notices import CAPABILITY as NOTIFY
+from cmd_sdk.notices import encode_event as encode_notice
 from cmd_sdk.protocol import BEFORE_DESCRIBE, Agreement
 from cmd_sdk.tasks import CAPABILITY, Task, Throttle, encode_event
 
 
 class Reporter:
-    """Owns writes to the protocol stream, for answers and for task reports.
+    """Owns writes to the protocol stream, for answers, task reports and notices.
 
     ``clock`` is read for the throttle only; a test passes its own.
     """
@@ -47,6 +50,28 @@ class Reporter:
         line = encode_event(task)
         with self._lock:
             if CAPABILITY not in self._agreement.capabilities or not self._throttle.allow(task):
+                return
+            with contextlib.suppress(OSError, ValueError):
+                self._sink.write(line)
+                self._sink.flush()
+
+    def notify(
+        self,
+        id: str,  # ruff: ignore[builtin-argument-shadowing] - the protocol's own name for the field
+        title: str,
+        body: str | None = None,
+        open: str | None = None,  # ruff: ignore[builtin-argument-shadowing] - the protocol's own name for the field
+    ) -> None:
+        """Send this notice to the host, if the host reads notices.
+
+        The notice is checked either way, so a mistake shows up whatever the host is. A write
+        to a stream the host has closed is dropped. A notice the protocol cannot carry raises
+        ``InvalidNoticeError`` and writes nothing. There is no throttle here: the plugin sends
+        one notice per change, and the host drops what is above its rate.
+        """
+        line = encode_notice(id, title, body, open)
+        with self._lock:
+            if NOTIFY not in self._agreement.capabilities:
                 return
             with contextlib.suppress(OSError, ValueError):
                 self._sink.write(line)
@@ -86,3 +111,33 @@ def report(task: Task) -> None:
         encode_event(task)
         return
     reporter.report(task)
+
+
+def notify(
+    id: str,  # ruff: ignore[builtin-argument-shadowing] - the protocol's own name for the field
+    title: str,
+    body: str | None = None,
+    open: str | None = None,  # ruff: ignore[builtin-argument-shadowing] - the protocol's own name for the field
+) -> None:
+    """Tell the person something. Call it from any thread.
+
+    ``id`` names the thing within your plugin, and a later notice with the same ``id``
+    replaces the earlier one in the host's list of recent notices. ``title`` is required;
+    ``body`` is a second line; ``open`` is a target (a URL or a path) the host opens when the
+    person chooses the notice. The host cuts ``title`` and ``body`` at 160 characters and
+    drops control characters.
+
+    It does nothing, quietly, before ``serve`` has had a ``describe`` from the host, or when
+    the host did not name the ``notify`` capability, so call it unconditionally. Send one
+    notice per change, and one summary after a wake with many: the SDK does not throttle, and
+    the host drops a plugin's notices above 5 in 10 seconds.
+
+    A notice the protocol cannot carry raises ``InvalidNoticeError`` to the caller, whatever
+    the host is, and nothing is written: ``id`` or ``title`` is not text or is empty, or
+    ``body`` or ``open`` is given and is not text, or ``open`` is empty.
+    """
+    reporter = _active
+    if reporter is None:
+        encode_notice(id, title, body, open)
+        return
+    reporter.notify(id, title, body, open)

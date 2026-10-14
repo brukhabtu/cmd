@@ -39,8 +39,9 @@ def serve(plugin: Plugin, source: TextIO | None = None, sink: TextIO | None = No
     lower of the host's version and the SDK's, and the names the host sent.
 
     ``serve`` owns the stream: answers are written under the lock that ``report`` takes for a
-    task, so a plugin's background threads can call ``cmd_sdk.report`` while a request is
-    answered and no two lines interleave.
+    task and ``notify`` for a notice, so a plugin's background threads can call
+    ``cmd_sdk.report`` and ``cmd_sdk.notify`` while a request is answered and no two lines
+    interleave.
 
     While serving to stdout, ``print`` writes to stderr instead: stdout belongs to the
     protocol, and a line on it the host cannot read costs the answer it landed in.

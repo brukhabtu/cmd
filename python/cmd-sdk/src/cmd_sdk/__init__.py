@@ -7,6 +7,7 @@ from cmd_sdk.cache import TtlCache
 from cmd_sdk.calls import CallResult, call
 from cmd_sdk.environment import config, data_dir
 from cmd_sdk.locate import ConfigError, MissingVariableError
+from cmd_sdk.notices import InvalidNoticeError
 from cmd_sdk.protocol import (
     PROTOCOL,
     Action,
@@ -23,7 +24,7 @@ from cmd_sdk.protocol import (
     Show,
     SymbolIcon,
 )
-from cmd_sdk.reporter import report
+from cmd_sdk.reporter import notify, report
 from cmd_sdk.serve import serve
 from cmd_sdk.tasks import InvalidTaskError, Task
 
@@ -38,6 +39,7 @@ __all__ = [
     "Description",
     "Effect",
     "Icon",
+    "InvalidNoticeError",
     "InvalidTaskError",
     "Item",
     "MissingVariableError",
@@ -51,6 +53,7 @@ __all__ = [
     "call",
     "config",
     "data_dir",
+    "notify",
     "report",
     "serve",
 ]

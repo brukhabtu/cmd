@@ -85,6 +85,9 @@ fn every_event_line_reads_as_the_fixture_says() {
             Incoming::Event(Event::Task(task)) => {
                 assert_eq!(&as_json(&task), &reads["task"], "{name}");
             }
+            Incoming::Event(Event::Notice(notice)) => {
+                assert_eq!(&as_json(&notice), &reads["notice"], "{name}");
+            }
             Incoming::Event(Event::Invalid(why)) => {
                 let want = reads["invalid"].as_str().unwrap_or_else(|| {
                     panic!("{name}: the host dropped a line the fixture says it reads: {why}")
