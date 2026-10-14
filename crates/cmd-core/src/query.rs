@@ -29,11 +29,31 @@ pub struct Route {
     pub text: String,
 }
 
-/// An item together with the plugin that produced it.
+/// Who owns a row, and so who runs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// A plugin's item, by the plugin's position in the host's list.
+    Plugin(usize),
+    /// One of the host's recent notices (decision 13). No plugin runs it: the host opens
+    /// `open` when there is one, and otherwise the row is informational.
+    Notice { open: Option<String> },
+}
+
+/// An item together with whoever produced it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
-    pub plugin: usize,
+    pub source: Source,
     pub item: Item,
+}
+
+impl Hit {
+    /// The plugin that produced this row, or none for the host's own rows.
+    pub fn plugin(&self) -> Option<usize> {
+        match self.source {
+            Source::Plugin(plugin) => Some(plugin),
+            Source::Notice { .. } => None,
+        }
+    }
 }
 
 /// Decide which plugins see the input.
@@ -97,7 +117,12 @@ pub fn route_home(wanting: &[bool]) -> Vec<Route> {
 pub fn merge(batches: impl IntoIterator<Item = (usize, Vec<Item>)>) -> Vec<Hit> {
     let mut hits: Vec<Hit> = batches
         .into_iter()
-        .flat_map(|(plugin, items)| items.into_iter().map(move |item| Hit { plugin, item }))
+        .flat_map(|(plugin, items)| {
+            items.into_iter().map(move |item| Hit {
+                source: Source::Plugin(plugin),
+                item,
+            })
+        })
         .collect();
     hits.sort_by(|a, b| {
         rank(a)
@@ -236,13 +261,13 @@ mod tests {
         ]);
         let titles: Vec<&str> = hits.iter().map(|h| h.item.title.as_str()).collect();
         assert_eq!(titles, vec!["definite", "fuzzy high", "fuzzy low"]);
-        assert_eq!(hits[0].plugin, 1);
+        assert_eq!(hits[0].plugin(), Some(1));
     }
 
     #[test]
     fn merge_keeps_plugin_order_on_ties() {
         let hits = merge(vec![(2, vec![item("b", None)]), (0, vec![item("a", None)])]);
-        let plugins: Vec<usize> = hits.iter().map(|h| h.plugin).collect();
+        let plugins: Vec<usize> = hits.iter().filter_map(Hit::plugin).collect();
         assert_eq!(plugins, vec![2, 0]);
     }
 

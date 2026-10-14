@@ -147,7 +147,7 @@ fn applications_are_found_opened_as_file_urls_and_ranked_below_a_definite_answer
     let hits = merge(vec![(applications, app_items), (calculator, calc_items)]);
     let titles: Vec<&str> = hits.iter().map(|hit| hit.item.title.as_str()).collect();
     assert_eq!(titles, ["2", "1+1"]);
-    assert_eq!(hits[0].plugin, calculator);
+    assert_eq!(hits[0].plugin(), Some(calculator));
 
     // Nothing matches nonsense, and the plain file is never an application.
     host.query(4, "zzzz");

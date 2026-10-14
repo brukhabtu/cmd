@@ -341,6 +341,20 @@ impl LauncherView {
             HostEvent::Notice { plugin, notice } => {
                 self.recent_notices.push(plugin, notice.clone());
                 deliver::deliver(&notice);
+                // The home list shows the recent notices; the state refreshes it if the
+                // input is blank. The plugin's name is the app's to give.
+                let rows = self
+                    .recent_notices
+                    .iter()
+                    .map(|held| {
+                        cmd_core::notice::row(
+                            held.plugin,
+                            &self.plugin_name(held.plugin),
+                            &held.notice,
+                        )
+                    })
+                    .collect();
+                self.handle(Event::Notices(rows), cx);
                 return;
             }
         };

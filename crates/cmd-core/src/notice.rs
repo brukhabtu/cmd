@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::protocol::{Action, Item};
+use crate::query::{Hit, Source};
 use crate::task::clean;
 
 /// The name of the capability a plugin needs the host to name before it sends a notice.
@@ -137,6 +139,43 @@ pub struct Recorded {
     pub notice: Notice,
 }
 
+/// The id of the one action a notice row has, when its notice has an `open` target.
+pub const OPEN_ACTION: &str = "open";
+
+/// A notice as a row of the home list (decision 13).
+///
+/// The title is the notice's; the subtitle is `<plugin name> - <body>`, or the name alone
+/// when there is no body. The id is derived from the plugin and the notice id. The row has
+/// one `Open` action when the notice has an `open` target and none otherwise. It belongs to
+/// the host ([`Source::Notice`]), not to the plugin, which does not run it.
+pub fn row(plugin: usize, plugin_name: &str, notice: &Notice) -> Hit {
+    let subtitle = match &notice.body {
+        Some(body) => format!("{plugin_name} - {body}"),
+        None => plugin_name.to_string(),
+    };
+    let actions = match notice.open {
+        Some(_) => vec![Action {
+            id: OPEN_ACTION.to_string(),
+            title: "Open".to_string(),
+        }],
+        None => Vec::new(),
+    };
+    Hit {
+        source: Source::Notice {
+            open: notice.open.clone(),
+        },
+        item: Item {
+            id: format!("notice:{plugin}:{}", notice.id),
+            title: notice.title.clone(),
+            subtitle: Some(subtitle),
+            score: None,
+            actions,
+            icon: None,
+            complete: None,
+        },
+    }
+}
+
 /// The last [`RECENT`] notices across plugins, newest first. Memory only: it starts empty
 /// with the app and a plugin's restart leaves it alone, because what was delivered is
 /// history.
@@ -188,6 +227,48 @@ mod tests {
             .iter()
             .map(|held| (held.plugin, held.notice.id.as_str()))
             .collect()
+    }
+
+    #[test]
+    fn a_notice_becomes_a_row_with_the_plugin_name_and_body_in_the_subtitle() {
+        let mut n = notice("PROJ-12");
+        n.body = Some("In Review".into());
+        let hit = row(3, "watchdemo", &n);
+        assert_eq!(hit.item.title, "title PROJ-12");
+        assert_eq!(hit.item.subtitle.as_deref(), Some("watchdemo - In Review"));
+        assert_eq!(hit.item.id, "notice:3:PROJ-12");
+        assert_eq!(hit.plugin(), None);
+        assert_eq!(hit.item.actions.len(), 0);
+        assert_eq!(hit.source, Source::Notice { open: None });
+    }
+
+    #[test]
+    fn a_notice_row_without_a_body_shows_the_plugin_name_alone() {
+        let hit = row(0, "watchdemo", &notice("a"));
+        assert_eq!(hit.item.subtitle.as_deref(), Some("watchdemo"));
+    }
+
+    #[test]
+    fn a_notice_row_has_an_open_action_only_when_the_notice_has_a_target() {
+        let mut n = notice("a");
+        n.open = Some("https://example.test/a".into());
+        let hit = row(0, "p", &n);
+        assert_eq!(hit.item.actions.len(), 1);
+        assert_eq!(hit.item.actions[0].id, OPEN_ACTION);
+        assert_eq!(
+            hit.source,
+            Source::Notice {
+                open: Some("https://example.test/a".into())
+            }
+        );
+    }
+
+    #[test]
+    fn rows_of_the_same_notice_id_from_two_plugins_have_different_ids() {
+        assert_ne!(
+            row(0, "p", &notice("a")).item.id,
+            row(1, "q", &notice("a")).item.id
+        );
     }
 
     fn why(params: &Value) -> String {

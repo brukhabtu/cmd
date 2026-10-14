@@ -9,7 +9,7 @@ use std::ops::Range;
 
 use crate::input::{Input, Motion};
 use crate::protocol::{Effect, Item};
-use crate::query::{self, Hit};
+use crate::query::{self, Hit, Source};
 
 /// The action id sent when an item declares no actions.
 pub const DEFAULT_ACTION: &str = "default";
@@ -39,7 +39,15 @@ pub struct Launcher {
     pub busy: bool,
     /// What each plugin answered in this generation, by plugin index. `hits` is their merge.
     answers: BTreeMap<usize, Vec<Item>>,
+    /// The host's recent notices as rows, newest first, as the shell last said. They head
+    /// the home list and show nowhere else. A reset keeps them: they are history.
+    notices: Vec<Hit>,
+    /// The input is blank and `hits` is the home list.
+    home: bool,
 }
+
+/// How many recent notices head the home list, so the plugins' own rows still show.
+pub const HOME_NOTICES: usize = 5;
 
 /// Something that happened: a key, or an answer arriving.
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +119,10 @@ pub enum Event {
     },
     /// Something the host wants shown whatever the generation: a plugin restarted, say.
     Noted(String),
+    /// The host's recent notices changed (one arrived): these rows, newest first, are all of
+    /// them. While the input is blank the home list shows them at once, in the generation it
+    /// has, so answers still on their way are kept.
+    Notices(Vec<Hit>),
     /// The window came up. With an empty input that starts the home query, in a fresh
     /// generation so an answer to an earlier home query cannot land on this one.
     Shown,
@@ -195,7 +207,7 @@ impl Launcher {
                 if generation == self.generation {
                     self.answers.clear();
                     if plugins.is_empty() {
-                        self.hits.clear();
+                        self.rebuild();
                     }
                     self.pending = plugins;
                 }
@@ -243,6 +255,13 @@ impl Launcher {
                 self.message = Some(message);
                 Step::Nothing
             }
+            Event::Notices(notices) => {
+                self.notices = notices;
+                if self.home {
+                    self.rebuild();
+                }
+                Step::Nothing
+            }
             Event::Shown => {
                 if self.text().trim().is_empty() {
                     self.requery()
@@ -266,11 +285,22 @@ impl Launcher {
     fn merge_answer(&mut self, plugin: usize, items: Vec<Item>) {
         self.pending.retain(|asked| *asked != plugin);
         self.answers.insert(plugin, items);
-        self.hits = query::merge(
+        self.rebuild();
+    }
+
+    /// Make `hits` from the recent notices (on the home list only) and the plugins' answers.
+    fn rebuild(&mut self) {
+        let mut hits: Vec<Hit> = if self.home {
+            self.notices.iter().take(HOME_NOTICES).cloned().collect()
+        } else {
+            Vec::new()
+        };
+        hits.extend(query::merge(
             self.answers
                 .iter()
                 .map(|(plugin, items)| (*plugin, items.clone())),
-        );
+        ));
+        self.hits = hits;
         self.selected = self.selected.min(self.hits.len().saturating_sub(1));
         self.keep_selected_on_screen();
     }
@@ -316,11 +346,28 @@ impl Launcher {
             return Step::Nothing;
         }
         match self.hits.get(index) {
-            Some(hit) => {
+            // A notice row has no plugin to run it: the host opens its target, or it is
+            // informational and Enter does nothing.
+            Some(Hit {
+                source: Source::Notice { open },
+                ..
+            }) => match open.clone() {
+                Some(target) => {
+                    self.reset();
+                    Step::OpenAndHide(target)
+                }
+                None => Step::Nothing,
+            },
+            Some(
+                hit @ Hit {
+                    source: Source::Plugin(plugin),
+                    ..
+                },
+            ) => {
                 self.busy = true;
                 Step::Run {
                     generation: self.generation,
-                    plugin: hit.plugin,
+                    plugin: *plugin,
                     item: hit.item.id.clone(),
                     action: hit
                         .item
@@ -439,11 +486,12 @@ impl Launcher {
         self.busy = false;
         self.pending.clear();
         self.answers.clear();
+        self.home = false;
         if self.text().trim().is_empty() {
-            // Blank input is the home list. TASK-6.3 adds the host's recent notices to
-            // `hits` here, ahead of the plugins' home rows; today the list starts empty
-            // and fills as the plugins that declared `home` answer.
-            self.hits.clear();
+            // Blank input is the home list: the recent notices first, then the plugins'
+            // home rows as the plugins that declared `home` answer.
+            self.home = true;
+            self.rebuild();
             return Step::Home {
                 generation: self.generation,
             };
@@ -460,6 +508,7 @@ impl Launcher {
         *self = Launcher {
             generation: self.generation + 1,
             rows: self.rows,
+            notices: std::mem::take(&mut self.notices),
             ..Launcher::default()
         };
     }
@@ -472,7 +521,7 @@ mod tests {
 
     fn hit(plugin: usize, id: &str, actions: Vec<Action>) -> Hit {
         Hit {
-            plugin,
+            source: Source::Plugin(plugin),
             item: Item {
                 id: id.into(),
                 title: id.into(),
@@ -491,7 +540,7 @@ mod tests {
 
     /// Every plugin named in `hits` is asked and answers the given generation.
     fn answered(launcher: &mut Launcher, generation: u64, hits: &[Hit]) {
-        let mut plugins: Vec<usize> = hits.iter().map(|hit| hit.plugin).collect();
+        let mut plugins: Vec<usize> = hits.iter().filter_map(Hit::plugin).collect();
         plugins.dedup();
         launcher.apply(Event::Asked {
             generation,
@@ -500,7 +549,7 @@ mod tests {
         for plugin in plugins {
             let items = hits
                 .iter()
-                .filter(|hit| hit.plugin == plugin)
+                .filter(|hit| hit.plugin() == Some(plugin))
                 .map(|hit| hit.item.clone())
                 .collect();
             launcher.apply(Event::Answered {
@@ -1387,6 +1436,190 @@ mod tests {
         assert_eq!(
             launcher.apply(Event::Submit),
             run(1, 0, "x", DEFAULT_ACTION)
+        );
+    }
+
+    fn notice_hit(id: &str, open: Option<&str>) -> Hit {
+        crate::notice::row(
+            0,
+            "demo",
+            &crate::notice::Notice {
+                id: id.into(),
+                title: format!("title {id}"),
+                body: Some("moved".into()),
+                open: open.map(str::to_string),
+            },
+        )
+    }
+
+    fn titles(launcher: &Launcher) -> Vec<&str> {
+        launcher
+            .hits
+            .iter()
+            .map(|hit| hit.item.title.as_str())
+            .collect()
+    }
+
+    fn home(launcher: &mut Launcher) -> u64 {
+        let Step::Home { generation } = launcher.apply(Event::Shown) else {
+            panic!("blank input asks for home");
+        };
+        generation
+    }
+
+    #[test]
+    fn the_home_list_shows_notices_first_then_the_plugins_rows() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Notices(vec![
+            notice_hit("n2", None),
+            notice_hit("n1", None),
+        ]));
+        let generation = home(&mut launcher);
+        assert_eq!(
+            titles(&launcher),
+            ["title n2", "title n1"],
+            "before any plugin answers"
+        );
+        answered(&mut launcher, generation, &[hit(1, "plugin row", vec![])]);
+        assert_eq!(
+            titles(&launcher),
+            ["title n2", "title n1", "plugin row"],
+            "newest notice first, then the plugin"
+        );
+    }
+
+    #[test]
+    fn at_most_five_notices_head_the_home_list() {
+        let mut launcher = Launcher::default();
+        let notices: Vec<Hit> = (0..8).map(|n| notice_hit(&format!("n{n}"), None)).collect();
+        launcher.apply(Event::Notices(notices));
+        let generation = home(&mut launcher);
+        assert_eq!(launcher.hits.len(), 5);
+        assert_eq!(launcher.hits[0].item.title, "title n0");
+        answered(&mut launcher, generation, &[hit(1, "plugin row", vec![])]);
+        assert_eq!(launcher.hits.len(), 6);
+        assert_eq!(launcher.hits[5].item.title, "plugin row");
+    }
+
+    #[test]
+    fn without_notices_the_home_list_is_the_plugins_alone() {
+        let mut launcher = Launcher::default();
+        let generation = home(&mut launcher);
+        assert_eq!(launcher.hits, []);
+        answered(&mut launcher, generation, &[hit(1, "plugin row", vec![])]);
+        assert_eq!(titles(&launcher), ["plugin row"]);
+    }
+
+    #[test]
+    fn a_home_with_nobody_to_ask_still_shows_the_notices() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Notices(vec![notice_hit("n1", None)]));
+        let generation = home(&mut launcher);
+        launcher.apply(Event::Asked {
+            generation,
+            plugins: vec![],
+        });
+        assert_eq!(titles(&launcher), ["title n1"]);
+    }
+
+    #[test]
+    fn a_notice_arriving_over_the_home_list_refreshes_it_and_keeps_the_generation() {
+        let mut launcher = Launcher::default();
+        let generation = home(&mut launcher);
+        answered(&mut launcher, generation, &[hit(1, "plugin row", vec![])]);
+        let step = launcher.apply(Event::Notices(vec![notice_hit("n1", None)]));
+        assert_eq!(step, Step::Nothing);
+        assert_eq!(launcher.generation, generation);
+        assert_eq!(titles(&launcher), ["title n1", "plugin row"]);
+        // A home answer still on its way lands after the refresh without losing the notice.
+        launcher.apply(Event::Asked {
+            generation,
+            plugins: vec![1, 2],
+        });
+        launcher.apply(Event::Answered {
+            generation,
+            plugin: 2,
+            items: vec![hit(2, "late", vec![]).item],
+        });
+        assert_eq!(titles(&launcher), ["title n1", "late"]);
+    }
+
+    #[test]
+    fn a_notice_arriving_over_typed_text_leaves_the_list_alone_and_shows_on_the_next_home() {
+        let mut launcher = Launcher::default();
+        typed(&mut launcher, "a");
+        answered(&mut launcher, 1, &[hit(0, "a", vec![])]);
+        launcher.apply(Event::Notices(vec![notice_hit("n1", None)]));
+        assert_eq!(titles(&launcher), ["a"]);
+        launcher.apply(Event::Delete(Motion::PreviousGrapheme));
+        assert_eq!(titles(&launcher), ["title n1"]);
+    }
+
+    #[test]
+    fn typing_replaces_the_home_list_notices_included() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Notices(vec![notice_hit("n1", None)]));
+        launcher.apply(Event::Shown);
+        assert_eq!(launcher.hits.len(), 1);
+        typed(&mut launcher, "x");
+        launcher.apply(Event::Asked {
+            generation: 2,
+            plugins: vec![],
+        });
+        assert_eq!(launcher.hits, []);
+        // And a notice meanwhile does not creep into the query's list.
+        launcher.apply(Event::Notices(vec![notice_hit("n2", None)]));
+        assert_eq!(launcher.hits, []);
+    }
+
+    #[test]
+    fn the_notices_outlive_a_reset() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Notices(vec![notice_hit("n1", None)]));
+        launcher.apply(Event::Escape);
+        launcher.apply(Event::Shown);
+        assert_eq!(titles(&launcher), ["title n1"]);
+    }
+
+    #[test]
+    fn running_a_notice_row_with_a_target_opens_it_and_hides() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Notices(vec![notice_hit(
+            "n1",
+            Some("https://example.test/n1"),
+        )]));
+        launcher.apply(Event::Shown);
+        assert_eq!(
+            launcher.apply(Event::Submit),
+            Step::OpenAndHide("https://example.test/n1".into())
+        );
+        assert!(!launcher.busy);
+        assert_eq!(launcher.hits, [], "the launcher reset");
+    }
+
+    #[test]
+    fn running_a_notice_row_without_a_target_does_nothing() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Notices(vec![notice_hit("n1", None)]));
+        let generation = home(&mut launcher);
+        assert_eq!(launcher.apply(Event::Submit), Step::Nothing);
+        assert_eq!(launcher.apply(Event::Pick(0)), Step::Nothing);
+        assert_eq!(launcher.apply(Event::Complete), Step::Nothing);
+        assert!(!launcher.busy, "no run is in flight");
+        assert_eq!(launcher.generation, generation);
+        assert_eq!(launcher.hits.len(), 1);
+    }
+
+    #[test]
+    fn a_plugin_row_under_the_notices_still_runs_with_its_plugin() {
+        let mut launcher = Launcher::default();
+        launcher.apply(Event::Notices(vec![notice_hit("n1", None)]));
+        let generation = home(&mut launcher);
+        answered(&mut launcher, generation, &[hit(4, "row", vec![])]);
+        launcher.apply(Event::Down);
+        assert_eq!(
+            launcher.apply(Event::Submit),
+            run(generation, 4, "row", DEFAULT_ACTION)
         );
     }
 }

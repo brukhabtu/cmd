@@ -30,6 +30,16 @@ arithmetic, and the system plugin answers `sleep`, `lock`, `trash` and `dark`.
 
 ![The system plugin's answer to dark](../assets/screenshots/system.png){ width="640" }
 
+## The home list
+
+With nothing typed, the launcher shows what moved while you were away: the newest five
+notices that plugins sent (a watched ticket changing status, say), newest first, each with
+the plugin's name and the notice's text under its title. Below them come any rows plugins
+offer for an empty input. Press ++enter++ on a notice that has a link to open it; a notice
+without one is only for reading. A notice that arrives while the list is showing joins it at
+once, and typing replaces the whole list. The notices are kept in memory only: they are gone
+when the app quits.
+
 ## The line under the input
 
 A single line under the input says what is going on: a plugin's error, the background work

@@ -354,6 +354,15 @@ restart does not clear it, because what was delivered is history; unlike a plugi
 which are cleared. It is pure logic in `cmd-core` (`notice::Recent`), as is the rate limit
 (`notice::RateLimit`).
 
+**The recent list on the home list.** While the input is blank, the window shows the newest
+5 notices of the recent list as the first rows of the home list, newest first, above what the
+plugins answer to the home query. A row has the notice's `title`, and `<plugin name> - <body>`
+(the name alone when there is no `body`) as its second line. Enter on a row whose notice has
+an `open` target opens it, by the same path as an `Open` effect, and hides the launcher; a
+row without one is informational and Enter does nothing. A notice that arrives while the home
+list is showing is added to it at once. Typing replaces the list, notices included. The host
+applies no policy to `open` here (TASK-6.4).
+
 A failing watch (unreachable, unauthorised) is a task that stays until dismissed, not a
 notice at every poll.
 
@@ -383,7 +392,8 @@ every plugin that declared `home`, in parallel and whatever its `keyword`, as an
 query with a generation: `{"text": "", "home": true}`. The `home` flag is sent only on this
 query and only to such plugins; a typed query carries no `home` param. The answers are
 merged by the same rules as any query's and are the window's list until the person types,
-which replaces them. Enter and the actions work on a home row as on any other. The Python
+which replaces them. Enter and the actions work on a home row as on any other. The host's
+own recent notices (see Notifications) head the home list, ahead of these answers. The Python
 SDK passes the query to `Plugin.home()` when the plugin has one, else to `query("")`.
 
 Answers from several plugins are merged into one list: highest score first, items without a
