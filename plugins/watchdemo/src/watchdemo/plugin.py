@@ -7,10 +7,12 @@ a file that cannot be used becomes a row; ``run`` performs Open, Copy, Watch and
 """
 
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
 from cmd_sdk import (
+    Agreement,
     ConfigError,
     Copy,
     Description,
@@ -112,19 +114,35 @@ def _with_ticket(demo: Demo, item: str, action: str) -> Effect:
     return Show(text=f"Watching {item}")
 
 
-def plugin(demo: Demo) -> Plugin:
-    """The plugin for this demo."""
+def plugin(demo: Demo, poller: Poller | None = None) -> Plugin:
+    """The plugin for this demo.
+
+    With a ``poller`` it is started when the host's ``describe`` arrives, after the SDK has
+    agreed the capabilities: a change found by an earlier poll would be reported to nobody.
+    """
+    started = threading.Event()
+
+    def described(_agreement: Agreement) -> Description:
+        if poller is not None and not started.is_set():
+            started.set()
+            poller.start()
+        return DESCRIPTION
+
     return Plugin(
         DESCRIPTION,
         lambda text: query(demo, text),
         lambda item, action: run(demo, item, action),
         home=lambda: home(demo),
+        describe=described,
     )
 
 
 def main() -> None:
-    """Start the polling thread when there is a file to poll, then serve."""
+    """Serve, polling the tickets file once the host's describe has been answered."""
     demo = start()
-    if demo.settings.tickets is not None:
-        Poller(Path(demo.settings.tickets), demo.settings.interval, demo.store).start()
-    serve(plugin(demo))
+    poller = (
+        Poller(Path(demo.settings.tickets), demo.settings.interval, demo.store)
+        if demo.settings.tickets is not None
+        else None
+    )
+    serve(plugin(demo, poller))

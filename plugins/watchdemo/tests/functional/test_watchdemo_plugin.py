@@ -16,7 +16,7 @@ from typing import Any, TextIO, cast
 
 import pytest
 import watchdemo.plugin as plugin_module
-from cmd_sdk import Copy, InvalidNoticeError, InvalidTaskError, Open, Show, serve
+from cmd_sdk import Copy, InvalidNoticeError, InvalidTaskError, Open, Plugin, Show, serve
 from cmd_sdk.protocol import Agreement
 from cmd_sdk.reporter import Reporter, installed
 from watchdemo.keeper import STATE_FILE, Store
@@ -598,11 +598,12 @@ def test_the_thread_polls_until_it_is_stopped(
     assert not thread.is_alive()
 
 
-def test_main_starts_the_poller_with_the_configured_interval_and_serves(
+def test_main_starts_the_poller_when_the_host_describes_and_only_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     r = rig(tmp_path, monkeypatch, config='tickets = "PATH"\ninterval = 0.1\n')
     seen: list[Any] = []
+    served: list[Plugin] = []
 
     class FakePoller:
         def __init__(self, path: Path, interval: float, store: Store) -> None:
@@ -612,12 +613,18 @@ def test_main_starts_the_poller_with_the_configured_interval_and_serves(
             seen.append(("started", self))
 
     monkeypatch.setattr(plugin_module, "Poller", FakePoller)
-    monkeypatch.setattr(plugin_module, "serve", lambda p: seen.append(p.description))
+    monkeypatch.setattr(plugin_module, "serve", served.append)
     plugin_module.main()
     assert seen[0][:2] == (r.tickets, 0.5)  # raised to the minimum
-    assert seen[1][0] == "started"
-    assert seen[2].keyword == "watch"
-    assert seen[2].home is True
+    assert seen[1:] == []  # not before the host has described: nobody could hear it yet
+    (served_plugin,) = served
+    assert served_plugin.description.keyword == "watch"
+    assert served_plugin.description.home is True
+    assert served_plugin.describe is not None
+    agreement = Agreement(1, frozenset({"tasks", "notify"}))
+    served_plugin.describe(agreement)
+    served_plugin.describe(agreement)
+    assert [entry[0] for entry in seen[1:]] == ["started"]
 
 
 def test_main_starts_no_poller_without_a_tickets_setting(

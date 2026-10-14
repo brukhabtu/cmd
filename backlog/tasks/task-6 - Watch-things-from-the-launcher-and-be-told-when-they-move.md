@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@brukhabtu'
 created_date: '2026-10-14 18:32'
-updated_date: '2026-10-14 19:13'
+updated_date: '2026-10-14 20:36'
 labels:
   - size-8
 milestone: m-3
@@ -39,4 +39,6 @@ I want to watch a ticket or a pull request and know when it moves, without openi
 
 <!-- SECTION:NOTES:BEGIN -->
 Plan (decision 13): the Mac notification spike first (owner-run, it decides delivery); DRAFT-15 (decision 12's reader and writer) in parallel with the complete/Tab task and DRAFT-5 (home query); then the notify capability; then macOS delivery; then watchdemo; then the user page. complete and the home query do not depend on the reader work. Follow-ups, not in scope: the > verbs mode, secrets for a real Jira plugin, watchers as a feeds provider (DRAFT-8).
+
+2026-10-14: built and closed on review: 6.2 (complete, Tab), 6.3 (notify), 6.5 (watchdemo), with TASK-7, 8, 9 and the home half of 2.9. Also built, reviewed inside 6.5's review: recent notices on the home list. Left: 6.1 (Mac spike) and 6.4 (macOS delivery) need the owner's Mac; 6.6 the user page.
 <!-- SECTION:NOTES:END -->
