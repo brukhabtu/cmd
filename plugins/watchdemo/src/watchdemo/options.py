@@ -25,12 +25,16 @@ class Settings:
     notes: tuple[str, ...] = ()
 
 
+UNSET = "config.toml: set `tickets` to the path of the tickets JSON file"
+"""The note for a config that does not name a tickets file: not a fault, only not set up."""
+
+
 def parse_options(raw: Mapping[str, Any]) -> Settings:
     """The settings in a decoded config. Never raises."""
     notes: list[str] = []
     tickets = raw.get("tickets")
     if tickets is None:
-        notes.append("config.toml: set `tickets` to the path of the tickets JSON file")
+        notes.append(UNSET)
     elif not isinstance(tickets, str) or not tickets.strip():
         notes.append("config.toml: `tickets` must be the path of a file, as text")
         tickets = None

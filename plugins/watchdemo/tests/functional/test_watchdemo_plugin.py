@@ -202,7 +202,8 @@ def test_missing_or_bad_config_is_a_row_not_a_crash(
     assert item.complete is None
     assert "tickets" in item.title or "config.toml" in item.title
     assert isinstance(run(demo, "", "default"), Show)
-    assert home(demo)
+    # Not set up (no file, or only an interval) is silent on home; a wrong config is shown.
+    assert bool(home(demo)) is (config in {"tickets = 5\n", "tickets = ["})
 
 
 def test_a_missing_data_directory_variable_still_serves(
@@ -776,3 +777,24 @@ def test_over_the_protocol_the_description_asks_for_the_home_query(
     (describe, *_) = converse(r.demo, [], HOME)
     assert describe["result"]["keyword"] == "watch"
     assert describe["result"]["home"] is True
+
+
+def test_home_is_empty_until_a_tickets_file_is_set_but_a_broken_one_is_shown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unset = rig(tmp_path, monkeypatch, config="")
+    assert home(unset.demo) == ()
+    assert query(unset.demo, "")  # typing the keyword still explains the setup
+    other = tmp_path / "other"
+    other.mkdir()
+    broken = rig(other, monkeypatch, tickets="broken")
+    assert home(broken.demo)  # a set file that cannot be read is a failure, not silence
+
+
+def test_enter_on_the_setup_row_says_where_the_config_goes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = rig(tmp_path, monkeypatch, config="")
+    effect = run(r.demo, "", "default")
+    assert isinstance(effect, Show)
+    assert str(tmp_path / "config" / "config.toml") in effect.text

@@ -6,6 +6,7 @@ a file that cannot be used becomes a row; ``run`` performs Open, Copy, Watch and
 ``main`` starts the polling thread, then serves.
 """
 
+import os
 import sys
 import threading
 from dataclasses import dataclass
@@ -28,7 +29,7 @@ from cmd_sdk import (
 )
 
 from watchdemo.keeper import Store
-from watchdemo.options import Settings, parse_options
+from watchdemo.options import UNSET, Settings, parse_options
 from watchdemo.poller import Poller, SourceError, read_tickets
 from watchdemo.rows import KEYWORD, home_rows, query_rows
 from watchdemo.state import unwatch, watch
@@ -78,7 +79,15 @@ def query(demo: Demo, text: str) -> tuple[Item, ...]:
 
 
 def home(demo: Demo) -> tuple[Item, ...]:
-    """The rows for the blank input: what moved, and what is watched."""
+    """The rows for the blank input: what moved, and what is watched.
+
+    A plugin whose config does not name a tickets file has nothing to show, and says so
+    only when asked (``watch``): it does not take the top of the list every time the window
+    opens. A config that is wrong, or a file that is set but cannot be read, is a failure
+    and is shown.
+    """
+    if demo.settings.tickets is None and demo.settings.notes[:1] == (UNSET,):
+        return ()
     tickets, problems, notes = _tickets(demo)
     return home_rows(tickets, demo.store.state, problems, notes)
 
@@ -86,8 +95,10 @@ def home(demo: Demo) -> tuple[Item, ...]:
 def run(demo: Demo, item: str, action: str) -> Effect:
     """Perform an action on a ticket. A row with no ticket (``item`` is empty) only explains."""
     if not item:
+        where = os.environ.get("CMD_PLUGIN_CONFIG")
+        target = f"{where}/config.toml" if where else "this plugin's config.toml"
         return Show(
-            text="Set `tickets` in config.toml to a JSON file of tickets, then type "
+            text=f'Put tickets = "/path/to/tickets.json" in {target}, then type '
             f"{KEYWORD} and part of a title"
         )
     if action == "copy":
