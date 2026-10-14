@@ -120,6 +120,9 @@ struct LauncherView {
     started: Instant,
     /// A redraw for task reports is already waiting on its timer.
     task_redraw_waiting: bool,
+    /// When, on the `started` clock, the redraw for the earliest `done` task to drop is
+    /// already scheduled.
+    expiry_scheduled: Option<Duration>,
     /// The query line as last drawn and where, for the input method to place its
     /// candidates. The text itself is the state machine's.
     last_line: Option<ShapedLine>,
@@ -157,6 +160,7 @@ impl LauncherView {
             tasks: Tasks::default(),
             started: Instant::now(),
             task_redraw_waiting: false,
+            expiry_scheduled: None,
             last_line: None,
             last_bounds: None,
             recent_notices: Recent::default(),
@@ -347,15 +351,7 @@ impl LauncherView {
     /// starts a timer and the redraw happens when it ends, with whatever the tasks are then.
     /// A `done` task that will drop by itself gets its own redraw at its deadline.
     fn redraw_for_tasks(&mut self, cx: &mut Context<Self>) {
-        if let Some(expiry) = self.tasks.next_expiry(self.started.elapsed()) {
-            cx.spawn(async move |view, cx| {
-                cx.background_executor()
-                    .timer(expiry + Duration::from_millis(50))
-                    .await;
-                let _ = view.update(cx, |_, cx| cx.notify());
-            })
-            .detach();
-        }
+        self.schedule_expiry(cx);
         if self.task_redraw_waiting {
             return;
         }
@@ -365,6 +361,35 @@ impl LauncherView {
             let _ = view.update(cx, |view, cx| {
                 view.task_redraw_waiting = false;
                 cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Redraw when the earliest `done` task drops, unless a redraw for that deadline (or an
+    /// earlier one) is already waiting.
+    fn schedule_expiry(&mut self, cx: &mut Context<Self>) {
+        let now = self.started.elapsed();
+        let Some(wait) = self.tasks.next_expiry(now) else {
+            return;
+        };
+        let deadline = now + wait;
+        if self
+            .expiry_scheduled
+            .is_some_and(|scheduled| scheduled <= deadline)
+        {
+            return;
+        }
+        self.expiry_scheduled = Some(deadline);
+        cx.spawn(async move |view, cx| {
+            cx.background_executor()
+                .timer(wait + Duration::from_millis(50))
+                .await;
+            let _ = view.update(cx, |view, cx| {
+                view.expiry_scheduled = None;
+                cx.notify();
+                // Later `done` tasks have deadlines of their own.
+                view.schedule_expiry(cx);
             });
         })
         .detach();
@@ -399,7 +424,6 @@ impl LauncherView {
     /// while that is still unseen.
     fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shown = true;
-        self.tasks.apply(TaskEvent::Shown);
         // First, because a new query clears the line under the input.
         let step = self.state.apply(Event::Shown);
         self.perform(step, cx);
@@ -646,6 +670,12 @@ fn result_row(
 impl Render for LauncherView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = palette(window.appearance());
+        // The failure on the line, if nothing covers it, has now been seen (see
+        // `TaskEvent::Displayed`).
+        self.tasks.apply(TaskEvent::Displayed {
+            now: self.started.elapsed(),
+            covered: self.state.message.is_some(),
+        });
         let selected = self.state.selected;
         let first_visible = self.state.first_visible;
         let visible = self.state.visible();

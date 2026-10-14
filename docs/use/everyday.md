@@ -45,10 +45,12 @@ several have something to say, the line shows the first of these:
 With more than one task the line shows the most important and counts the rest: `+2`.
 The line updates at most four times a second.
 
-A failed task stays until you have seen it: it goes the next time the launcher is hidden
-after it was on the line. There is no key for it, since the keys the launcher owns are
-fixed (decision 4). A plugin that restarts or reloads takes its tasks off the line; it
-reports them again if it still has them.
+A failed task stays until you have seen it, and hiding the launcher dismisses it: it goes
+when you hide the launcher after it was the text on the line, even if the launcher was up
+for a moment. A failure behind a message, or counted in the `+N` behind another failure,
+has not been seen: it stays and shows next time. There is no key for it, since the keys
+the launcher owns are fixed (decision 4). A plugin that restarts or reloads takes its
+tasks off the line; it reports them again if it still has them.
 
 ![The line under the input while the plugins start](../assets/screenshots/launcher-starting.png){ width="640" }
 

@@ -29,10 +29,14 @@ pub enum TaskEvent {
     /// `HostEvent::Task` carries no "cleared" signal, so the window clears its copy on
     /// `Restarted` and `Reloaded` (decision 12).
     Cleared { plugin: usize },
-    /// The window came up.
-    Shown,
-    /// The window was put away. A failed task that stood on the line while the window was
-    /// up is dismissed: the first slice of dismissal, because decision 4 owns every key.
+    /// The window was drawn at `now`; `covered` says a message stands in front of the
+    /// tasks on the status line (see [`status_line`]). Only when nothing covers them, the
+    /// failed task the line shows (the top-ranked one, not those folded into `+N`) counts
+    /// as seen. The view sends it on every draw.
+    Displayed { now: Duration, covered: bool },
+    /// The window was put away. A failed task that was seen on the line is dismissed: the
+    /// first slice of dismissal, because decision 4 owns every key. Even a brief show
+    /// dismisses it, if the window was drawn with the failure on the line.
     Hidden,
 }
 
@@ -41,26 +45,16 @@ struct Entry {
     name: String,
     task: Task,
     at: Duration,
-    /// The window was up while this failed task stood on the line, so hiding the window
-    /// dismisses it. A failure that arrives while the window is hidden waits for a show.
+    /// This failed task was the text on the status line when the window was drawn, so
+    /// hiding the window dismisses it. One behind a message, behind another failure
+    /// (counted in `+N`), or that arrived while the window was hidden is not seen yet.
     seen: bool,
 }
 
 /// The latest line per (plugin, task id), as the window shows them.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tasks {
     entries: BTreeMap<(usize, String), Entry>,
-    shown: bool,
-}
-
-impl Default for Tasks {
-    /// The window starts shown, as the view does.
-    fn default() -> Self {
-        Tasks {
-            entries: BTreeMap::new(),
-            shown: true,
-        }
-    }
 }
 
 /// What the tasks say, as one line.
@@ -83,28 +77,28 @@ impl Tasks {
                 at,
             } => {
                 self.prune(at);
-                let seen = self.shown && task.state == TaskState::Failed;
                 self.entries.insert(
                     (plugin, task.id.clone()),
                     Entry {
                         name,
                         task,
                         at,
-                        seen,
+                        seen: false,
                     },
                 );
             }
             TaskEvent::Cleared { plugin } => {
                 self.entries.retain(|(owner, _), _| *owner != plugin);
             }
-            TaskEvent::Shown => {
-                self.shown = true;
-                for entry in self.entries.values_mut() {
-                    entry.seen |= entry.task.state == TaskState::Failed;
+            TaskEvent::Displayed { now, covered } => {
+                if !covered
+                    && let Some(key) = self.top_key(now)
+                    && let Some(entry) = self.entries.get_mut(&key)
+                {
+                    entry.seen |= entry.rank() == 0;
                 }
             }
             TaskEvent::Hidden => {
-                self.shown = false;
                 self.entries.retain(|_, entry| !entry.seen);
             }
         }
@@ -120,8 +114,7 @@ impl Tasks {
     /// equals. The others are counted as `+N`. `None` when nothing is on show.
     pub fn line(&self, now: Duration) -> Option<TaskLine> {
         let live = || self.entries.iter().filter(|(_, entry)| entry.is_live(now));
-        // `min_by_key` keeps the first of equals, and the map is in (plugin, id) order.
-        let (_, entry) = live().min_by_key(|(_, entry)| entry.rank())?;
+        let entry = &self.entries[&self.top_key(now)?];
         let task = &entry.task;
         let progress = match (task.state, task.done, task.total) {
             (TaskState::Failed, ..) => " failed".to_string(),
@@ -141,6 +134,16 @@ impl Tasks {
             text,
             failed: task.state == TaskState::Failed,
         })
+    }
+
+    /// The task the line is about: the most important live one. `min_by_key` keeps the
+    /// first of equals, and the map is in (plugin, id) order.
+    fn top_key(&self, now: Duration) -> Option<(usize, String)> {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| entry.is_live(now))
+            .min_by_key(|(_, entry)| entry.rank())
+            .map(|(key, _)| key.clone())
     }
 
     /// How long until the line changes by itself, when a `done` task drops: when to
@@ -435,36 +438,88 @@ mod tests {
         assert_eq!(text(&tasks, T0 + secs(5)).unwrap(), "p0: label a +1");
     }
 
+    /// The window was drawn at T0 with `covered` saying whether a message was in front.
+    fn drawn(tasks: &mut Tasks, covered: bool) {
+        tasks.apply(TaskEvent::Displayed { now: T0, covered });
+    }
+
     #[test]
-    fn hiding_the_window_dismisses_a_failure_that_was_on_show() {
+    fn hiding_the_window_dismisses_a_failure_that_was_on_the_line() {
         let mut tasks = Tasks::default();
         report(&mut tasks, 0, task("a", TaskState::Failed, None), T0);
         report(&mut tasks, 0, task("b", TaskState::Running, None), T0);
+        drawn(&mut tasks, false);
         tasks.apply(TaskEvent::Hidden);
-        assert_eq!(text(&tasks, T0).unwrap(), "p0: label b");
-        tasks.apply(TaskEvent::Shown);
         assert_eq!(text(&tasks, T0).unwrap(), "p0: label b");
     }
 
     #[test]
-    fn a_failure_that_arrives_while_hidden_waits_for_a_show_and_the_hide_after_it() {
+    fn even_a_brief_show_dismisses_the_failure_it_displayed() {
         let mut tasks = Tasks::default();
+        report(&mut tasks, 0, task("a", TaskState::Failed, None), T0);
+        drawn(&mut tasks, false);
         tasks.apply(TaskEvent::Hidden);
+        assert_eq!(tasks.line(T0), None);
+    }
+
+    #[test]
+    fn a_failure_never_drawn_survives_a_hide() {
+        let mut tasks = Tasks::default();
         report(&mut tasks, 0, task("a", TaskState::Failed, None), T0);
         tasks.apply(TaskEvent::Hidden);
         assert!(tasks.line(T0).is_some());
-        tasks.apply(TaskEvent::Shown);
-        assert!(tasks.line(T0).is_some());
+        drawn(&mut tasks, false);
         tasks.apply(TaskEvent::Hidden);
         assert_eq!(tasks.line(T0), None);
+    }
+
+    #[test]
+    fn a_message_in_front_keeps_the_failure_unseen() {
+        // A plugin's error, or the start trouble the window puts back on every show.
+        let mut tasks = Tasks::default();
+        report(&mut tasks, 0, task("a", TaskState::Failed, None), T0);
+        drawn(&mut tasks, true);
+        tasks.apply(TaskEvent::Hidden);
+        assert!(tasks.line(T0).is_some());
+        drawn(&mut tasks, true);
+        tasks.apply(TaskEvent::Hidden);
+        assert!(tasks.line(T0).is_some());
+        drawn(&mut tasks, false);
+        tasks.apply(TaskEvent::Hidden);
+        assert_eq!(tasks.line(T0), None);
+    }
+
+    #[test]
+    fn only_the_failure_on_the_line_is_dismissed_the_one_in_the_count_shows_next() {
+        let mut tasks = Tasks::default();
+        report(&mut tasks, 0, task("a", TaskState::Failed, None), T0);
+        report(&mut tasks, 1, task("b", TaskState::Failed, None), T0);
+        assert_eq!(text(&tasks, T0).unwrap(), "p0: label a failed +1");
+        drawn(&mut tasks, false);
+        tasks.apply(TaskEvent::Hidden);
+        assert_eq!(text(&tasks, T0).unwrap(), "p1: label b failed");
+        drawn(&mut tasks, false);
+        tasks.apply(TaskEvent::Hidden);
+        assert_eq!(tasks.line(T0), None);
+    }
+
+    #[test]
+    fn a_running_task_on_the_line_marks_no_failure_seen() {
+        let mut tasks = Tasks::default();
+        report(&mut tasks, 0, task("a", TaskState::Running, None), T0);
+        drawn(&mut tasks, false);
+        report(&mut tasks, 1, task("b", TaskState::Failed, None), T0);
+        // The failure outranks the running task now, but was not drawn.
+        tasks.apply(TaskEvent::Hidden);
+        assert!(text(&tasks, T0).unwrap().starts_with("p1: label b failed"));
     }
 
     #[test]
     fn hiding_leaves_running_tasks() {
         let mut tasks = Tasks::default();
         report(&mut tasks, 0, task("a", TaskState::Running, None), T0);
+        drawn(&mut tasks, false);
         tasks.apply(TaskEvent::Hidden);
-        tasks.apply(TaskEvent::Shown);
         assert!(tasks.line(T0).is_some());
     }
 
@@ -472,6 +527,7 @@ mod tests {
     fn a_failure_that_runs_again_is_no_longer_dismissed_by_a_hide() {
         let mut tasks = Tasks::default();
         report(&mut tasks, 0, task("a", TaskState::Failed, None), T0);
+        drawn(&mut tasks, false);
         report(&mut tasks, 0, task("a", TaskState::Running, None), T0);
         tasks.apply(TaskEvent::Hidden);
         assert!(tasks.line(T0).is_some());
