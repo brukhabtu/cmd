@@ -13,6 +13,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
+from cmd_sdk import Task
+
 from vault.gateway import invoke
 from vault.invocations import write_arguments
 from vault.outbox import (
@@ -29,6 +31,7 @@ from vault.outbox import (
 )
 from vault.schema import Obsidian
 from vault.store import Outbox
+from vault.tracker import Tracker
 
 WAIT_FOR_OBSIDIAN = 10.0
 """Seconds between looks while an entry waits for Obsidian to run."""
@@ -43,11 +46,24 @@ class World:
     clock: Callable[[], datetime]
 
 
-def step(outbox: Outbox, world: World) -> float | None:
+def step(outbox: Outbox, world: World, tracker: Tracker | None = None) -> float | None:
     """Make one try at the oldest due entry, if any, and say how long to sleep after it.
 
     ``None`` sleeps until woken. Raises only what the outbox's files raise (``OSError``).
+    A ``tracker`` is told what the step did and reports the outbox as a task after it.
     """
+    tracker = tracker or Tracker(send=_silent)
+    try:
+        return _step(outbox, world, tracker)
+    finally:
+        tracker.refresh(outbox.entries())
+
+
+def _silent(task: Task) -> None:
+    """Where a step with no tracker sends its reports."""
+
+
+def _step(outbox: Outbox, world: World, tracker: Tracker) -> float | None:
     now = world.clock()
     entries = outbox.entries()
     entry = due(entries, now)
@@ -55,7 +71,9 @@ def step(outbox: Outbox, world: World) -> float | None:
         later = soonest(entries)
         return None if later is None else max(0.0, (later - now).total_seconds())
     if world.obsidian.bin is None or not world.running():
+        tracker.waiting(blocked=True)
         return WAIT_FOR_OBSIDIAN
+    tracker.waiting(blocked=False)
     checking = entry.state is State.UNKNOWN
     if not outbox.update(writing(entry)):
         return 0.0
@@ -68,6 +86,7 @@ def step(outbox: Outbox, world: World) -> float | None:
                 current = call.step
             case Written():
                 outbox.remove(entry.id)
+                tracker.wrote()
                 return 0.0
             case Missed() as miss:
                 outbox.update(missed(entry, miss, world.clock()))
@@ -77,9 +96,10 @@ def step(outbox: Outbox, world: World) -> float | None:
 class Worker:
     """The thread, with a way to stop it for tests and an orderly exit."""
 
-    def __init__(self, outbox: Outbox, world: World) -> None:
+    def __init__(self, outbox: Outbox, world: World, tracker: Tracker | None = None) -> None:
         self._outbox = outbox
         self._world = world
+        self._tracker = tracker
         self._stopped = threading.Event()
         self._thread = threading.Thread(target=self._loop, name="vault-outbox", daemon=True)
 
@@ -97,7 +117,7 @@ class Worker:
     def _loop(self) -> None:
         while not self._stopped.is_set():
             try:
-                wait = step(self._outbox, self._world)
+                wait = step(self._outbox, self._world, self._tracker)
             except Exception as error:  # ruff: ignore[blind-except] - the thread must outlive any failure
                 sys.stderr.write(f"vault: the outbox thread: {type(error).__name__}: {error}\n")
                 wait = WAIT_FOR_OBSIDIAN

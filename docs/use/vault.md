@@ -125,5 +125,20 @@ Waiting captures show under your keywords (three at most) and all of them under 
 | Checking | a write may have landed; the next try reads the note first | Retry now, Copy, Discard |
 | Not written | five tries failed | Retry, Copy, Discard |
 
+### In the window
+
+When the launcher shows background tasks, the outbox is one of them, **Vault captures**:
+
+| Shows | When |
+|---|---|
+| running, `2 of 5` and the capture being written | captures are waiting or a write is under way; `2 of 5` is written so far out of those seen since the outbox was last empty |
+| running, `waiting for Obsidian` | Obsidian is closed (or `obsidian.bin` is not usable): nothing is lost and nothing has failed |
+| running, the capture and `(retrying: ...)` | a try failed and the next is due; a write killed at its deadline is checked, not failed |
+| failed, `1 not written: <reason>` | a capture failed five tries; it stays until you Retry or Discard it, and so does the task |
+| done, `3 written` | the outbox emptied after writes; it goes away by itself. Discarding the last failed capture also ends the task |
+
+This is only shown; the `vault` keyword and the rows above are unchanged. A launcher that
+does not show background tasks shows nothing here, and the vault behaves the same.
+
 `@daily` is the daily note of the day the CLI writes it: a to-do captured on Monday
 evening while Obsidian is closed lands in Tuesday's note if that is when Obsidian opens.

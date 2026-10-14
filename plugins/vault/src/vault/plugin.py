@@ -78,6 +78,7 @@ from vault.outbox import (
 )
 from vault.schema import BUILT_CAPTURES, Settings, parse, without_bin
 from vault.store import BusyError, Outbox
+from vault.tracker import Tracker
 from vault.worker import Worker, World
 
 KEYWORDS_FILE = "keywords.json"
@@ -365,5 +366,5 @@ def plugin(vault: Vault) -> Plugin:
 def main() -> None:
     """Start, start the outbox thread, and serve over stdin and stdout."""
     vault = start()
-    Worker(vault.outbox, vault.world).start()
+    Worker(vault.outbox, vault.world, Tracker()).start()
     serve(plugin(vault))

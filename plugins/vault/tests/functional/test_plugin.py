@@ -7,6 +7,7 @@ probe's answer, injected; the outbox thread's steps are run in the test's own th
 in the one test that starts the real thread.
 """
 
+import io
 import json
 import sys
 import time
@@ -15,10 +16,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from cmd_sdk import Close, Copy, Item, Open, Show
+from cmd_sdk import Close, Copy, InvalidTaskError, Item, Open, Show, Task
+from cmd_sdk.protocol import Agreement
+from cmd_sdk.reporter import Reporter, installed
 from vault.gateway import probe
 from vault.outbox import Entry, writing
 from vault.plugin import Vault, plugin, query, run, start
+from vault.tracker import Tracker
 from vault.worker import Worker, step
 
 _FAKE = Path(__file__).with_name("fake_obsidian.py")
@@ -145,10 +149,10 @@ class Host:
         ]
 
 
-def _drain(vault: Vault, tries: int = 10) -> None:
+def _drain(vault: Vault, tries: int = 10, tracker: Tracker | None = None) -> None:
     """Run the outbox thread's steps here, until one says nothing more is due now."""
     for _ in range(tries):
-        wait = step(vault.outbox, vault.world)
+        wait = step(vault.outbox, vault.world, tracker)
         if wait is None or wait > 0:
             return
 
@@ -669,3 +673,213 @@ def test_the_plugin_speaks_the_protocol_without_a_keyword(host: Host) -> None:
     described = plugin(host.start()).description
     assert described.name == "vault"
     assert described.keyword is None
+
+
+# --- TASK-9: the outbox reported as a task (decision 12) -----------------------------------
+
+
+def _task_lines(sink: io.StringIO) -> list[dict[str, object]]:
+    return [json.loads(line)["params"] for line in sink.getvalue().splitlines()]
+
+
+def _reported() -> tuple[Tracker, list[Task]]:
+    """A tracker whose reports are collected, as the host's reader would see them."""
+    sent: list[Task] = []
+    return Tracker(send=sent.append), sent
+
+
+def _fail_five_times(vault: Vault, host: Host, tracker: Tracker) -> None:
+    for wait in (5, 30, 120, 600, 0):
+        _drain(vault, tracker=tracker)
+        host.clock.advance(wait)
+
+
+def test_captures_made_while_obsidian_is_closed_are_running_and_waiting_for_obsidian(
+    host: Host, fake: FakeObsidian
+) -> None:
+    fake.running = False
+    tracker, sent = _reported()
+    vault, _ = _capture(host, "todo first")
+    _drain(vault, tracker=tracker)
+    assert sent == [Task("outbox", "Vault captures", "running", 0, 1, "waiting for Obsidian")]
+    _drain(vault, tracker=tracker)
+    host.clock.advance(60)
+    _drain(vault, tracker=tracker)
+    assert len(sent) == 1  # reported on change only
+    assert fake.calls() == []
+    (entry,) = host.outbox()
+    assert entry["state"] == "pending"  # not a failure
+
+
+def test_obsidian_opening_writes_the_captures_and_the_task_ends_done(
+    host: Host, fake: FakeObsidian
+) -> None:
+    fake.running = False
+    tracker, sent = _reported()
+    vault, _ = _capture(host, "todo one")
+    _drain(vault, tracker=tracker)
+    _capture_into(vault, "todo two")
+    _drain(vault, tracker=tracker)
+    assert sent[-1] == Task("outbox", "Vault captures", "running", 0, 2, "waiting for Obsidian")
+    fake.running = True
+    host.clock.advance(5)  # the probe's answer is kept for 2 s
+    _drain(vault, tracker=tracker)
+    assert sent[-1] == Task("outbox", "Vault captures", "done", 2, 2, "2 written")
+    assert [task.state for task in sent] == ["running"] * (len(sent) - 1) + ["done"]
+    assert host.outbox() == []
+    assert "- [ ] one" in fake.daily()
+    assert "- [ ] two" in fake.daily()
+    count = len(sent)
+    _drain(vault, tracker=tracker)
+    assert sent[-1].state == "done"
+    assert len(sent) == count  # nothing more to say
+
+
+def test_a_second_burst_counts_from_zero_again(host: Host, fake: FakeObsidian) -> None:
+    tracker, sent = _reported()
+    vault, _ = _capture(host, "todo one")
+    _drain(vault, tracker=tracker)
+    assert sent[-1].state == "done"
+    fake.running = False
+    host.clock.advance(5)
+    _capture_into(vault, "todo two")
+    _drain(vault, tracker=tracker)
+    assert sent[-1] == Task("outbox", "Vault captures", "running", 0, 1, "waiting for Obsidian")
+
+
+def test_a_cli_that_keeps_failing_ends_failed_with_the_reason_and_the_count_stuck(
+    host: Host, fake: FakeObsidian
+) -> None:
+    fake.mode("failing")
+    tracker, sent = _reported()
+    vault, _ = _capture(host, "todo stubborn")
+    _fail_five_times(vault, host, tracker)
+    assert sent[0].state == "running"
+    assert "(retrying: append: Error: something went wrong in the vault)" in str(sent[0].detail)
+    assert sent[-1] == Task(
+        "outbox",
+        "Vault captures",
+        "failed",
+        0,
+        1,
+        "1 not written: append: Error: something went wrong in the vault",
+    )
+    fake.mode("working")
+    row = next(row for row in query(vault, "vault") if row.id.startswith("outbox:"))
+    assert run(vault, row.id, "default") == Close()  # Retry
+    _drain(vault, tracker=tracker)
+    assert sent[-1].state == "done"
+    assert fake.daily().count("- [ ] stubborn") == 1
+
+
+def test_discarding_the_failed_capture_clears_the_failed_task(
+    host: Host, fake: FakeObsidian
+) -> None:
+    fake.mode("failing")
+    tracker, sent = _reported()
+    vault, _ = _capture(host, "todo hopeless")
+    _fail_five_times(vault, host, tracker)
+    assert sent[-1].state == "failed"
+    row = next(row for row in query(vault, "vault") if row.id.startswith("outbox:"))
+    assert run(vault, row.id, "discard") == Close()
+    _drain(vault, tracker=tracker)
+    assert sent[-1] == Task("outbox", "Vault captures", "done", detail="nothing left to write")
+
+
+def test_a_write_killed_at_its_deadline_is_running_not_failed(
+    host: Host, fake: FakeObsidian
+) -> None:
+    fake.mode("slow")
+    tracker, sent = _reported()
+    vault, _ = _capture(host, "todo slow one")
+    _drain(vault, tracker=tracker)
+    assert sent[-1].state == "running"
+    assert "retrying" in str(sent[-1].detail)
+
+
+def _serve_reporter(host: Host, capabilities: frozenset[str]) -> tuple[Reporter, io.StringIO]:
+    sink = io.StringIO()
+    reporter = Reporter(sink, host.clock.ticks)
+    reporter.agree(Agreement(1, capabilities))
+    return reporter, sink
+
+
+def _capture_into(vault: Vault, text: str) -> None:
+    (row,) = [row for row in query(vault, text) if row.id.startswith("capture:")]
+    assert run(vault, row.id, "default") == Close()
+
+
+def test_through_the_sdk_a_host_that_named_tasks_reads_the_lines(
+    host: Host, fake: FakeObsidian
+) -> None:
+    reporter, sink = _serve_reporter(host, frozenset({"tasks"}))
+    fake.running = False
+    with installed(reporter):
+        tracker = Tracker()
+        vault, _ = _capture(host, "todo through the sdk")
+        _drain(vault, tracker=tracker)
+        fake.running = True
+        host.clock.advance(5)
+        _drain(vault, tracker=tracker)
+    assert [params["state"] for params in _task_lines(sink)] == ["running", "done"]
+    assert _task_lines(sink)[-1] == {
+        "id": "outbox",
+        "label": "Vault captures",
+        "state": "done",
+        "done": 1,
+        "total": 1,
+        "detail": "1 written",
+    }
+
+
+@pytest.mark.parametrize("capabilities", [frozenset(), frozenset({"keywords"})])
+def test_without_the_tasks_capability_nothing_is_reported_and_the_vault_behaves_the_same(
+    host: Host, fake: FakeObsidian, capabilities: frozenset[str]
+) -> None:
+    reporter, sink = _serve_reporter(host, capabilities)
+    with installed(reporter):
+        tracker = Tracker()
+        fake.running = False
+        vault, _ = _capture(host, "todo quiet")
+        _drain(vault, tracker=tracker)
+        assert fake.calls() == []
+        (entry,) = host.outbox()
+        assert entry["state"] == "pending"
+        fake.running = True
+        host.clock.advance(5)
+        _drain(vault, tracker=tracker)
+        assert "- [ ] quiet" in fake.daily()
+        fake.mode("failing")
+        _capture_into(vault, "todo then fail")
+        _fail_five_times(vault, host, tracker)
+    assert not sink.getvalue()
+    (failed,) = host.outbox()
+    assert failed["state"] == "failed"
+    assert failed["attempts"] == 5
+
+
+def test_a_task_the_protocol_rejects_is_logged_and_never_reaches_the_thread(
+    host: Host, fake: FakeObsidian, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(_task: Task) -> None:
+        raise InvalidTaskError("task done (3) is more than total (2)")
+
+    vault, _ = _capture(host, "todo survives")
+    _drain(vault, tracker=Tracker(send=refuse))
+    assert "InvalidTaskError" in capsys.readouterr().err
+    assert "- [ ] survives" in fake.daily()  # the write itself was done
+    assert host.outbox() == []
+
+
+def test_the_real_thread_reports_while_it_writes(host: Host) -> None:
+    tracker, sent = _reported()
+    vault = host.start()
+    worker = Worker(vault.outbox, vault.world, tracker).start()
+    try:
+        _capture_into(vault, "todo threaded")
+        deadline = time.monotonic() + 5
+        while not (sent and sent[-1].state == "done") and time.monotonic() < deadline:
+            time.sleep(0.02)
+    finally:
+        worker.stop(2)
+    assert sent[-1] == Task("outbox", "Vault captures", "done", 1, 1, "1 written")
